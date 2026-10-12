@@ -145,7 +145,7 @@ function render() {
   $('#zoom').hidden = !a || a.zoom === 1; $('#zoom').textContent = a ? Math.round(a.zoom * 100) + '%' : ''
   $('#sp').title = `Split view (${fmt(s.keys.splitView)})`; $('#sp').style.background = s.split ? 'rgba(255,255,255,.25)' : ''; $('#col').title = `Collapse sidebar (${fmt(s.keys.toggleSidebar)})`
   $('#newbtn small').textContent = fmt(s.keys.newTab); $('#pill').title = `Edit address (${fmt(s.keys.editAddress)})`
-  $('#pill').innerHTML = a?.url ? `${icon('lock', 14)} <span>${esc(host(a.url) || a.url)}</span>` : '<span style="opacity:.8">Search or enter address…</span>'
+  $('#pill').innerHTML = s.copied ? `${icon('check', 14)} <span>Link copied</span>` : a?.url ? `${icon('lock', 14)} <span>${esc(host(a.url) || a.url)}</span>` : '<span style="opacity:.8">Search or enter address…</span>'
   $('#errbar').className = a?.error ? 'show' : ''; $('#msg').textContent = a?.error ? 'Failed to load: ' + a.error : ''
   $('#pwbar').className = s.pw && s.canSavePw ? 'show' : ''
   $('#pwbar').innerHTML = s.pw ? `<span>${s.pw.update ? 'Update' : 'Save'} password for <b>${esc(s.pw.user || 'this login')}</b> on ${esc(host(s.pw.origin))}?</span><button data-pw="pwSave">${s.pw.update ? 'Update' : 'Save'}</button><button data-pw="pwNever">Never</button><button data-pw="pwDismiss">Not now</button>` : ''

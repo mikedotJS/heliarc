@@ -40,7 +40,7 @@ const MEDIA_TOGGLE = `(() => { const m = [...document.querySelectorAll('video,au
 
 let win, ui, cmd, panel, find, peekUi, edge, little
 let tabs = [], folders = [], archive = [], history = [], downloads = [], vault = [], profile = {}, settings = { ...DEFAULTS }
-let active = null, space = 0, nextId = 1, blocked = 0, blockerState = 'loading'
+let active = null, space = 0, nextId = 1, blocked = 0, blockerState = 'loading', copied = false // copied: the address pill says "Link copied" for a moment after Mod+Shift+C
 let cmdOpen = false, panelOpen = false, findOpen = false, findText = '', recording = false
 let sidebar = true, floating = false, split = null, peek = null, mediaTab = null, pwPending = null, soon = null
 const dls = new Map(), configured = new Set()
@@ -59,7 +59,7 @@ const push = () => {
   if (!ui) return
   const nav = cur()?.view?.webContents.navigationHistory
   const s = {
-    active, space, spaces: SPACES, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
+    active, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
     sidebar, split, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: byId(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
@@ -154,6 +154,7 @@ function pageMenu(wc, p) {
 
 // ---- shortcuts ----
 const RUN = {
+  copyLink: () => { const u = cur()?.url; if (!u) return; clipboard.writeText(u); copied = true; push(); setTimeout(() => { copied = false; push() }, 1500) },
   newPrivateTab: () => { const had = tabs.some(t => t.space === PRIVATE); switchSpace(PRIVATE); had && newTab(null, PRIVATE) }, newTab: () => openCmd('new'), editAddress: () => openCmd('edit'), closeTab: () => active && closeTab(active), reload: () => cur()?.view?.webContents.reload(),
   find: () => openFind(), zoomIn: () => zoom(1), zoomOut: () => zoom(-1), zoomReset: () => zoom(0), toggleSidebar: () => toggleSidebar(), splitView: () => toggleSplit(),
   library: () => openPanel('downloads'), history: () => openPanel('history'), settings: () => openPanel('settings'),

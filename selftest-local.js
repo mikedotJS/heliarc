@@ -375,6 +375,10 @@ module.exports = async (a, ok) => {
     ok('Ctrl+F opens find', key('f') && S.findOpen()); S.closeFind()
     ok('Ctrl+S toggles the sidebar', key('s') && !S.sidebar()); key('s')
     ok('a plain key does nothing', !key('f', { control: false, meta: false }))
+    // Mod+Shift+C copies the page address and the pill confirms it for a moment
+    const cb = require('electron').clipboard; await cb.writeText('nothing yet'); const pill = () => js(a.ui().webContents, `document.querySelector('#pill').textContent`)
+    ok('Mod+Shift+C is handled', key('c', { shift: true })); ok('it copies the address of the page', await until(async () => (await cb.readText()) === t.url), `${await cb.readText()} vs ${t.url}`)
+    ok('the pill says the link was copied', await until(async () => /Link copied/.test(await pill()))); ok('and goes back to the site name', await until(async () => !/Link copied/.test(await pill()), 4000))
     const set = (act, c) => js(panel(), `api.call('setShortcut', ${JSON.stringify(act)}, ${JSON.stringify(c)})`)
     ok('shortcut can be changed', (await set('find', 'Mod+Shift+K')).ok === true)
     ok('old shortcut no longer works', !key('f')); ok('new shortcut works', key('k', { shift: true }) && S.findOpen()); S.closeFind()

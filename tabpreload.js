@@ -101,6 +101,11 @@ if (window === top) {
 if (process.argv.includes('--heliarc-fp')) {
   require('electron').contextBridge.executeInMainWorld({ func: () => {
     for (const [k, v] of [['hardwareConcurrency', 4], ['deviceMemory', 8]]) try { Object.defineProperty(Navigator.prototype, k, { get: () => v, configurable: true }) } catch {}
+    // Electron leaves window.chrome empty, Chrome doesn't
+    const t = performance.timeOrigin / 1000, c = window.chrome ||= {}
+    c.app ||= { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }, getDetails: () => null, getIsInstalled: () => false }
+    c.csi ||= () => ({ startE: Math.round(t * 1000), onloadT: Date.now(), pageT: performance.now(), tran: 15 })
+    c.loadTimes ||= () => ({ requestTime: t, startLoadTime: t, commitLoadTime: t, finishDocumentLoadTime: t, finishLoadTime: t, firstPaintTime: t, firstPaintAfterLoadTime: 0, navigationType: 'Other', wasFetchedViaSpdy: true, wasNpnNegotiated: true, npnNegotiatedProtocol: 'h2', wasAlternateProtocolAvailable: false, connectionInfo: 'h2' })
     // Google sign-in refuses browsers whose brands don't include "Google Chrome"
     const uad = navigator.userAgentData, P = window.NavigatorUAData?.prototype
     if (uad && P) {

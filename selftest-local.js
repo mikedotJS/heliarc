@@ -230,8 +230,8 @@ module.exports = async (a, ok) => {
     ok('F12 stays reserved for developer tools', (await set('reload', 'F12')).error?.includes('F12'))
     ok('shortcut can be reset', (await set('find', null)).ok === true && key('f')); S.closeFind()
     S.openPanel('settings'); await sleep(600); await js(panel(), `document.querySelector('[data-a=record]').click()`); await sleep(200)
-    panel().sendInputEvent({ type: 'keyDown', keyCode: 'J', modifiers: [process.platform === 'darwin' ? 'meta' : 'control', 'shift'] }); panel().sendInputEvent({ type: 'keyUp', keyCode: 'J', modifiers: [process.platform === 'darwin' ? 'meta' : 'control', 'shift'] }); await sleep(500)
-    ok('shortcut recorder captures a key press', await until(async () => S.settings().shortcuts.newTab === 'Mod+Shift+J'), JSON.stringify(S.settings().shortcuts)); S.settings().shortcuts = {}; S.closePanel()
+    panel().sendInputEvent({ type: 'keyDown', keyCode: 'U', modifiers: [process.platform === 'darwin' ? 'meta' : 'control', 'shift'] }); panel().sendInputEvent({ type: 'keyUp', keyCode: 'U', modifiers: [process.platform === 'darwin' ? 'meta' : 'control', 'shift'] }); await sleep(500)
+    ok('shortcut recorder captures a key press', await until(async () => S.settings().shortcuts.newTab === 'Mod+Shift+U'), JSON.stringify(S.settings().shortcuts)); S.settings().shortcuts = {}; S.closePanel()
   })
 
   await section('extensions', async () => {

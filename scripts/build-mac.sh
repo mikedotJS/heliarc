@@ -6,8 +6,8 @@ cd "$(dirname "$0")/.."
 ARCH=${ARCH:-$(uname -m | sed 's/x86_64/x64/')}
 rm -rf build && mkdir -p build/icon.iconset
 for s in 16 32 64 128 256 512; do
-  sips -z $s $s assets/icon.png --out build/icon.iconset/icon_${s}x${s}.png >/dev/null
-  sips -z $((s*2)) $((s*2)) assets/icon.png --out build/icon.iconset/icon_${s}x${s}@2x.png >/dev/null
+  sips -z $s $s assets/icon-mac.png --out build/icon.iconset/icon_${s}x${s}.png >/dev/null
+  sips -z $((s*2)) $((s*2)) assets/icon-mac.png --out build/icon.iconset/icon_${s}x${s}@2x.png >/dev/null
 done
 iconutil -c icns build/icon.iconset -o build/icon.icns
 npx @electron/packager . Heliarc --platform=darwin --arch=$ARCH --out=dist --overwrite \

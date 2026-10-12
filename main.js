@@ -15,7 +15,7 @@ if (TEST) { // tests never touch the real Downloads folder (nor, unless told oth
 }
 
 const SIDEBAR = 262, GAP = 8, EDGE = 6, PEEKBAR = 44, LITTLEBAR = 44
-const ICON = path.join(__dirname, 'assets', 'icon.png')
+const ICON = path.join(__dirname, 'assets', process.platform === 'darwin' ? 'icon-mac.png' : 'icon.png') // the Mac icon already carries its own rounded-square shape
 const NEWTAB = 'file://' + path.join(__dirname, 'ui', 'newtab.html').replace(/\\/g, '/')
 const TABPRELOAD = path.join(__dirname, 'tabpreload.js')
 const SPACES = [ // one browser profile (cookies, logins) per space

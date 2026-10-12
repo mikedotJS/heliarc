@@ -61,7 +61,7 @@ const push = () => {
   const nav = cur()?.view?.webContents.navigationHistory
   const s = {
     active, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
-    sidebar, split, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
+    sidebar, split, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: byId(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
     pw: pwPending && { tab: pwPending.tab, origin: pwPending.origin, user: pwPending.user, update: pwPending.update },
@@ -464,13 +464,13 @@ function setupSession(ses) {
   privacy.filterRequests(ses, () => settings, () => blocker) // Global Privacy Control, Do Not Track, third-party cookies, ad blocker
   if (settings.fingerprint) ses.setUserAgent(app.userAgentFallback.replace(/ (Electron|Heliarc)\/\S+/g, '')) // sites see a plain Chrome, not an Electron app
   ses.setPermissionRequestHandler(async (wc, permission, cb, d) => { // camera, microphone, location, notifications, clipboard: ask once per site, then remember
-    if (permission === 'fullscreen') return cb(true) // a video's fullscreen button, no question asked
+    if (SILENT.has(permission)) return cb(true)
     const need = permsOf(permission, d), host = privacy.host(d.requestingUrl || wc.getURL()), saved = settings.sitePerms[host] || {}
     if (!need.length || !host) return cb(false)
     if (need.some(n => saved[n] === false)) return cb(false)
     cb(need.every(n => saved[n] === true) || await askPermission(host, need))
   })
-  ses.setPermissionCheckHandler((wc, permission, origin, d) => { const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}; return need.length > 0 && need.every(n => s[n] === true) })
+  ses.setPermissionCheckHandler((wc, permission, origin, d) => { if (SILENT.has(permission)) return true; const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}; return need.length > 0 && need.every(n => s[n] === true) })
   ses.on('will-download', onDownload)
   const api = new ElectronChromeExtensions({
     license: 'GPL-3.0', session: ses,
@@ -493,8 +493,10 @@ function setupSession(ses) {
   api.ctx.router.apiHandler()('storage.notifyChanged', ({ extension }, area, changes) => api.ctx.router.sendEvent(extension.id, 'storage.onChanged', changes, area))
 }
 // ---- site permissions ----
-const PERMS = { camera: 'use your camera', microphone: 'use your microphone', geolocation: 'use your location', notifications: 'show notifications', 'clipboard-read': 'read your clipboard' }
-const permsOf = (permission, d) => permission === 'media' ? (d?.mediaTypes || []).map(t => t === 'video' ? 'camera' : 'microphone') : PERMS[permission] ? [permission] : []
+const PERMS = { camera: 'use your camera', microphone: 'use your microphone', geolocation: 'use your location', notifications: 'show notifications', 'clipboard-read': 'read your clipboard', midi: 'use your MIDI devices', midiSysex: 'fully control your MIDI devices' }
+// what Chrome grants without asking (a video's fullscreen button, copy buttons, keeping the screen awake, DRM players…); everything else not in PERMS is refused
+const SILENT = new Set(['fullscreen', 'clipboard-sanitized-write', 'screen-wake-lock', 'pointerLock', 'sensors', 'mediaKeySystem', 'persistent-storage', 'background-sync'])
+const permsOf = (permission, d) => permission === 'media' ? (d?.mediaTypes || [d?.mediaType]).filter(t => t === 'video' || t === 'audio').map(t => t === 'video' ? 'camera' : 'microphone') : PERMS[permission] ? [permission] : []
 const asking = new Map() // one question at a time per site and permission
 function askPermission(host, need) {
   const key = host + need.join()

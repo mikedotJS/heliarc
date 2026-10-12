@@ -222,6 +222,12 @@ module.exports = async (a, ok) => {
     ok('a remembered permission can be changed', S.settings().sitePerms['127.0.0.1'].notifications === false)
     await js(ui(), "api.call('setSitePerm', '127.0.0.1', 'notifications', null)"); await sleep(300)
     ok('or forgotten', !S.settings().sitePerms['127.0.0.1'])
+    const wcP = pp.view.webContents, asks = asked.length
+    ok('the screen can be kept awake without a question', await wcP.executeJavaScript("navigator.wakeLock.request('screen').then(l => (l.release(), 'ok'), e => e.name)", true) === 'ok')
+    ok('copy buttons work without a question', await wcP.executeJavaScript("navigator.clipboard.writeText('x').then(() => 'ok', e => e.name)", true) === 'ok' && asked.length === asks)
+    S.settings().sitePerms['127.0.0.1'] = { camera: true }
+    ok('a camera allowed for the site shows as granted to the page', await wcP.executeJavaScript("navigator.permissions.query({ name: 'camera' }).then(p => p.state)") === 'granted')
+    delete S.settings().sitePerms['127.0.0.1']
     dialog.showMessageBox = realBox; a.closeTab(pp.id)
     // private space: nothing is kept
     const PV = 3, pses = S.spaceSessions()[PV], histBefore = S.history().length

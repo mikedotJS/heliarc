@@ -16,10 +16,12 @@
     "sortablejs": "^1.15.7"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.2",
+    "@electron/osx-sign": "^2.7.1",
     "@electron/packager": "^20.3.0",
-    "png-to-ico": "^3.0.2",
     "electron": "^44.7.0",
-    "lucide-static": "^1.55.0"
+    "lucide-static": "^1.55.0",
+    "png-to-ico": "^3.0.2"
   },
   "description": "A private, Arc-style desktop browser",
   "license": "GPL-3.0-only",

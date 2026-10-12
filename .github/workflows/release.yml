@@ -19,14 +19,32 @@ jobs:
           - { os: macos-latest, script: 'package:mac', artifact: mac-x64, arch: x64 }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
+      - name: Import the Developer ID certificate (Mac, only when the Apple secrets are set)
+        if: runner.os == 'macOS' && env.MAC_CERT_P12 != ''
+        env:
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          echo "$MAC_CERT_P12" | base64 --decode > cert.p12
+          security create-keychain -p ci build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          security list-keychains -d user -s build.keychain login.keychain
+          rm cert.p12
       - run: npm run ${{ matrix.script }}
         env:
           ARCH: ${{ matrix.arch }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - name: Smoke test the packaged app (launches it and runs the offline self test)
         if: matrix.artifact != 'mac-x64'
         continue-on-error: true

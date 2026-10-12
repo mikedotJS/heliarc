@@ -77,6 +77,7 @@ function layout() {
   tabs.forEach(t => {
     const i = ids.indexOf(t.id)
     t.view?.setBounds(i < 0 ? { x: c.x, y: c.y, width: c.w, height: c.h } : { x: c.x + i * (half + GAP), y: c.y, width: i ? c.w - half - GAP : half, height: c.h })
+    if (t.view && isShown(t.id)) fitSoon(t)
   })
   if (peek) { const r = peekRect(); peek.view.setBounds({ x: r.x, y: r.y + PEEKBAR, width: r.w, height: r.h - PEEKBAR }) }
 }
@@ -96,7 +97,8 @@ function makeView(tab) {
   wc.on('page-favicon-updated', (_, icons) => { tab.icon = icons[0]; push() })
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; push() })
   wc.on('did-stop-loading', () => { tab.loading = false; push() })
-  wc.on('did-navigate', (_, u) => { tab.url = u.startsWith('file:') ? '' : u; visit(tab, u); push() })
+  wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (!tab.manual) wc.setZoomFactor(1); tab.url = u.startsWith('file:') ? '' : u; visit(tab, u); push() })
+  wc.on('did-finish-load', () => setTimeout(() => fitSoon(tab), 500))
   wc.on('did-navigate-in-page', (_, u) => { tab.url = u; push() })
   wc.on('did-fail-load', (_, code, desc, url, isMain) => {
     if (isMain && code !== -3) { tab.error = `${desc} — ${url}`; tab.loading = false; push() }
@@ -139,11 +141,22 @@ function shortcut(e, i) {
   if (a) { e.preventDefault(); RUN[a]() }
 }
 function toggleDevtools() { const wc = cur()?.view?.webContents; if (wc) wc.isDevToolsOpened() ? wc.closeDevTools() : wc.openDevTools({ mode: 'detach' }) }
-function zoom(dir) { // step through Chromium's zoom levels; 0 resets
-  const wc = cur()?.view?.webContents; if (!wc) return
+function zoom(dir) { // step through Chromium's zoom levels; 0 resets (and lets the page fit the window again)
+  const t = cur(), wc = t?.view?.webContents; if (!wc) return
   const z = wc.getZoomFactor(), i = ZOOMS.reduce((b, v, k) => Math.abs(v - z) < Math.abs(ZOOMS[b] - z) ? k : b, 0)
-  wc.setZoomFactor(dir ? ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i + dir))] : 1); push()
+  t.manual = !!dir; wc.setZoomFactor(dir ? ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i + dir))] : 1); push()
+  if (!dir) fit(t)
 }
+async function fit(t) { // a page wider than the window (min-width layouts) is shrunk to fit instead of scrolling sideways; never below 60%, never over a manual zoom
+  const wc = t.view?.webContents; if (!wc || wc.isDestroyed() || t.manual || !isShown(t.id)) return
+  const w = t.view.getBounds().width; if (!w) return
+  const sw = await wc.executeJavaScript('document.documentElement.scrollWidth').catch(() => 0)
+  if (t.manual || wc.isDestroyed()) return
+  if (sw > (w / wc.getZoomFactor()) * 1.02) t.fitW = sw
+  const z = t.fitW ? Math.max(.6, Math.min(1, Math.floor(w / t.fitW * 100) / 100)) : 1
+  if (z !== wc.getZoomFactor()) { wc.setZoomFactor(z); push() }
+}
+const fitSoon = t => { clearTimeout(t.fitTimer); t.fitTimer = setTimeout(() => fit(t), 300) }
 
 // ---- overlays: command bar, panels, find ----
 function openCmd(mode) {

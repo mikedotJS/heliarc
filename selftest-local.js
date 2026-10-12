@@ -7,6 +7,7 @@ const VIDEO = `<title>Video</title><video id=v width=320 height=180></video><can
 const PAGES = {
   '/': '<title>Local home</title><h1>hello</h1><p>needle needle needle</p><a id=l href="/second">second</a>',
   '/second': '<title>Second page</title><p>second</p>',
+  '/wide': '<title>Wide</title><body style="margin:0;min-width:1200px"><p>wide</p>',
   '/login': '<title>Login</title><form id=f method=post action=/done><input id=u name=user type=text><input id=p name=pass type=password><button type=button id=eye>Show</button><button>Go</button></form>',
   '/done': '<title>Done</title>ok',
   '/profile': '<title>Profile</title><form><input id=em autocomplete=email><input id=fn autocomplete=given-name><input id=ci autocomplete=address-level2></form>',
@@ -205,6 +206,13 @@ module.exports = async (a, ok) => {
 
   await section('sidebar and shortcuts', async () => {
     reset(); await sleep(300); const t = await open('/')
+    ok('a normal page stays at 100%', await sleep(1200).then(() => t.view.webContents.getZoomFactor() === 1))
+    const ww = t.view.webContents, vw = () => t.view.getBounds().width; await ww.loadURL(base + '/wide')
+    ok('a page wider than the window is shrunk to fit', await until(async () => ww.getZoomFactor() < 1) && Math.abs(ww.getZoomFactor() - Math.floor(vw() / 1200 * 100) / 100) < .011, `zoom=${ww.getZoomFactor()} view=${vw()}`)
+    ok('no sideways scroll left', await js(ww, 'document.documentElement.scrollWidth <= innerWidth + 1'))
+    S.zoom(1); const manual = ww.getZoomFactor(); await sleep(900); ok('manual zoom wins over the fit', ww.getZoomFactor() === manual, `${manual} → ${ww.getZoomFactor()}`)
+    S.zoom(0); ok('Ctrl+0 fits the page again', await until(async () => ww.getZoomFactor() < 1))
+    await ww.loadURL(base + '/'); ok('fit is dropped on the next page', await until(async () => ww.getZoomFactor() === 1))
     S.toggleSidebar(); await sleep(300)
     ok('sidebar collapses and the page grows', !S.sidebar() && t.view.getBounds().x === 8 && !ui().isDestroyed(), JSON.stringify(t.view.getBounds()))
     S.edge().webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 300 }); await sleep(500)
@@ -219,6 +227,8 @@ module.exports = async (a, ok) => {
     }
     ok('context menu shows', shownBy.some(Boolean), JSON.stringify(shownBy))
     S.toggleSidebar(); await sleep(300); ok('sidebar comes back', S.sidebar() && t.view.getBounds().x === 262)
+    const fits = async () => (await js(t.view.webContents, 'innerWidth')) === t.view.getBounds().width
+    ok('page layout matches the view width after the sidebar returns', await until(fits), `${await js(t.view.webContents, 'innerWidth')} vs ${t.view.getBounds().width}`)
     // the command palette sits in the middle of the page area, not of the whole window
     const cmdCenter = async () => { a.openCmd('new'); await sleep(900); const r = await js(a.cmd().webContents, `(() => { const b = document.getElementById('box').getBoundingClientRect(); return { mid: b.x + b.width / 2, w: innerWidth } })()`); a.closeCmd(); await sleep(300); return r }
     const pageMid = () => { const b = t.view.getBounds(); return b.x + b.width / 2 }

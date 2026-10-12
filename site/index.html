@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Heliarc, the private browser with a sidebar</title>
+  <meta name="description" content="Heliarc is a private desktop browser for Mac and Windows with a tab sidebar, built-in ad and tracker blocking, and support for Chrome extensions.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f6f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d12" media="(prefers-color-scheme: dark)">
+  <meta property="og:title" content="Heliarc, the private browser with a sidebar">
+  <meta property="og:description" content="Tabs in a sidebar. Trackers out. Free and open source for Mac and Windows.">
+  <meta property="og:image" content="img/og.jpg">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="img/icon.webp" type="image/webp">
+  <link rel="preload" href="fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" as="image" href="img/window-1400.webp" type="image/webp" fetchpriority="high">
+  <link rel="stylesheet" href="style.css">
+  <script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav">
+    <div class="wrap nav-row">
+      <a class="brand" href="#top" aria-label="Heliarc home">
+        <img src="img/icon.webp" alt="" width="28" height="28">
+        <span>Heliarc</span>
+      </a>
+      <nav aria-label="Main">
+        <a href="#tabs">Tabs</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#extensions">Extensions</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="icon-link" href="https://github.com/mikedotJS/heliarc" aria-label="Heliarc on GitHub"><i class="i" style="--src:url(icons/github-logo.svg)"></i></a>
+        <a class="btn btn-primary btn-sm" href="#download">Download</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" id="top">
+      <div class="hero-copy">
+        <h1><span>Tabs in a sidebar.</span> <span class="accent">Trackers out.</span></h1>
+        <p class="lead">A private browser for Mac and Windows. Blocks ads and trackers by default, runs your Chrome extensions.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="#download"><i class="i" style="--src:url(icons/download-simple.svg)"></i>Download</a>
+          <a class="btn btn-ghost" href="https://github.com/mikedotJS/heliarc"><i class="i" style="--src:url(icons/github-logo.svg)"></i>View on GitHub</a>
+        </div>
+      </div>
+      <div class="hero-shot">
+        <img src="img/window-1400.webp" srcset="img/window-1400.webp 1400w, img/window.webp 2560w" sizes="(min-width: 1000px) 58vw, 92vw" width="1400" height="897" alt="The Heliarc window: a sidebar with favorites, a folder and tabs on the left, and a Wikipedia article about auroras on the right." fetchpriority="high">
+      </div>
+    </section>
+
+    <section class="section wrap tabs" id="tabs">
+      <div class="tabs-copy reveal">
+        <h2>Your tabs, in order.</h2>
+        <p class="body">Pin favorites, tuck pages into folders, split the screen in two. Spaces keep Home, Work and Fun apart, each with its own logins.</p>
+        <ul class="points">
+          <li><i class="i" style="--src:url(icons/hand-swipe-right.svg)"></i>Swipe two fingers to go back, forward or change space</li>
+          <li><i class="i" style="--src:url(icons/arrow-square-in.svg)"></i>Peek at a link with Shift+click, without leaving the page</li>
+          <li><i class="i" style="--src:url(icons/archive.svg)"></i>Tabs you stopped using archive themselves</li>
+          <li><i class="i" style="--src:url(icons/picture-in-picture.svg)"></i>A playing video floats on when you leave its tab</li>
+        </ul>
+      </div>
+      <figure class="frame reveal">
+        <img src="img/sidebar.webp" width="1300" height="1100" loading="lazy" alt="Close-up of the Heliarc sidebar: address bar, a pinned GitHub tab, a Reading folder with two pages, a new tab button and the Aurora tab selected." >
+      </figure>
+    </section>
+
+    <section class="section wrap command" id="command">
+      <div class="reveal">
+        <h2>Type anything. Land anywhere.</h2>
+        <p class="body">One bar for tabs, history and search. Bangs jump straight to a site, or add your own.</p>
+        <p class="bangs" aria-label="Built-in bangs"><code>!w</code><code>!yt</code><code>!gh</code><code>!g</code><code>!ddg</code></p>
+      </div>
+      <figure class="frame frame-plain reveal">
+        <img src="img/command.webp" width="1400" height="370" loading="lazy" alt="The Heliarc command bar with the word aurora typed in. It offers to search, and to switch to the open Aurora tab.">
+      </figure>
+    </section>
+
+    <section class="section wrap" id="privacy">
+      <div class="reveal">
+        <p class="eyebrow">Privacy</p>
+        <h2>Private from the first launch.</h2>
+      </div>
+      <div class="bento">
+        <article class="cell b-img reveal">
+          <h3>Every switch in plain sight</h3>
+          <p>Cookies, HTTPS, WebRTC and fingerprinting each get one toggle.</p>
+          <img src="img/settings-900.webp" srcset="img/settings-900.webp 900w, img/settings.webp 1800w" sizes="(min-width: 900px) 520px, 90vw" width="900" height="630" loading="lazy" alt="Heliarc settings, privacy section, with switches for third-party cookies, HTTPS, WebRTC and fingerprinting turned on.">
+        </article>
+        <article class="cell b-trk reveal">
+          <i class="i i-lg" style="--src:url(icons/shield-check.svg)"></i>
+          <h3>Ads and trackers, blocked</h3>
+          <p>Filter lists run on every page. Allow ads on one site with a click on the shield.</p>
+        </article>
+        <article class="cell b-prv reveal">
+          <i class="i i-lg" style="--src:url(icons/detective.svg)"></i>
+          <h3>Private space</h3>
+          <p>No history, no saved tabs, no extensions. Wiped when its last tab closes.</p>
+        </article>
+        <article class="cell b-cki reveal">
+          <i class="i i-lg" style="--src:url(icons/cookie.svg)"></i>
+          <h3>Fewer ways to follow you</h3>
+          <p>Third-party cookies blocked, HTTPS upgrades, a plain browser fingerprint.</p>
+        </article>
+        <article class="cell b-perm reveal">
+          <i class="i i-lg" style="--src:url(icons/lock-key.svg)"></i>
+          <div>
+            <h3>Sites ask first</h3>
+            <p>Camera, microphone, location, notifications and clipboard need your yes. What you chose to remember is listed in Settings.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section wrap" id="extensions">
+      <div class="reveal">
+        <h2>Bring your extensions and your history.</h2>
+      </div>
+      <div class="pair">
+        <article class="panel reveal">
+          <h3>Chrome extensions</h3>
+          <p>Bitwarden and Proton Pass run in the toolbar. Add anything from the Chrome Web Store with one button.</p>
+          <ul class="logos" aria-label="Password managers that work in Heliarc">
+            <li><i class="logo" role="img" aria-label="Bitwarden" style="--src:url(icons/bitwarden.svg)"></i></li>
+            <li><i class="logo" role="img" aria-label="Proton Pass" style="--src:url(icons/proton.svg)"></i></li>
+          </ul>
+        </article>
+        <article class="panel reveal">
+          <h3>Import from your old browser</h3>
+          <p>History, bookmarks and passwords come over from these browsers and Edge, or from an exported file.</p>
+          <ul class="logos" aria-label="Browsers you can import from">
+            <li><i class="logo" role="img" aria-label="Chrome" style="--src:url(icons/googlechrome.svg)"></i></li>
+            <li><i class="logo" role="img" aria-label="Brave" style="--src:url(icons/brave.svg)"></i></li>
+            <li><i class="logo" role="img" aria-label="Firefox" style="--src:url(icons/firefox.svg)"></i></li>
+            <li><i class="logo" role="img" aria-label="Safari" style="--src:url(icons/safari.svg)"></i></li>
+            <li><i class="logo" role="img" aria-label="Arc" style="--src:url(icons/arc.svg)"></i></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section wrap download" id="download">
+      <div class="reveal">
+        <h2>Free and open source.</h2>
+        <p class="body">Heliarc is released under the GPL-3.0 license. <span class="ver" data-version role="status"><span class="skeleton" aria-hidden="true"></span><span class="ver-text">Latest release</span></span></p>
+      </div>
+      <div class="pair">
+        <article class="panel reveal">
+          <h3><i class="i" style="--src:url(icons/apple-logo.svg)"></i>Mac</h3>
+          <p>Signed and notarized by Apple. Pick the build that matches your Mac.</p>
+          <div class="actions">
+            <a class="btn btn-primary" data-asset="Heliarc-mac-arm64.zip" href="https://github.com/mikedotJS/heliarc/releases/latest/download/Heliarc-mac-arm64.zip">Apple silicon<small data-size></small></a>
+            <a class="btn btn-ghost" data-asset="Heliarc-mac-x64.zip" href="https://github.com/mikedotJS/heliarc/releases/latest/download/Heliarc-mac-x64.zip">Intel<small data-size></small></a>
+          </div>
+        </article>
+        <article class="panel reveal">
+          <h3><i class="i" style="--src:url(icons/windows-logo.svg)"></i>Windows</h3>
+          <p>Not signed yet. If Windows warns you, click More info, then Run anyway.</p>
+          <div class="actions">
+            <a class="btn btn-primary" data-asset="Heliarc-windows-x64.zip" href="https://github.com/mikedotJS/heliarc/releases/latest/download/Heliarc-windows-x64.zip">64-bit<small data-size></small></a>
+          </div>
+        </article>
+      </div>
+      <p class="note reveal">Protected video such as Netflix and Spotify does not play yet. Heliarc updates itself on Mac and tells you when a new version is out on Windows.</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-row">
+      <p>Heliarc is inspired by the Arc browser and the Helium browser. It is not affiliated with either project.</p>
+      <p class="footer-links"><a href="https://github.com/mikedotJS/heliarc">GitHub</a><a href="https://github.com/mikedotJS/heliarc/releases">Releases</a><a href="https://github.com/mikedotJS/heliarc/blob/main/LICENSE">License</a></p>
+    </div>
+  </footer>
+
+  <script src="site.js" defer></script>
+</body>
+</html>

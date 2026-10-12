@@ -8,7 +8,7 @@ const root = path.join(__dirname, '..')
   fs.rmSync(path.join(root, 'dist', 'Heliarc-win32-x64'), { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }) // antivirus can briefly lock a fresh build
   await packager({
     dir: root, name: 'Heliarc', platform: 'win32', arch: 'x64', out: path.join(root, 'dist'), overwrite: true, icon: path.join(root, 'build', 'icon.ico'),
-    ignore: [/^\/(dist|build|motion-.*|shot-.*|screenshot.*|\.git|\.github|\.gitignore)/],
+    ignore: [/^\/(dist|build|motion-.*|shot-.*|screenshot.*|site|\.git|\.github|\.gitignore)/],
   })
   const zip = path.join(root, 'dist', 'Heliarc-windows-x64.zip')
   fs.rmSync(zip, { force: true })

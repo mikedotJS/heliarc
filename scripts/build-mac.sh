@@ -12,7 +12,7 @@ done
 iconutil -c icns build/icon.iconset -o build/icon.icns
 npx @electron/packager . Heliarc --platform=darwin --arch=$ARCH --out=dist --overwrite \
   --icon=build/icon --app-bundle-id=app.heliarc.browser --app-category-type=public.app-category.productivity --extend-info=scripts/extend-info.plist \
-  --ignore='^/(dist|build|motion-.*|shot-.*|screenshot.*|\.git|\.github|\.gitignore)'
+  --ignore='^/(dist|build|motion-.*|shot-.*|screenshot.*|site|\.git|\.github|\.gitignore)'
 APP=dist/Heliarc-darwin-$ARCH/Heliarc.app
 cp build/icon.icns "$APP/Contents/Resources/electron.icns"
 if [ -n "$APPLE_ID" ]; then node scripts/sign-mac.js "$APP"; else codesign --force --deep --sign - "$APP"; fi # signed + notarized when the Apple secrets are set, ad-hoc otherwise

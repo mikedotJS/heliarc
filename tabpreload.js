@@ -26,6 +26,22 @@ addEventListener('click', e => { // SPA logins submit without a form submit even
   if (b && (b.type === 'submit' || LOGIN.test(b.innerText || b.value || b.getAttribute('aria-label') || ''))) capture(scope(b))
 }, true)
 
+// Chrome Web Store: its own "Add to Chrome" button stays disabled outside Chrome, so turn it into a working "Add to Heliarc".
+if (location.hostname === 'chromewebstore.google.com') {
+  const say = (b, t) => { b.textContent = t }
+  const swap = () => (document.querySelector('[jsname=gQ2Xie]')?.click(), document.querySelectorAll('button[disabled][class*="UywwFc-LgbsSe"]').forEach(b => {
+    b.disabled = false; say(b, 'Add to Heliarc'); if (b.dataset.heliarc) return
+    b.dataset.heliarc = '1'
+    b.addEventListener('click', async e => {
+      e.stopImmediatePropagation(); e.preventDefault(); if (!e.isTrusted || b.dataset.busy) return
+      b.dataset.busy = '1'; say(b, 'Adding…')
+      const r = await ipcRenderer.invoke('ext:install', location.href).catch(err => ({ error: err.message }))
+      delete b.dataset.busy; say(b, r.error ? 'Retry — ' + r.error.slice(0, 60) : '✓ Added to Heliarc')
+    }, true)
+  }))
+  addEventListener('DOMContentLoaded', () => { swap(); new MutationObserver(swap).observe(document.body, { childList: true, subtree: true }) })
+}
+
 // Fill only when the user themselves just clicked the field (or tabbed into it): a script calling .focus() must not trigger a fill.
 let intent = { el: null, at: 0 }, creds, profile
 async function fill(el) {

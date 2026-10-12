@@ -144,7 +144,7 @@ function render() {
   $('#pwbar').innerHTML = s.pw ? `<span>${s.pw.update ? 'Update' : 'Save'} password for <b>${esc(s.pw.user || 'this login')}</b> on ${esc(host(s.pw.origin))}?</span><button data-pw="pwSave">${s.pw.update ? 'Update' : 'Save'}</button><button data-pw="pwNever">Never</button><button data-pw="pwDismiss">Not now</button>` : ''
   const store = /^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)\/detail\//.test(a?.url || ''), x = ext?.url === a?.url ? ext : null
   $('#extbar').className = store ? 'show' : ''
-  $('#extbar').innerHTML = !store ? '' : x?.done ? `<span>✓ <b>${esc(x.done)}</b> added to Heliarc</span>` : `<span>${x?.error ? 'Couldn’t add: ' + esc(x.error) : 'Chrome’s “Add” button doesn’t work here.'}</span><button ${x?.busy ? 'disabled' : ''}>${x?.busy ? 'Adding…' : x?.error ? 'Retry' : 'Add to Heliarc'}</button>`
+  $('#extbar').innerHTML = !store ? '' : x?.done ? `<span>✓ <b>${esc(x.done)}</b> added to Heliarc</span>` : `<span>${x?.error ? 'Couldn’t add: ' + esc(x.error) : 'Install this extension in Heliarc?'}</span><button ${x?.busy ? 'disabled' : ''}>${x?.busy ? 'Adding…' : x?.error ? 'Retry' : 'Add to Heliarc'}</button>`
   $('#pins').innerHTML = s.tabs.filter(t => t.fav).map(t => `<div class="tile ${fresh || !seen.has(t.id) ? 'enter' : ''} ${t.id === s.active ? 'on' : ''}" style="--i:${n++}" data-id="${t.id}" title="${esc(t.title)}">${ico(t)}</div>`).join('')
   const pinned = mine.filter(t => t.pinned && !t.folder), fl = s.folders.filter(f => f.space === s.space)
   $('#pinned').innerHTML = pinned.map(t => row(t, s, n++, fresh)).join('')

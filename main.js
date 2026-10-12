@@ -521,6 +521,10 @@ app.whenReady().then(async () => {
     if (process.platform === 'win32') shell.openExternal('ms-settings:defaultapps')
     return app.isDefaultProtocolClient('http')
   })
+  ipcMain.handle('ext:install', async (e, url) => { // the Web Store page's own button (see tabpreload.js)
+    if (senderOrigin(e) !== 'https://chromewebstore.google.com') return { error: 'Not allowed here' }
+    try { return { ok: true, ...await ext.installFromStore(String(url), spaceSessions()) } } catch (err) { return { error: err.message } }
+  })
   ipcMain.on('pw:captured', (e, { user, pass }) => {
     const t = tabOf(e.sender), origin = senderOrigin(e)
     if (!t || !origin || !pass || !safeStorage.isEncryptionAvailable() || settings.pwNever.includes(origin)) return

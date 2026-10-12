@@ -84,6 +84,7 @@ module.exports = async (a, ok) => {
     await js(ui(), `document.querySelector('[data-pw=pwSave]').click()`)
     ok('password saved encrypted', await until(async () => S.vault().length === 1) && !JSON.stringify(S.vault()).includes('s3cret'), JSON.stringify(S.vault()).slice(0, 80))
     ok('offer disappears after saving', S.pending() === null)
+    ok('Chrome Web Store pages offer "Add to Heliarc"', await js(ui(), `(() => { const t = state.tabs.find(t => t.id === state.active), u = t.url; t.url = 'https://chromewebstore.google.com/detail/x/abcdefghijklmnopabcdefghijklmnop'; render(); const r = document.querySelector('#extbar').innerText.includes('Add to Heliarc'); t.url = u; render(); return r && !document.querySelector('#extbar').classList.contains('show') })()`))
     await open('/login'); const t2 = a.cur(); await sleep(300)
     const val = (wc, ids) => js(wc, `${JSON.stringify(ids)}.map(i => document.getElementById(i).value).join('/')`)
     const click = async (wc, sel) => {

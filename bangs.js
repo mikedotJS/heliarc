@@ -4,15 +4,22 @@ const BANGS = {
   yt: 'https://www.youtube.com/results?search_query=%s', gh: 'https://github.com/search?q=%s',
   ddg: 'https://duckduckgo.com/?q=%s', a: 'https://www.amazon.com/s?k=%s', r: 'https://www.reddit.com/search/?q=%s',
 }
-const DEFAULT_SEARCH = 'https://search.brave.com/search?q=%s'
+const ENGINES = {
+  brave: ['Brave Search', 'https://search.brave.com/search?q=%s'], ddg: ['DuckDuckGo', 'https://duckduckgo.com/?q=%s'],
+  google: ['Google', 'https://www.google.com/search?q=%s'], bing: ['Bing', 'https://www.bing.com/search?q=%s'],
+  startpage: ['Startpage', 'https://www.startpage.com/do/search?q=%s'], ecosia: ['Ecosia', 'https://www.ecosia.org/search?q=%s'],
+  kagi: ['Kagi', 'https://kagi.com/search?q=%s'], qwant: ['Qwant', 'https://www.qwant.com/?q=%s'],
+}
 
-function resolve(input) {
+// opts.engine picks the search engine, opts.bangs are the user's own "!trigger" shortcuts (they win over the built-in ones)
+function resolve(input, { engine = 'brave', bangs = [] } = {}) {
   const t = input.trim()
   if (!t) return 'about:blank'
   const m = t.match(/^!(\w+)\s+(.+)$/)
-  if (m && BANGS[m[1]]) return BANGS[m[1]].replace('%s', encodeURIComponent(m[2]))
+  const url = m && (bangs.find(x => x.trigger === m[1].toLowerCase())?.url || BANGS[m[1]])
+  if (url) return url.replace('%s', encodeURIComponent(m[2]))
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t
   if (/^(localhost|[\w-]+(\.[\w-]+)+)(:\d+)?(\/\S*)?$/i.test(t)) return 'https://' + t
-  return DEFAULT_SEARCH.replace('%s', encodeURIComponent(t))
+  return (ENGINES[engine] || ENGINES.brave)[1].replace('%s', encodeURIComponent(t))
 }
-module.exports = { resolve }
+module.exports = { resolve, ENGINES, BANGS }

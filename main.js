@@ -1,11 +1,15 @@
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen } = require('electron')
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen, dialog } = require('electron')
 const path = require('path'), fs = require('fs'), os = require('os')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
-const { resolve } = require('./bangs')
+const bangs = require('./bangs')
+const resolve = input => bangs.resolve(input, settings)
 const { ElectronChromeExtensions } = require('electron-chrome-extensions')
 const store = require('./lib/store')
 const keys = require('./lib/shortcuts')
 const ext = require('./lib/extensions')
+const privacy = require('./lib/privacy')
+const importers = require('./lib/importers')
+const updates = require('./lib/updates')
 
 const TEST = process.argv.some(a => /^--(selftest|motioncheck)/.test(a))
 if (process.env.HELIARC_USER_DATA) app.setPath('userData', process.env.HELIARC_USER_DATA)
@@ -23,9 +27,11 @@ const SPACES = [ // one browser profile (cookies, logins) per space
   { name: 'Home', icon: 'house', c1: '#5b4bff', c2: '#c04bff', partition: 'persist:main' },
   { name: 'Work', icon: 'briefcase', c1: '#0aa6a6', c2: '#2b6fff', partition: 'persist:work' },
   { name: 'Fun', icon: 'gamepad-2', c1: '#ff7a3d', c2: '#ff3d77', partition: 'persist:fun' },
+  { name: 'Private', icon: 'eye-off', c1: '#3b3b4a', c2: '#101018', partition: 'private', private: true }, // in memory only: no history, no saved tabs, wiped when its last tab closes
 ]
+const PRIVATE = SPACES.findIndex(s => s.private)
 const ZOOMS = [.25, .33, .5, .67, .75, .8, .9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
-const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [] }
+const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], sitePerms: {}, autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true }
 // Picture-in-picture for the biggest playing, unmuted video (needs a user gesture, which executeJavaScript can claim)
 const PIP_ON = `(async () => { const v = [...document.querySelectorAll('video')].filter(v => !v.paused && !v.ended && !v.muted && v.readyState > 2 && v.videoWidth && !v.disablePictureInPicture).sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0]; if (!v || document.pictureInPictureElement) return false; await v.requestPictureInPicture(); return true })()`
 const PIP_OFF = `document.pictureInPictureElement && document.exitPictureInPicture()`
@@ -45,15 +51,15 @@ const tabOf = wc => tabs.find(t => t.view?.webContents === wc)
 const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } }
 const zoneOf = t => t.fav ? 'fav' : t.folder ? 'f' + t.folder : t.pinned ? 'pinned' : 'list'
 const snapshot = () => ({
-  tabs: tabs.map(({ id, title, url, icon, pinned, fav, folder, space, muted, last }) => ({ id, title, url, icon, pinned, fav, folder, space, muted, last })),
-  folders, active, space, sidebar, archive, settings,
+  tabs: tabs.filter(t => !SPACES[t.space].private).map(({ id, title, url, icon, pinned, fav, folder, space, muted, last }) => ({ id, title, url, icon, pinned, fav, folder, space, muted, last })),
+  folders, active: SPACES[byId(active)?.space]?.private ? null : active, space: SPACES[space].private ? 0 : space, sidebar, archive, settings,
 })
 const push = () => {
   if (!ui) return
   const nav = cur()?.view?.webContents.navigationHistory
   const s = {
-    active, space, spaces: SPACES, blocked, blockerState, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
-    sidebar, split, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, keys: keys.resolve(settings.shortcuts),
+    active, space, spaces: SPACES, update, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
+    sidebar, split, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: byId(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
     pw: pwPending && { tab: pwPending.tab, origin: pwPending.origin, user: pwPending.user, update: pwPending.update },
@@ -89,8 +95,9 @@ function stack() { // z-order: sidebar < pages < peek < floating sidebar < edge 
 const refresh = () => { tabs.forEach(t => t.view?.setVisible(isShown(t.id))); layout(); push() }
 
 function makeView(tab) {
-  const view = new WebContentsView({ webPreferences: { partition: SPACES[tab.space].partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD } })
+  const view = new WebContentsView({ webPreferences: { partition: SPACES[tab.space].partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD, additionalArguments: settings.fingerprint ? ['--heliarc-fp'] : [] } })
   const wc = view.webContents
+  if (settings.webrtcProtect) wc.setWebRTCIPHandlingPolicy('default_public_interface_only') // WebRTC doesn't reveal the local network address
   view.setBorderRadius(12)
   tab.view = view; tab.asleep = false
   wc.setWindowOpenHandler(({ url, disposition, features }) => { disposition === 'new-window' && !features ? openPeek(url) : newTab(url); return { action: 'deny' } }) // Shift+click = Peek
@@ -99,9 +106,14 @@ function makeView(tab) {
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; push() })
   wc.on('did-stop-loading', () => { tab.loading = false; push() })
   wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (!tab.manual) wc.setZoomFactor(1); tab.url = u.startsWith('file:') ? '' : u; visit(tab, u); push() })
-  wc.on('did-finish-load', () => setTimeout(() => fitSoon(tab), 500))
+  wc.on('did-finish-load', () => { tab.upN = 0; setTimeout(() => fitSoon(tab), 500) })
   wc.on('did-navigate-in-page', (_, u) => { tab.url = u; push() })
+  const toHttps = (e, u) => { const s = settings.httpsOnly && !tab.httpOk?.has(hostOf(u)) && (tab.upN = (tab.upN || 0) + 1) < 4 && privacy.upgrade(u); if (s) { e.preventDefault(); tab.upgraded = s; wc.loadURL(s) } }
+  wc.on('will-navigate', (e, u) => toHttps(e, u)); wc.on('will-redirect', (e, u) => toHttps(e, u)) // HTTPS only: http:// links are upgraded
   wc.on('did-fail-load', (_, code, desc, url, isMain) => {
+    if (isMain && url === tab.upgraded && privacy.NO_HTTPS.includes(code)) { // the site has no HTTPS: allow plain http for this host, in this tab
+      const http = url.replace(/^https:/, 'http:'); (tab.httpOk ??= new Set()).add(hostOf(url)); tab.upgraded = null; wc.loadURL(http); return
+    }
     if (isMain && code !== -3) { tab.error = `${desc} — ${url}`; tab.loading = false; push() }
   })
   wc.on('before-input-event', (e, i) => { if (!extCommand(e, i, tab)) shortcut(e, i) })
@@ -115,7 +127,8 @@ function makeView(tab) {
   win.contentView.addChildView(view)
   crxOf(tab)?.addTab(wc, win)
   stack()
-  wc.loadURL(tab.url || NEWTAB + '#' + encodeURIComponent(keys.resolve(settings.shortcuts).editAddress))
+  const first = settings.httpsOnly && privacy.upgrade(tab.url); if (first) tab.upgraded = first
+  wc.loadURL(first || tab.url || NEWTAB + '#' + encodeURIComponent(keys.resolve(settings.shortcuts).editAddress))
   layout()
 }
 function extItems(wc, p) {
@@ -124,6 +137,9 @@ function extItems(wc, p) {
 }
 function pageMenu(wc, p) {
   Menu.buildFromTemplate([
+    ...(p.misspelledWord ? [ // spell check: suggestions first, like every browser
+      ...(p.dictionarySuggestions.length ? p.dictionarySuggestions.slice(0, 5).map(s => ({ label: s, click: () => wc.replaceMisspelling(s) })) : [{ label: 'No suggestions', enabled: false }]),
+      { label: `Add “${p.misspelledWord}” to dictionary`, click: () => wc.session.addWordToSpellCheckerDictionary(p.misspelledWord) }, { type: 'separator' }] : []),
     ...(p.linkURL ? [{ label: 'Open link in new tab', click: () => newTab(p.linkURL) }, { label: 'Open link in peek', click: () => openPeek(p.linkURL) }, { label: 'Copy link address', click: () => clipboard.writeText(p.linkURL) }, { type: 'separator' }] : []),
     ...(p.mediaType === 'image' ? [{ label: 'Save image', click: () => wc.downloadURL(p.srcURL) }, { type: 'separator' }] : []),
     ...(p.isEditable ? [{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' }] : p.selectionText ? [{ role: 'copy' }, { type: 'separator' }] : []),
@@ -137,7 +153,7 @@ function pageMenu(wc, p) {
 
 // ---- shortcuts ----
 const RUN = {
-  newTab: () => openCmd('new'), editAddress: () => openCmd('edit'), closeTab: () => active && closeTab(active), reload: () => cur()?.view?.webContents.reload(),
+  newPrivateTab: () => { const had = tabs.some(t => t.space === PRIVATE); switchSpace(PRIVATE); had && newTab(null, PRIVATE) }, newTab: () => openCmd('new'), editAddress: () => openCmd('edit'), closeTab: () => active && closeTab(active), reload: () => cur()?.view?.webContents.reload(),
   find: () => openFind(), zoomIn: () => zoom(1), zoomOut: () => zoom(-1), zoomReset: () => zoom(0), toggleSidebar: () => toggleSidebar(), splitView: () => toggleSplit(),
   library: () => openPanel('downloads'), history: () => openPanel('history'), settings: () => openPanel('settings'),
   print: () => cur()?.view?.webContents.print({ printBackground: true }), devtools: () => toggleDevtools(),
@@ -200,7 +216,7 @@ function closeFind() {
 
 // ---- tabs ----
 function visit(tab, u) { // history
-  if (!/^https?:/.test(u)) return
+  if (!/^https?:/.test(u) || SPACES[tab.space].private) return
   if (history[0]?.url === u) history[0].at = Date.now()
   else history.unshift({ url: u, title: tab.title, at: Date.now() })
   history.length = Math.min(history.length, 3000); store.save('history', history)
@@ -237,11 +253,13 @@ function removeTab(t) {
 function closeTab(id) {
   const t = byId(id); if (!t) return
   removeTab(t)
+  if (SPACES[t.space].private && !tabs.some(x => x.space === t.space)) { wipe(session.fromPartition(SPACES[t.space].partition)); space === t.space ? switchSpace(0) : refresh(); return }
   if (active !== id) { refresh(); return }
   const sp = t.fav ? space : t.space, same = tabs.filter(x => x.space === sp && !x.fav)
   if (same.length) activate((same.find(x => x.id > id) || same.at(-1)).id)
   else newTab(null, sp)
 }
+const wipe = ses => Promise.all([ses.clearStorageData(), ses.clearCache(), ses.clearHostResolverCache()]).catch(() => {})
 function switchSpace(i) {
   space = i
   const mine = tabs.filter(t => t.space === i && !t.fav)
@@ -256,7 +274,8 @@ function sleep(id) { // hibernate: free the page, keep the tab in the list
 function go(input) {
   const t = cur(); if (!t) return
   t.error = null; t.url = resolve(input)
-  t.view ? t.view.webContents.loadURL(t.url) : makeView(t)
+  const up = settings.httpsOnly && privacy.upgrade(t.url); if (up) t.upgraded = up; t.upN = 0
+  t.view ? t.view.webContents.loadURL(up || t.url) : makeView(t)
   push()
 }
 function retarget(t, sp) { // move a tab to another space: pages must be rebuilt in that space's profile
@@ -300,7 +319,7 @@ function archiveTab(t) {
 }
 function sweep(now = Date.now()) {
   const h = settings.archiveHours; if (!h) return
-  for (const t of [...tabs]) if (!t.fav && !t.pinned && !t.folder && !isShown(t.id) && !t.playing && now - t.last > h * 3600e3) archiveTab(t)
+  for (const t of [...tabs]) if (!SPACES[t.space].private && !t.fav && !t.pinned && !t.folder && !isShown(t.id) && !t.playing && now - t.last > h * 3600e3) archiveTab(t)
   push()
 }
 
@@ -393,6 +412,25 @@ const decrypt = v => { try { return safeStorage.decryptString(Buffer.from(v, 'ba
 function senderOrigin(e) { // only real web origins: file:, data: and about:blank pages have the opaque origin "null" and must never share logins
   try { const u = new URL(e.senderFrame.url); return /^https?:$/.test(u.protocol) ? u.origin : null } catch { return null }
 }
+// ---- import from other browsers ----
+function addHistory(list) {
+  const seen = new Set(history.map(h => h.url)), fresh = list.filter(h => !seen.has(h.url))
+  history = [...history, ...fresh].sort((a, b) => b.at - a.at).slice(0, 3000); store.save('history', history)
+  return { text: `Imported ${fresh.length} history entries.` }
+}
+function addBookmarks(list, from) { // one folder per bookmark folder; the tabs stay asleep until opened
+  const groups = Map.groupBy(list.slice(0, 1000), b => b.folder), sp = SPACES[space].private ? 0 : space
+  for (const [name, items] of groups) {
+    const f = { id: nextId++, name: name ? `${from} · ${name}` : `Imported from ${from}`, open: false, space: sp }; folders.push(f)
+    for (const b of items) tabs.push({ id: nextId++, title: b.title || b.url, url: b.url, icon: null, muted: false, pinned: false, fav: false, folder: f.id, space: sp, last: Date.now(), view: null, loading: false, asleep: true, error: null })
+  }
+  push(); return { text: `Imported ${Math.min(list.length, 1000)} bookmarks into ${groups.size} folder(s) of the sidebar.` }
+}
+function addPasswords(list) {
+  if (!safeStorage.isEncryptionAvailable()) return { error: 'This system can’t encrypt passwords, so Heliarc can’t store them.' }
+  list.forEach(savePw); push(); return { text: `Imported ${list.length} passwords.` }
+}
+const attempt = f => { try { return f() } catch (e) { return { error: /EPERM|EACCES|operation not permitted/i.test(e.message) ? 'macOS blocked access. Give Heliarc Full Disk Access (System Settings → Privacy & Security), or use the file buttons.' : e.message } } }
 function savePw(p) {
   const o = vault.find(v => v.origin === p.origin && v.user === p.user), enc = safeStorage.encryptString(p.pass).toString('base64')
   o ? o.pass = enc : vault.push({ id: nextId++, origin: p.origin, user: p.user, pass: enc })
@@ -401,11 +439,12 @@ function savePw(p) {
 
 // ---- spaces / privacy ----
 const spaceSessions = () => SPACES.map(s => session.fromPartition(s.partition))
+const extSessions = () => SPACES.filter(s => !s.private).map(s => session.fromPartition(s.partition)) // extensions aren't loaded in the private space, like in Chrome's incognito
 
 // the toolbar only learns about extensions when asked
 const refreshExts = () => ui?.webContents.executeJavaScript("document.querySelector('#exts')?.fetchState?.()").catch(() => {})
 async function installExtension(input) {
-  try { const r = { ok: true, ...await ext.installFromStore(String(input), spaceSessions()) }; push(); refreshExts(); return r } catch (e) { return { error: e.message } }
+  try { const r = { ok: true, ...await ext.installFromStore(String(input), extSessions()) }; push(); refreshExts(); return r } catch (e) { return { error: e.message } }
 }
 
 // ---- Chrome extension APIs (tabs, webNavigation, popups…) for every space's session ----
@@ -413,10 +452,15 @@ const crx = new Map()
 const crxOf = tab => crx.get(session.fromPartition(SPACES[tab.space].partition))
 function setupSession(ses) {
   if (configured.has(ses)) return; configured.add(ses)
-  ses.webRequest.onBeforeSendHeaders((d, cb) => { // Global Privacy Control + Do Not Track
-    d.requestHeaders['Sec-GPC'] = '1'; d.requestHeaders['DNT'] = '1'; cb({ requestHeaders: d.requestHeaders })
+  privacy.filterRequests(ses, () => settings, () => blocker) // Global Privacy Control, Do Not Track, third-party cookies, ad blocker
+  if (settings.fingerprint) ses.setUserAgent(app.userAgentFallback.replace(/ (Electron|Heliarc)\/\S+/g, '')) // sites see a plain Chrome, not an Electron app
+  ses.setPermissionRequestHandler(async (wc, permission, cb, d) => { // camera, microphone, location, notifications, clipboard: ask once per site, then remember
+    const need = permsOf(permission, d), host = privacy.host(d.requestingUrl || wc.getURL()), saved = settings.sitePerms[host] || {}
+    if (!need.length || !host) return cb(false)
+    if (need.some(n => saved[n] === false)) return cb(false)
+    cb(need.every(n => saved[n] === true) || await askPermission(host, need))
   })
-  ses.setPermissionRequestHandler((_, __, cb) => cb(false))
+  ses.setPermissionCheckHandler((wc, permission, origin, d) => { const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}; return need.length > 0 && need.every(n => s[n] === true) })
   ses.on('will-download', onDownload)
   const api = new ElectronChromeExtensions({
     license: 'GPL-3.0', session: ses,
@@ -438,18 +482,49 @@ function setupSession(ses) {
   // chrome.storage.onChanged never reaches extension service workers in Electron: contexts announce their writes (see the patch of the library preload) and we relay them
   api.ctx.router.apiHandler()('storage.notifyChanged', ({ extension }, area, changes) => api.ctx.router.sendEvent(extension.id, 'storage.onChanged', changes, area))
 }
+// ---- site permissions ----
+const PERMS = { camera: 'use your camera', microphone: 'use your microphone', geolocation: 'use your location', notifications: 'show notifications', 'clipboard-read': 'read your clipboard' }
+const permsOf = (permission, d) => permission === 'media' ? (d?.mediaTypes || []).map(t => t === 'video' ? 'camera' : 'microphone') : PERMS[permission] ? [permission] : []
+const asking = new Map() // one question at a time per site and permission
+function askPermission(host, need) {
+  const key = host + need.join()
+  if (!asking.has(key)) asking.set(key, dialog.showMessageBox(win, {
+    message: `${host} wants to ${need.map(n => PERMS[n]).join(' and ')}`,
+    buttons: ['Block', 'Allow'], defaultId: 0, cancelId: 0, checkboxLabel: 'Remember for this site', checkboxChecked: true,
+  }).then(({ response, checkboxChecked }) => {
+    if (checkboxChecked) { const s = settings.sitePerms[host] ??= {}; need.forEach(n => { s[n] = response === 1 }); push() }
+    return response === 1
+  }).finally(() => asking.delete(key)))
+  return asking.get(key)
+}
+let update = null // a newer release, when there is one
+async function checkUpdate() {
+  try { update = await updates.check(app.getVersion()); push(); return update ? { text: `Heliarc ${update.version} is available.` } : { text: `Heliarc ${app.getVersion()} is up to date.` } } catch (e) { return { error: `Couldn’t check for updates: ${e.message}` } }
+}
+let blocker = null
+const LISTS = { ads: ['Ads only', 'fromPrebuiltAdsOnly'], adsTrackers: ['Ads and trackers', 'fromPrebuiltAdsAndTracking'], full: ['Ads, trackers and annoyances', 'fromPrebuiltFull'] }
+const adsAllowed = u => settings.adblockOff.includes(privacy.host(u))
+async function loadBlocker() { // (re)loads the filter lists picked in Settings, then points every space's session at them
+  blockerState = 'loading'; push()
+  try {
+    const b = await ElectronBlocker[LISTS[settings.adblockList]?.[1] || LISTS.adsTrackers[1]](fetch)
+    b.on('request-blocked', () => { blocked++; pushSoon() })
+    const cosmetic = '@ghostery/adblocker/' // its cosmetic-filter handlers are global: ours skip the sites where ads are allowed
+    const unhandle = () => ['inject-cosmetic-filters', 'is-mutation-observer-enabled'].forEach(ch => ipcMain.removeHandler(cosmetic + ch))
+    for (const ses of configured) { // enabling installs the cosmetic-filter preload; we then take the web request listeners back (one per event) and run the blocker from them
+      unhandle(); blocker?.disableBlockingInSession(ses); b.enableBlockingInSession(ses) // each session's context registers the same two global handlers
+      privacy.filterRequests(ses, () => settings, () => blocker)
+    }
+    unhandle()
+    ipcMain.handle(cosmetic + 'inject-cosmetic-filters', (e, ...a) => adsAllowed(e.sender.getURL()) ? undefined : b.onInjectCosmeticFilters(e, ...a))
+    ipcMain.handle(cosmetic + 'is-mutation-observer-enabled', e => adsAllowed(e.sender.getURL()) ? false : b.onIsMutationObserverEnabled(e))
+    blocker = b; blockerState = 'on'
+  } catch (e) { console.warn('ad blocker:', e.message); blockerState = blocker ? 'on' : 'error' }
+  push()
+}
 async function setupPrivacy() {
   spaceSessions().forEach(setupSession)
-  try {
-    const blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch)
-    blocker.on('request-blocked', () => { blocked++; pushSoon() })
-    for (const ses of configured) { // the blocker's cosmetic-filter IPC handlers are global: re-register them for each space's session
-      for (const ch of ['inject-cosmetic-filters', 'is-mutation-observer-enabled']) ipcMain.removeHandler('@ghostery/adblocker/' + ch)
-      blocker.enableBlockingInSession(ses)
-    }
-    blockerState = 'on'
-  } catch (e) { console.warn('ad blocker:', e.message); blockerState = 'error' }
-  push()
+  await loadBlocker()
 }
 
 // ---- context menu on a sidebar tab ----
@@ -462,7 +537,7 @@ function tabMenu(id) {
     { label: 'Move to folder', enabled: !t.fav, submenu: [...here.map(f => ({ label: f.name, click: () => place(id, 'folder', f.id) })), { label: 'New folder', click: () => place(id, 'folder', newFolder()) }] },
     { label: 'Open in split view', enabled: id !== active, click: () => openSplit(id) },
     { type: 'separator' },
-    { label: h ? `Always open ${h} in…` : 'Always open site in…', enabled: !!h, submenu: SPACES.map((s, i) => ({ label: s.name, click: () => setRoute(h, i) })) },
+    { label: h ? `Always open ${h} in…` : 'Always open site in…', enabled: !!h, submenu: SPACES.flatMap((s, i) => s.private ? [] : [{ label: s.name, click: () => setRoute(h, i) }]) },
     { label: t.muted ? 'Unmute' : 'Mute', click: () => mute(id) },
     { label: 'Reload', enabled: !!t.view, click: () => t.view.webContents.reload() },
     { label: 'Hibernate', enabled: !!t.view && !isShown(id), click: () => sleep(id) },
@@ -490,11 +565,17 @@ const urlArg = argv => argv.find(a => /^https?:\/\//i.test(a))
 let ready
 const whenReady = new Promise(r => { ready = r })
 app.setName('Heliarc')
+app.commandLine.appendSwitch('disable-features', 'Prerender2,NoStatePrefetch,NetworkPrediction') // no speculative page loading
 const gotLock = TEST || app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
 app.on('second-instance', (_, argv) => whenReady.then(() => { const u = urlArg(argv); u ? openExternal(u) : (win.show(), win.focus()) }))
 app.on('open-url', (e, u) => { e.preventDefault(); whenReady.then(() => openExternal(u)) })
-app.on('before-quit', store.flushAll)
+let cleaned = false
+app.on('before-quit', e => { // "clear everything when I quit": cookies, logins, caches, history, download list
+  if (!settings.clearOnQuit || cleaned) return store.flushAll()
+  e.preventDefault(); cleaned = true
+  Promise.all(spaceSessions().map(wipe)).then(() => { history = []; downloads = []; store.save('history', history); store.flushAll(); app.quit() })
+})
 
 app.whenReady().then(async () => {
   if (!gotLock) return // another instance is running: it handles this launch
@@ -565,12 +646,30 @@ app.whenReady().then(async () => {
   h('pwSave', () => { if (pwPending) { savePw(pwPending); pwPending = null; push() } })
   h('pwNever', () => { if (pwPending) { settings.pwNever.push(pwPending.origin); pwPending = null; push() } })
   h('pwDismiss', () => { pwPending = null; push() })
-  h('extensions', () => ext.list(spaceSessions()[0]))
+  h('extensions', () => ext.list(extSessions()[0]))
   h('installExtension', installExtension)
-  h('removeExtension', async id => { await ext.remove(id, spaceSessions()); push(); refreshExts() })
+  h('removeExtension', async id => { await ext.remove(id, extSessions()); push(); refreshExts() })
   // settings
-  h('setSetting', (k, v) => { if (['archiveHours', 'autoPip', 'littleExternal'].includes(k)) { settings[k] = v; push() } })
-  h('addRoute', (host, sp) => { host = hostOf('https://' + host.trim().replace(/^https?:\/\//, '')); if (host && SPACES[sp]) setRoute(host, sp) })
+  h('setSetting', (k, v) => { if (['archiveHours', 'autoPip', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck'].includes(k) || (k === 'searchEngine' && bangs.ENGINES[v]) || (k === 'adblockList' && LISTS[v] && (settings[k] = v, loadBlocker(), false))) { settings[k] = v; push() } })
+  h('addRoute', (host, sp) => { host = hostOf('https://' + host.trim().replace(/^https?:\/\//, '')); if (host && SPACES[sp] && !SPACES[sp].private) setRoute(host, sp) })
+  h('addBang', (trigger, url) => { // a bang is "!trigger some words" -> the URL, where %s stands for the words
+    trigger = String(trigger).trim().replace(/^!/, '').toLowerCase(); url = String(url).trim()
+    if (!/^\w{1,12}$/.test(trigger)) return { error: 'The shortcut is one short word, like “npm”.' }
+    if (!/^https?:\/\/\S+$/.test(url) || !url.includes('%s')) return { error: 'The address must start with https:// and contain %s where the search goes.' }
+    settings.bangs = [...settings.bangs.filter(x => x.trigger !== trigger), { trigger, url }]; push(); return { ok: true }
+  })
+  h('delBang', trigger => { settings.bangs = settings.bangs.filter(x => x.trigger !== trigger); push() })
+  h('toggleSiteAds', () => { const t = cur(), h = t && privacy.host(t.url); if (!h) return; settings.adblockOff = adsAllowed(t.url) ? settings.adblockOff.filter(x => x !== h) : [...settings.adblockOff, h]; t.view?.webContents.reload(); push() })
+  h('setSitePerm', (host, perm, value) => { const s = settings.sitePerms[host]; if (!s || !PERMS[perm]) return; value === null ? delete s[perm] : (s[perm] = !!value); if (!Object.keys(s).length) delete settings.sitePerms[host]; push() })
+  h('importDetect', () => importers.detect().map(({ id, name, history, bookmarks }) => ({ id, name, history: !!history, bookmarks: !!bookmarks })))
+  h('importRun', (id, what) => attempt(() => what === 'history' ? addHistory(importers.history(id)) : addBookmarks(importers.bookmarks(id), importers.BROWSERS[id].name)))
+  h('importFile', async what => {
+    const filters = { bookmarks: [{ name: 'Bookmarks', extensions: ['html', 'htm', 'json', 'sqlite'] }], passwords: [{ name: 'Passwords (CSV)', extensions: ['csv'] }], safari: [{ name: 'Safari history', extensions: ['db'] }] }[what]
+    const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters }); if (r.canceled) return { canceled: true }
+    const file = r.filePaths[0]
+    return attempt(() => what === 'passwords' ? addPasswords(importers.passwords(fs.readFileSync(file, 'utf8'))) : what === 'safari' ? addHistory(importers.history('safari', file)) : addBookmarks(importers.bookmarks('file', file), 'Imported file'))
+  })
+  h('checkUpdate', checkUpdate); h('openRelease', () => update && shell.openExternal(update.url))
   h('delRoute', host => { settings.routes = settings.routes.filter(r => r.host !== host); push() })
   h('setShortcut', (action, c) => {
     if (!keys.ACTIONS[action]) return { error: 'Unknown action' }
@@ -586,7 +685,7 @@ app.whenReady().then(async () => {
     if (process.platform === 'win32') shell.openExternal('ms-settings:defaultapps')
     return app.isDefaultProtocolClient('http')
   })
-  ipcMain.handle('ext:has', (e, id) => senderOrigin(e) === 'https://chromewebstore.google.com' && ext.list(spaceSessions()[0]).some(x => x.id === id))
+  ipcMain.handle('ext:has', (e, id) => senderOrigin(e) === 'https://chromewebstore.google.com' && ext.list(extSessions()[0]).some(x => x.id === id))
   ipcMain.handle('ext:install', async (e, url) => { // the Web Store page's own button (see tabpreload.js)
     if (senderOrigin(e) !== 'https://chromewebstore.google.com') return { error: 'Not allowed here' }
     return installExtension(url)
@@ -599,7 +698,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.on('pw:captured', (e, { user, pass }) => {
     const t = tabOf(e.sender), origin = senderOrigin(e)
-    if (!t || !origin || !pass || !safeStorage.isEncryptionAvailable() || settings.pwNever.includes(origin)) return
+    if (!t || SPACES[t.space].private || !origin || !pass || !safeStorage.isEncryptionAvailable() || settings.pwNever.includes(origin)) return
     const old = vault.find(v => v.origin === origin && v.user === user)
     if (old && decrypt(old.pass) === pass) return
     pwPending = { tab: t.id, origin, user, pass, update: !!old }; push()
@@ -608,7 +707,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('pw:get', e => { const o = senderOrigin(e); return o && tabOf(e.sender) ? vault.filter(v => v.origin === o).map(v => ({ user: v.user, pass: decrypt(v.pass) })) : [] })
   ipcMain.handle('profile:get', e => tabOf(e.sender) ? profile : null)
 
-  await ext.loadInstalled(spaceSessions()) // before any page loads, so content scripts reach restored tabs
+  await ext.loadInstalled(extSessions()) // before any page loads, so content scripts reach restored tabs
   refreshExts()
   // restore the previous session; only the active tab is loaded, the others wake up when selected
   nextId = Math.max(1, ...(saved.tabs || []).map(t => t.id + 1), ...(saved.folders || []).map(f => f.id + 1), ...downloads.map(d => d.id + 1), ...vault.map(v => v.id + 1))
@@ -617,6 +716,7 @@ app.whenReady().then(async () => {
   ui.setVisible(sidebar); edge.setVisible(!sidebar)
   tabs.length ? activate(byId(saved.active)?.id ?? tabs[0].id) : newTab()
   layout(); stack(); sweep(); setInterval(sweep, 5 * 60e3).unref()
+  if (!TEST && app.isPackaged) { const autoCheck = () => settings.autoUpdateCheck && checkUpdate(); setTimeout(autoCheck, 20e3).unref(); setInterval(autoCheck, 6 * 3600e3).unref() }
   if (!app.isPackaged && !TEST) for (const ses of spaceSessions()) ses.serviceWorkers.on('console-message', (_, d) => console.log('extension worker:', d.level, d.message.slice(0, 300))) // dev: surface extension worker warnings and errors
   if (!app.isPackaged && !TEST) { // dev only: reload the UI when ui/* changes, restart when the main process or the page preload changes
     let timer
@@ -637,7 +737,7 @@ app.whenReady().then(async () => {
     tabs: () => tabs, newTab, closeTab, sleep, activate, go, resolve, cur, switchSpace, openCmd, closeCmd, cmdOpen: () => cmdOpen,
     pin: id => { const t = byId(id); t.pinned = !t.pinned; push() }, stats: () => ({ blocked, blockerState }), win: () => win, ui: () => ui, cmd: () => cmd,
     // library of hooks for the feature tests
-    S: { place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
+    S: { checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
       ext, crx, extCommand, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },

@@ -26,15 +26,15 @@ module.exports = async a => {
       const blockedBefore = a.stats().blocked
       const t4 = a.newTab('https://www.speedtest.net'); await sleep(15000)
       ok('blocks trackers on real site', a.stats().blocked > blockedBefore, 'blocked=' + a.stats().blocked)
-      const store = await a.S.ext.installFromStore('https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh', a.S.spaceSessions()).catch(e => ({ error: e.message }))
-      ok('installs an extension from the Chrome Web Store', store.id === 'ddkjiahejlhfcafbddmgiahcphecmpfh', JSON.stringify(store)); store.id && await a.S.ext.remove(store.id, a.S.spaceSessions())
+      const store = await a.S.ext.installFromStore('https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh', a.S.extSessions()).catch(e => ({ error: e.message }))
+      ok('installs an extension from the Chrome Web Store', store.id === 'ddkjiahejlhfcafbddmgiahcphecmpfh', JSON.stringify(store)); store.id && await a.S.ext.remove(store.id, a.S.extSessions())
       // a heavy real extension: its background worker needs chrome.webNavigation, which plain Electron lacks
-      const bw = await a.S.ext.installFromStore('https://chromewebstore.google.com/detail/bitwarden-password-manage/nngceckbapebfimnlniiiahkandclblb', a.S.spaceSessions()).catch(e => ({ error: e.message }))
+      const bw = await a.S.ext.installFromStore('https://chromewebstore.google.com/detail/bitwarden-password-manage/nngceckbapebfimnlniiiahkandclblb', a.S.extSessions()).catch(e => ({ error: e.message }))
       ok('installs Bitwarden', bw.id === 'nngceckbapebfimnlniiiahkandclblb', JSON.stringify(bw))
       const running = async () => Object.values(await a.S.spaceSessions()[0].serviceWorkers.getAllRunning()).some(w => w.scope.includes('nngceckbapebfimnlniiiahkandclblb'))
       let up = false; for (let i = 0; i < 20 && !up; i++) { await sleep(1000); up = await running() }
       ok('Bitwarden background worker runs', up)
-      bw.id && await a.S.ext.remove(bw.id, a.S.spaceSessions())
+      bw.id && await a.S.ext.remove(bw.id, a.S.extSessions())
       a.pin(t1.id); ok('pin', t1.pinned)
       a.switchSpace(1); await sleep(800); ok('space switch -> new tab in Work', a.cur().space === 1 && a.tabs().length === 5, 'tabs=' + a.tabs().length)
       a.switchSpace(0); await sleep(500); ok('back to Home', a.cur().space === 0)

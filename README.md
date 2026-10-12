@@ -5,14 +5,22 @@ A private, Arc-style desktop browser prototype built with Electron.
 Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser (privacy-first, built-in ad blocking, bangs) and the Arc browser's interface. Not affiliated with either project.
 
 **Privacy**
-- Built-in ad and tracker blocking ([Ghostery adblocker](https://github.com/ghostery/adblocker)), Global Privacy Control and Do Not Track headers, permissions denied by default
-- Command bar (Ctrl/Cmd+T), bangs (`!w cats`, `!yt lofi`, `!gh electron`, `!g`, `!ddg`)
+- Built-in ad and tracker blocking ([Ghostery adblocker](https://github.com/ghostery/adblocker)) with a choice of filter lists, and a one-click "allow ads on this site" (the shield at the bottom of the sidebar)
+- Third-party cookies blocked, HTTPS used whenever the site supports it, WebRTC doesn't reveal your local address, no speculative page loading, Global Privacy Control and Do Not Track headers
+- Fingerprint hardening: sites see a plain Chrome with common hardware
+- Sites ask before using your camera, microphone, location, notifications or clipboard; what you chose to remember is listed in Settings
+- A **Private** space (⌘⇧N / Ctrl+Shift+N): in memory only, no history, no saved tabs, no extensions, wiped when its last tab closes. Optional "clear everything when I quit"
+- Command bar (Ctrl/Cmd+T), a choice of search engines, bangs (`!w cats`, `!yt lofi`, `!gh electron`, `!g`, `!ddg`) and your own bangs
 
 **Browser basics**
 - Tabs and session are saved: reopen the app and everything is back (only the active tab loads, the rest wake up when selected)
-- Find in page, zoom, history, downloads (sidebar card + Library), print, developer tools (F12)
-- Chrome extensions from the Chrome Web Store (Extensions panel). Content scripts and background logic work; toolbar buttons/popups and some APIs (e.g. declarativeNetRequest) don't
+- Find in page, zoom, history, downloads (sidebar card + Library), print, developer tools (F12), spell check with suggestions
+- Chrome extensions from the Chrome Web Store (an "Add to Heliarc" button on the store pages, or Settings → Extensions), with toolbar buttons, popups, keyboard shortcuts and context-menu entries. Password managers such as Bitwarden and Proton Pass run. Not supported: `declarativeNetRequest` (the built-in blocker covers ad blocking)
 - Password manager (encrypted with the OS keychain: asks to save after a login, fills on focus) and address autofill
+- Import history, bookmarks and passwords from Chrome, Edge, Brave, Arc (history), Firefox and Safari, or from exported files (Settings → Import)
+- Swipe two fingers on a page for back / forward, or on the sidebar to change space. A notice appears in the sidebar when a newer release is out (no automatic install yet)
+
+**Not there yet**: Netflix/Spotify-style protected video (Widevine needs a different Electron build), passkeys, silent automatic updates (needs signed builds).
 
 **Arc-style**
 - Vertical sidebar: favorites on top (shared by every space), pinned tabs, folders, then today's tabs; drag & drop between all of them

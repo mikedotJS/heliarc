@@ -96,3 +96,10 @@ if (window === top) {
   }
   ipcRenderer.on('swipe-in', (_, dir) => slide(dir, false))
 }
+
+// fingerprint protection: every visitor reports the same common hardware, and the page can't tell it's a plain Chrome
+if (process.argv.includes('--heliarc-fp')) {
+  require('electron').contextBridge.executeInMainWorld({ func: () => {
+    for (const [k, v] of [['hardwareConcurrency', 4], ['deviceMemory', 8]]) try { Object.defineProperty(Navigator.prototype, k, { get: () => v, configurable: true }) } catch {}
+  } })
+}

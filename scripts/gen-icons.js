@@ -1,7 +1,7 @@
 // Builds ui/icons.js from the Lucide set. Run: npm run icons
 const fs = require('fs'), path = require('path')
 const NAMES = ['arrow-left', 'arrow-right', 'rotate-cw', 'lock', 'plus', 'volume-2', 'volume-x', 'pin', 'moon', 'x',
-  'shield-check', 'shield-alert', 'search', 'globe', 'house', 'briefcase', 'gamepad-2', 'triangle-alert', 'layers', 'loader-circle',
+  'shield-check', 'shield-off', 'eye-off', 'shield-alert', 'search', 'globe', 'house', 'briefcase', 'gamepad-2', 'triangle-alert', 'layers', 'loader-circle',
   'star', 'folder', 'folder-plus', 'chevron-right', 'chevron-down', 'columns-2', 'panel-left', 'download', 'history', 'archive', 'settings',
   'key-round', 'play', 'pause', 'external-link', 'trash-2', 'image', 'file', 'puzzle', 'printer', 'music', 'keyboard', 'check', 'route',
   'user-round', 'undo-2']

@@ -15,7 +15,11 @@
     "@ghostery/adblocker-electron": "^2.20.1",
     "electron-chrome-extensions": "^4.9.0",
     "fflate": "^0.8.3",
-    "sortablejs": "^1.15.7"
+    "htmlparser2": "^12.0.0",
+    "papaparse": "^5.7.0",
+    "semver": "^7.8.5",
+    "sortablejs": "^1.15.7",
+    "tldts": "^7.4.18"
   },
   "devDependencies": {
     "@electron/notarize": "^3.1.2",

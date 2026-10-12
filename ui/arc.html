@@ -53,7 +53,7 @@
   #foot .sp { flex: 1 } #foot button { padding: 4px 7px; font-size: 14px; opacity: .6; color: #fff } #foot button.on { opacity: 1; background: rgba(255,255,255,.25) } #foot button:hover { opacity: 1 }
   #drag { position: fixed; top: 0; left: 0; right: 0; height: var(--top, 0); -webkit-app-region: drag } #nav .sp { align-self: stretch; -webkit-app-region: drag } /* the Mac window has no title bar: drag it by the strip behind the traffic lights */
   #exts { display: flex; flex-wrap: wrap; gap: 4px } #exts:not(:defined) { display: none } #exts::part(action) { width: 30px; height: 30px; border-radius: 8px; background-color: rgba(255,255,255,.12) } #exts::part(action):hover { background-color: rgba(255,255,255,.22) } /* background-color only: the shorthand would wipe the extension icon (outer styles beat the element's inline background-image) */
-  #shield { font-size: 11px; opacity: .85; padding: 0 2px; display: flex; align-items: center; gap: 5px } .ic { flex: none; display: block } button .ic { margin: auto } #pill { gap: 8px } .ph.err { background: rgba(120,0,20,.6) } .ph { color: #fff } .spin { border-color: rgba(255,255,255,.4); border-top-color: #fff }
+  #shield { cursor: default; font-size: 11px; opacity: .85; padding: 0 2px; display: flex; align-items: center; gap: 5px } .ic { flex: none; display: block } button .ic { margin: auto } #pill { gap: 8px } .ph.err { background: rgba(120,0,20,.6) } .ph { color: #fff } .spin { border-color: rgba(255,255,255,.4); border-top-color: #fff }
 </style>
 <div id="drag"></div>
 <div id="side">
@@ -65,7 +65,7 @@
   <div id="newrow"><button id="newbtn"><span id="plus"></span> New tab <small style="opacity:.6">Ctrl+T</small></button><button id="nf" title="New folder"></button></div>
   <div id="list" data-zone="list"></div>
   <browser-action-list id="exts" alignment="top right"></browser-action-list>
-  <div id="mini"></div><div id="dl"></div>
+  <div id="mini"></div><div id="dl"></div><div id="upd"></div>
   <div id="shield"></div>
   <div id="foot"></div>
 </div>
@@ -111,6 +111,8 @@ $('#side').addEventListener('wheel', e => {
   const to = state.space + Math.sign(swipe)
   if (Math.abs(swipe) > 60 && to >= 0 && to < state.spaces.length) { swipeLock = now + 600; swipe = 0; api.call('space', to) }
 }, { passive: true })
+$('#upd').onclick = e => e.target.closest('[data-u]') && api.call('openRelease')
+$('#shield').onclick = () => state?.blockerState === 'on' && state.adHost && api.call('toggleSiteAds')
 $('#pwbar').onclick = e => { const a = e.target.dataset.pw; if (a) api.call(a) }
 $('#mini').onclick = e => { const m = e.target.closest('[data-m]')?.dataset.m; api.call(m === 'toggle' ? 'mediaToggle' : m === 'mute' ? 'mute' : 'mediaGo', state.media?.id) }
 $('#dl').onclick = () => api.call('openPanel', 'downloads')
@@ -168,8 +170,11 @@ function render() {
   $('#mini').innerHTML = m && m.id !== s.active ? card('', 'music', m.title || m.url, host(m.url), `<button data-m="toggle" title="${s.media.playing ? 'Pause' : 'Play'}">${icon(s.media.playing ? 'pause' : 'play', 14)}</button><button data-m="mute" title="Mute">${icon(m.muted ? 'volume-x' : 'volume-2', 14)}</button><button data-m="go" title="Go to tab">${icon('external-link', 14)}</button>`) : ''
   const d = s.downloads.find(x => x.state === 'progressing' || x.state === 'paused') || s.downloads.find(x => x.state === 'completed' && Date.now() - x.at < 8000)
   const busy = s.downloads.filter(x => x.state === 'progressing').length
+  $('#upd').innerHTML = s.update ? card('', 'download', 'Heliarc ' + s.update.version + ' is available', 'You have ' + s.version, '<button data-u="open">Get it</button>') : ''
   $('#dl').innerHTML = d ? card('', d.state === 'completed' ? 'check' : 'download', d.name, d.state === 'completed' ? 'Download complete' : `${d.total ? Math.round(d.received / d.total * 100) + '%' : 'Downloading…'}${busy > 1 ? ` · ${busy} downloads` : ''}`, '', d.state === 'completed' ? null : d.total ? d.received / d.total * 100 : 5) : ''
   $('#shield').innerHTML = s.blockerState === 'loading' ? 'Loading ad blocker…' : s.blockerState === 'error' ? `${icon('shield-alert', 13)} Ad blocker offline (lists unreachable)` : `${icon('shield-check', 13)} ${s.blocked} ads & trackers blocked`
+  $('#shield').classList.toggle('off', !!s.adsAllowed); $('#shield').title = s.blockerState !== 'on' || !s.adHost ? '' : s.adsAllowed ? 'Click to block ads on ' + s.adHost : 'Click to allow ads on ' + s.adHost
+  if (s.blockerState === 'on' && s.adsAllowed) $('#shield').innerHTML = `${icon('shield-off', 13)} Ads allowed on ${esc(s.adHost)}`
   $('#foot').innerHTML = s.spaces.map((x, i) => `<button class="${i === s.space ? 'on' : ''}" data-sp="${i}" title="${x.name}">${icon(x.icon, 16)}</button>`).join('') + '<span class="sp"></span>' +
     `<button data-p="downloads" title="Library (${fmt(s.keys.library)})">${icon('archive', 16)}</button><button data-p="history" title="History (${fmt(s.keys.history)})">${icon('history', 16)}</button><button data-p="settings" title="Settings (${fmt(s.keys.settings)})">${icon('settings', 16)}</button>`
   mount()

@@ -11,7 +11,7 @@ for s in 16 32 64 128 256 512; do
 done
 iconutil -c icns build/icon.iconset -o build/icon.icns
 npx @electron/packager . Heliarc --platform=darwin --arch=$ARCH --out=dist --overwrite \
-  --icon=build/icon --app-bundle-id=app.heliarc.browser --app-category-type=public.app-category.productivity \
+  --icon=build/icon --app-bundle-id=app.heliarc.browser --app-category-type=public.app-category.productivity --extend-info=scripts/extend-info.plist \
   --ignore='^/(dist|build|motion-.*|shot-.*|screenshot.*|\.git|\.github|\.gitignore)'
 APP=dist/Heliarc-darwin-$ARCH/Heliarc.app
 cp build/icon.icns "$APP/Contents/Resources/electron.icns"

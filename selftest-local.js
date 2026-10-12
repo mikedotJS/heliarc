@@ -30,6 +30,8 @@ module.exports = async (a, ok) => {
     const u = q.url.split('?')[0]
     if (u === '/file.bin') { r.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="data.bin"', 'Content-Length': 200000 }); return r.end(Buffer.alloc(200000, 7)) }
     if (u === '/pic.png') { r.writeHead(200, { 'Content-Type': 'image/png', 'Content-Disposition': 'attachment; filename="pic.png"' }); return r.end(PNG) }
+    if (u === '/embed3p') { r.writeHead(200, { 'Content-Type': 'text/html' }); return r.end(`<title>Embed</title><img src="http://localhost:${server.address().port}/tpcookie">`) }
+    if (u === '/tpcookie') { r.writeHead(200, { 'Content-Type': 'image/png', 'Set-Cookie': 'tp=1; Path=/; SameSite=None; Secure' }); return r.end(PNG) } // what an embedded tracker sends
     if (u === '/cookie') { r.writeHead(200, { 'Content-Type': 'text/html', 'Set-Cookie': 'who=someone; Path=/' }); return r.end('<title>Cookie set</title>set') }
     if (u === '/whoami') { r.writeHead(200, { 'Content-Type': 'text/html' }); return r.end(`<title>Who</title><p id=c>${q.headers.cookie || 'none'}</p>`) }
     r.writeHead(PAGES[u] ? 200 : 404, { 'Content-Type': 'text/html' }); r.end(PAGES[u] || '<title>404</title>')
@@ -177,6 +179,91 @@ module.exports = async (a, ok) => {
     ok('swiping right on a page goes back', await until(async () => navUrl() === base + '/'), navUrl())
     await sleep(1000); await wheel(150); ok('swiping left on a page goes forward', await until(async () => navUrl().endsWith('/second')), navUrl())
     a.closeTab(nav.id)
+    // privacy defaults
+    const pv = require('./lib/privacy'), ses0 = S.spaceSessions()[0]
+    ok('http addresses are upgraded to https', pv.upgrade('http://example.com/a?b=1') === 'https://example.com/a?b=1')
+    ok('local and private addresses are not upgraded', ['http://localhost:3000/', 'http://127.0.0.1/', 'http://192.168.1.2/', 'http://nas/', 'https://example.com/'].every(u => pv.upgrade(u) === null))
+    await ses0.cookies.remove('http://localhost:' + base.split(':')[2], 'tp').catch(() => {})
+    const emb = await open('/embed3p'); await sleep(800)
+    ok('a third-party cookie is not stored', (await ses0.cookies.get({ name: 'tp', domain: 'localhost' })).length === 0)
+    ok('the page looks like a plain Chrome', !/Electron|Heliarc/.test(await js(emb.view.webContents, 'navigator.userAgent')), await js(emb.view.webContents, 'navigator.userAgent'))
+    ok('every visitor reports the same hardware', await js(emb.view.webContents, 'navigator.hardwareConcurrency === 4 && navigator.deviceMemory === 8'))
+    ok('WebRTC hides the local address', emb.view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only')
+    S.settings().blockThirdPartyCookies = false; const emb2 = await open('/embed3p'); await sleep(800) // control: with the setting off, the same embed does store its cookie
+    ok('(control) the cookie is stored when the setting is off', (await ses0.cookies.get({ name: 'tp', domain: 'localhost' })).length === 1)
+    S.settings().blockThirdPartyCookies = true; await ses0.cookies.remove('http://localhost:' + base.split(':')[2], 'tp').catch(() => {})
+    a.closeTab(emb.id); a.closeTab(emb2.id)
+    // search engine and custom bangs
+    const bg = require('./bangs'), mine = [{ trigger: 'npm', url: 'https://www.npmjs.com/search?q=%s' }]
+    ok('the search engine can be changed', bg.resolve('cats', { engine: 'ddg' }) === 'https://duckduckgo.com/?q=cats' && bg.resolve('cats').startsWith('https://search.brave.com/'))
+    ok('your own bangs work and win over built-in ones', bg.resolve('!npm left pad', { bangs: mine }) === 'https://www.npmjs.com/search?q=left%20pad' && bg.resolve('!g x', { bangs: [{ trigger: 'g', url: 'https://example.com/?q=%s' }] }) === 'https://example.com/?q=x')
+    ok('built-in bangs still work', bg.resolve('!w cats') === 'https://en.wikipedia.org/w/index.php?search=cats')
+    // ads can be allowed on one site
+    const sitePage = await open('/'); a.activate(sitePage.id); await sleep(300)
+    await js(ui(), "api.call('toggleSiteAds')"); await sleep(400)
+    ok('ads can be allowed on the current site', S.settings().adblockOff.includes('127.0.0.1'), JSON.stringify(S.settings().adblockOff))
+    await js(ui(), "api.call('toggleSiteAds')"); await sleep(400)
+    ok('and blocked again', !S.settings().adblockOff.includes('127.0.0.1'))
+    a.closeTab(sitePage.id)
+    // site permissions: ask once, remember, and let the user change their mind
+    const { dialog } = require('electron'), realBox = dialog.showMessageBox; let asked = []
+    dialog.showMessageBox = async (_, o) => { asked.push(o.message); return { response: 1, checkboxChecked: true } }
+    const pp = await open('/'); const notif = () => js(pp.view.webContents, 'Notification.requestPermission()')
+    ok('a site is asked before it can show notifications', await notif() === 'granted' && asked.length === 1 && /127.0.0.1 wants to show notifications/.test(asked[0]), JSON.stringify(asked))
+    ok('the answer is remembered', S.settings().sitePerms['127.0.0.1']?.notifications === true)
+    await notif(); ok('and it is not asked twice', asked.length === 1)
+    await js(ui(), "api.call('setSitePerm', '127.0.0.1', 'notifications', false)"); await sleep(300)
+    ok('a remembered permission can be changed', S.settings().sitePerms['127.0.0.1'].notifications === false)
+    await js(ui(), "api.call('setSitePerm', '127.0.0.1', 'notifications', null)"); await sleep(300)
+    ok('or forgotten', !S.settings().sitePerms['127.0.0.1'])
+    dialog.showMessageBox = realBox; a.closeTab(pp.id)
+    // private space: nothing is kept
+    const PV = 3, pses = S.spaceSessions()[PV], histBefore = S.history().length
+    const pt = await open('/cookie', PV); const pt2 = await open('/private-page', PV)
+    ok('the private space stores its cookies in memory only', (await pses.cookies.get({ name: 'who' })).length === 1 && !require('electron').session.fromPartition('private').storagePath)
+    ok('private tabs are not saved with the session', S.snapshot().tabs.every(t => t.space !== PV))
+    ok('private pages never reach the history', S.history().length === histBefore && !S.history().some(h => h.url.endsWith('/private-page')))
+    a.closeTab(pt.id); await sleep(300); ok('closing one private tab keeps the session', (await pses.cookies.get({ name: 'who' })).length === 1)
+    a.closeTab(pt2.id); await sleep(800)
+    ok('closing the last private tab wipes everything and goes home', (await pses.cookies.get({ name: 'who' })).length === 0 && S.space() === 0)
+    a.switchSpace(0)
+    // importing from other browsers: build the same files they write, read them back
+    { const I = require('./lib/importers'), { DatabaseSync } = require('node:sqlite'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heliarc-imp-')), db = (n, sql) => { const f = path.join(dir, n), d = new DatabaseSync(f); d.exec(sql); d.close(); return f }
+      const t0 = Date.now() - 60000
+      const chrome = db('History', `create table urls(id integer primary key, url text, title text, last_visit_time integer); insert into urls(url, title, last_visit_time) values ('https://c.example/', 'Chrome page', ${(t0 + 11644473600000) * 1000}), ('chrome://settings', 'skip', 5)`)
+      const ch = I.history('chrome', chrome); ok('Chrome history is read (web pages only, real dates)', ch.length === 1 && ch[0].url === 'https://c.example/' && Math.abs(ch[0].at - t0) < 2000, JSON.stringify(ch))
+      const ff = db('places.sqlite', `create table moz_places(id integer primary key, url text, title text, last_visit_date integer); create table moz_bookmarks(id integer primary key, parent integer, type integer, fk integer, title text);
+        insert into moz_places values (1, 'https://f.example/', 'Fox page', ${t0 * 1000}), (2, 'https://g.example/', 'Loose', null);
+        insert into moz_bookmarks values (1, 0, 2, null, ''), (3, 1, 2, null, 'toolbar'), (10, 3, 2, null, 'Reading'), (11, 10, 1, 1, 'Fox page'), (12, 3, 1, 2, 'Loose')`)
+      const fh = I.history('firefox', ff), fb = I.bookmarks('firefox', ff)
+      ok('Firefox history is read', fh.length === 1 && Math.abs(fh[0].at - t0) < 2000, JSON.stringify(fh))
+      ok('Firefox bookmarks keep their folder', fb.find(b => b.url === 'https://f.example/')?.folder === 'Reading' && fb.find(b => b.url === 'https://g.example/')?.folder === '', JSON.stringify(fb))
+      const saf = db('History.db', `create table history_items(id integer primary key, url text); create table history_visits(id integer primary key, history_item integer, title text, visit_time real); insert into history_items values (1, 'https://s.example/'); insert into history_visits values (1, 1, 'Safari page', ${(t0 / 1000) - 978307200})`)
+      const sh = I.history('safari', saf); ok('Safari history is read', sh.length === 1 && Math.abs(sh[0].at - t0) < 2000, JSON.stringify(sh))
+      const cb = path.join(dir, 'Bookmarks'); fs.writeFileSync(cb, JSON.stringify({ roots: { bookmark_bar: { type: 'folder', children: [{ type: 'url', name: 'Top', url: 'https://t.example/' }, { type: 'folder', name: 'Work', children: [{ type: 'url', name: 'Deep', url: 'https://d.example/' }, { type: 'folder', name: 'Inner', children: [{ type: 'url', name: 'Deeper', url: 'https://dd.example/' }] }] }] } } }))
+      const cbm = I.bookmarks('chrome', cb); ok('Chrome bookmarks keep their top folder', cbm.length === 3 && cbm.find(b => b.url === 'https://dd.example/').folder === 'Work' && cbm.find(b => b.url === 'https://t.example/').folder === '', JSON.stringify(cbm))
+      const hb = path.join(dir, 'b.html'); fs.writeFileSync(hb, '<DL><p><DT><H3>Bar</H3><DL><p><DT><A HREF="https://a.example/">A</A><DT><H3>Dev</H3><DL><p><DT><A HREF="https://b.example/">B</A></DL><p></DL><p></DL>')
+      ok('exported bookmarks files (HTML) are read', JSON.stringify(I.bookmarks('file', hb).map(b => b.folder)) === '["","Dev"]')
+      const pw = I.passwords('name,url,username,password,note\nGitHub,https://github.com/login,me@x.com,pw1,\nBad,nope,u,p,\n'), pw2 = I.passwords('Title,URL,Username,Password,Notes,OTPAuth\nApple,https://appleid.apple.com/,a@b.c,"p,w",,')
+      ok('passwords CSV from Chrome and Safari are read', pw.length === 1 && pw[0].origin === 'https://github.com' && pw2.length === 1 && pw2[0].pass === 'p,w', JSON.stringify([pw, pw2]))
+      const before = S.history().length; const r1 = S.addHistory([...ch, ...fh]); const r2 = S.addHistory(ch)
+      ok('imported history is merged without duplicates', S.history().length === before + 2 && /Imported 0/.test(r2.text), r1.text + ' / ' + r2.text)
+      const nf = S.folders().length, nt = a.tabs().length; S.addBookmarks(cbm, 'Chrome')
+      ok('imported bookmarks become folders of sleeping tabs', S.folders().length === nf + 2 && a.tabs().length === nt + 3 && a.tabs().slice(-3).every(t => t.asleep && !t.view), S.folders().length + ' folders')
+      S.folders().filter(f => /Chrome|Imported/.test(f.name)).forEach(f => S.delFolder(f.id)); for (const t of [...a.tabs()].filter(t => /\.example\//.test(t.url) && t.asleep)) a.closeTab(t.id)
+      fs.rmSync(dir, { recursive: true, force: true }) }
+    // update check against a fake GitHub
+    { const U = require('./lib/updates'), real = global.fetch, release = tag => { global.fetch = async () => ({ ok: true, json: async () => ({ tag_name: tag, html_url: 'https://example.com/release' }) }) }
+      release('v99.0.0'); const up = await U.check('0.2.4'); release('v0.2.4'); const same = await U.check('0.2.4'); release('nightly'); const odd = await U.check('0.2.4')
+      ok('a newer release is detected', up?.version === '99.0.0' && up.url === 'https://example.com/release' && same === null && odd === null, JSON.stringify([up, same, odd]))
+      release('v99.0.0'); const res = await S.checkUpdate(); await sleep(400)
+      ok('the sidebar offers the new version', /99.0.0 is available/.test(res.text) && /99.0.0/.test(await js(ui(), "document.querySelector('#upd').textContent")), JSON.stringify(res))
+      global.fetch = real }
+    // spell check suggestions in the right-click menu
+    { const { Menu: M } = require('electron'), build = M.buildFromTemplate; let tpl = null; M.buildFromTemplate = t => { tpl ??= t; const x = build(t); x.popup = () => {}; return x }
+      const sp = await open('/'); S.pageMenu(sp.view.webContents, { misspelledWord: 'teh', dictionarySuggestions: ['the', 'tea'], x: 1, y: 1 })
+      ok('right-click on a misspelled word offers suggestions and "add to dictionary"', tpl?.[0]?.label === 'the' && tpl[1]?.label === 'tea' && /Add “teh”/.test(tpl[2]?.label), JSON.stringify(tpl?.slice(0, 4).map(i => i.label)))
+      M.buildFromTemplate = build; a.closeTab(sp.id) }
     // split view
     a.activate(t3.id); S.openSplit(t2.id); await sleep(400)
     const b1 = t3.view.getBounds(), b2 = t2.view.getBounds()
@@ -299,7 +386,7 @@ module.exports = async (a, ok) => {
     const zip = zipSync({ 'manifest.json': Buffer.from(JSON.stringify({ manifest_version: 3, name: 'Heliarc test extension', version: '1.2', host_permissions: ['https://*/*'], action: { default_popup: 'p.html' }, commands: { 'do-it': { description: 'Do it', suggested_key: { default: 'Ctrl+Shift+K', mac: 'Command+Shift+K' } } }, content_scripts: [{ matches: ['<all_urls>'], js: ['c.js'], run_at: 'document_start' }] })), 'c.js': Buffer.from(`document.documentElement.dataset.heliarcExt = 'on'`), 'p.html': Buffer.from('<title>popup ok</title><p>hi</p>') })
     const u32 = n => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b }
     const crx = Buffer.concat([Buffer.from('Cr24'), u32(3), u32(header.length), header, Buffer.from(zip)])
-    const r = await S.ext.installCrx(crx, S.spaceSessions())
+    const r = await S.ext.installCrx(crx, S.extSessions())
     ok('extension installs from a CRX package', r.name === 'Heliarc test extension' && r.version === '1.2', JSON.stringify(r))
     ok('extension keeps its Chrome Web Store id', r.id === S.ext.idOf(der), r.id)
     const attr = async t => js(t.view.webContents, `document.documentElement.dataset.heliarcExt || 'off'`)
@@ -324,13 +411,13 @@ module.exports = async (a, ok) => {
     // a package Chromium refuses reports an error, leaves no folder behind and keeps the installed version
     const bad = (m, extra = {}) => Buffer.concat([Buffer.from('Cr24'), u32(3), u32(header.length), header, Buffer.from(zipSync({ 'manifest.json': Buffer.from(JSON.stringify({ manifest_version: 3, name: 'Broken', version: '2.0', content_scripts: [{ matches: [m], js: ['c.js'] }], ...extra })), 'c.js': Buffer.from('1') }))])
     const root = path.join(require('electron').app.getPath('userData'), 'extensions')
-    const err = await S.ext.installCrx(bad('bogus'), S.spaceSessions()).then(() => null, e => e.message)
+    const err = await S.ext.installCrx(bad('bogus'), S.extSessions()).then(() => null, e => e.message)
     ok('a broken extension reports an error', /install the extension/.test(err), err)
     ok('failed update keeps the working version', fs.readdirSync(root).filter(n => !n.startsWith('.')).join() === r.id && S.ext.list(S.spaceSessions()[0]).some(x => x.id === r.id && x.name === 'Heliarc test extension'), fs.readdirSync(root).join())
     ok('failed install leaves no leftovers', !fs.readdirSync(root).some(n => n.startsWith('.')), fs.readdirSync(root).join())
     // CRX2 packages keep the store id too
     const crx2 = Buffer.concat([Buffer.from('Cr24'), u32(2), u32(der.length), u32(4), der, Buffer.from('sig!'), Buffer.from(zip)])
-    const r2 = await S.ext.installCrx(crx2, S.spaceSessions())
+    const r2 = await S.ext.installCrx(crx2, S.extSessions())
     ok('CRX2 package keeps its id and replaces the old copy', r2.id === S.ext.idOf(der) && fs.readdirSync(root).length === 1, JSON.stringify(r2))
     // like Bitwarden: a tiny content script asks the background worker, which injects the real scripts with chrome.scripting
     const der2 = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ type: 'spki', format: 'der' })
@@ -344,7 +431,7 @@ module.exports = async (a, ok) => {
       'reg.js': Buffer.from(`document.documentElement.dataset.registered = 'yes'`),
       'inj.js': Buffer.from(`document.documentElement.dataset.injected = 'yes'`),
     })
-    const r3 = await S.ext.installCrx(Buffer.concat([Buffer.from('Cr24'), u32(3), u32(header2.length), header2, Buffer.from(zip2)]), S.spaceSessions())
+    const r3 = await S.ext.installCrx(Buffer.concat([Buffer.from('Cr24'), u32(3), u32(header2.length), header2, Buffer.from(zip2)]), S.extSessions())
     await open('/second'); const inj = a.cur()
     ok('an extension worker can inject scripts into a page', await until(async () => await js(inj.view.webContents, `document.documentElement.dataset.injected`) === 'yes'), await js(inj.view.webContents, `document.documentElement.dataset.injected || 'no'`))
     ok('a worker can answer a page message asynchronously', await until(async () => (await js(inj.view.webContents, `document.documentElement.dataset.reply || ''`)).length > 0) && await js(inj.view.webContents, `document.documentElement.dataset.reply`) === '{"ok":1}', await js(inj.view.webContents, `document.documentElement.dataset.reply || 'none'`))
@@ -353,7 +440,7 @@ module.exports = async (a, ok) => {
     const wpage = () => require('electron').webContents.getAllWebContents().find(w => w.getURL() === `chrome-extension://${r3.id}/w.html`)
     ok('a worker hears storage changes made by an extension page', await until(async () => await pong() === '["local",7]'), await pong())
     require('electron').BaseWindow.getAllWindows().forEach(w => w.getTitle() === 'Heliarc' && w !== a.win() && w.close())
-    await S.ext.remove(r3.id, S.spaceSessions())
+    await S.ext.remove(r3.id, S.extSessions())
     S.openPanel('extensions'); await sleep(700)
     ok('extensions panel lists it', await js(panel(), `document.body.innerText.includes('Heliarc test extension')`)); await snap(S.panel(), 'panel-extensions')
     await js(panel(), `document.querySelector('#extin').value = 'not an id'; document.querySelector('[data-a=installExt]').click()`)

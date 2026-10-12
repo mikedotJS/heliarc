@@ -111,7 +111,7 @@ $('#side').addEventListener('wheel', e => {
   const to = state.space + Math.sign(swipe)
   if (Math.abs(swipe) > 60 && to >= 0 && to < state.spaces.length) { swipeLock = now + 600; swipe = 0; api.call('space', to) }
 }, { passive: true })
-$('#upd').onclick = e => e.target.closest('[data-u]') && api.call('openRelease')
+$('#upd').onclick = e => { const b = e.target.closest('[data-u]'); b && api.call(b.dataset.u === 'install' ? 'installUpdate' : 'openRelease') }
 $('#shield').onclick = () => state?.blockerState === 'on' && state.adHost && api.call('toggleSiteAds')
 $('#pwbar').onclick = e => { const a = e.target.dataset.pw; if (a) api.call(a) }
 $('#mini').onclick = e => { const m = e.target.closest('[data-m]')?.dataset.m; api.call(m === 'toggle' ? 'mediaToggle' : m === 'mute' ? 'mute' : 'mediaGo', state.media?.id) }
@@ -170,7 +170,10 @@ function render() {
   $('#mini').innerHTML = m && m.id !== s.active ? card('', 'music', m.title || m.url, host(m.url), `<button data-m="toggle" title="${s.media.playing ? 'Pause' : 'Play'}">${icon(s.media.playing ? 'pause' : 'play', 14)}</button><button data-m="mute" title="Mute">${icon(m.muted ? 'volume-x' : 'volume-2', 14)}</button><button data-m="go" title="Go to tab">${icon('external-link', 14)}</button>`) : ''
   const d = s.downloads.find(x => x.state === 'progressing' || x.state === 'paused') || s.downloads.find(x => x.state === 'completed' && Date.now() - x.at < 8000)
   const busy = s.downloads.filter(x => x.state === 'progressing').length
-  $('#upd').innerHTML = s.update ? card('', 'download', 'Heliarc ' + s.update.version + ' is available', 'You have ' + s.version, '<button data-u="open">Get it</button>') : ''
+  const u = s.updater, v = s.update?.version
+  $('#upd').innerHTML = u?.state === 'ready' ? card('', 'download', 'Heliarc ' + (v || '') + ' is ready', 'Restart to update', '<button data-u="install">Restart</button>')
+    : u?.state === 'downloading' ? card('', 'download', 'Updating Heliarc' + (v ? ' to ' + v : ''), 'Downloading…', '', 5)
+    : s.update ? card('', 'download', 'Heliarc ' + v + ' is available', 'You have ' + s.version, '<button data-u="open">Get it</button>') : ''
   $('#dl').innerHTML = d ? card('', d.state === 'completed' ? 'check' : 'download', d.name, d.state === 'completed' ? 'Download complete' : `${d.total ? Math.round(d.received / d.total * 100) + '%' : 'Downloading…'}${busy > 1 ? ` · ${busy} downloads` : ''}`, '', d.state === 'completed' ? null : d.total ? d.received / d.total * 100 : 5) : ''
   $('#shield').innerHTML = s.blockerState === 'loading' ? 'Loading ad blocker…' : s.blockerState === 'error' ? `${icon('shield-alert', 13)} Ad blocker offline (lists unreachable)` : `${icon('shield-check', 13)} ${s.blocked} ads & trackers blocked`
   $('#shield').classList.toggle('off', !!s.adsAllowed); $('#shield').title = s.blockerState !== 'on' || !s.adHost ? '' : s.adsAllowed ? 'Click to block ads on ' + s.adHost : 'Click to allow ads on ' + s.adHost

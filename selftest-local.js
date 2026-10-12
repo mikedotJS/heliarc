@@ -258,7 +258,18 @@ module.exports = async (a, ok) => {
       ok('a newer release is detected', up?.version === '99.0.0' && up.url === 'https://example.com/release' && same === null && odd === null, JSON.stringify([up, same, odd]))
       release('v99.0.0'); const res = await S.checkUpdate(); await sleep(400)
       ok('the sidebar offers the new version', /99.0.0 is available/.test(res.text) && /99.0.0/.test(await js(ui(), "document.querySelector('#upd').textContent")), JSON.stringify(res))
-      global.fetch = real }
+      global.fetch = real
+      // the downloader (Mac): a fake one walks through its states
+      const { EventEmitter } = require('events'), AU = require('./lib/autoupdate'), seen = []
+      const fake = Object.assign(new EventEmitter(), { feed: null, checks: 0, installed: false, setFeedURL(o) { this.feed = o.url }, checkForUpdates() { this.checks++ }, quitAndInstall() { this.installed = true } })
+      const au = AU.setup({ autoUpdater: fake, feed: 'https://example.com/feed', onChange: s => seen.push(s) })
+      fake.emit('update-available'); fake.emit('update-downloaded', {}, 'notes', 'Heliarc 9'); fake.emit('error', new Error('boom')); fake.emit('update-not-available'); au.check(); au.install()
+      ok('the update downloader reports its states', fake.feed === 'https://example.com/feed' && JSON.stringify(seen) === '[{"state":"downloading"},{"state":"ready","name":"Heliarc 9"},{"state":"error","error":"boom"},null]' && fake.checks === 1 && fake.installed, JSON.stringify(seen))
+      S.setUpdater({ state: 'downloading' }); await sleep(300)
+      ok('the sidebar shows the download', /Downloading/.test(await js(ui(), "document.querySelector('#upd').textContent")))
+      S.setUpdater({ state: 'ready' }); await sleep(300)
+      ok('and offers to restart once it is downloaded', /Restart/.test(await js(ui(), "document.querySelector('#upd').textContent")))
+      S.setUpdater(null) }
     // spell check suggestions in the right-click menu
     { const { Menu: M } = require('electron'), build = M.buildFromTemplate; let tpl = null; M.buildFromTemplate = t => { tpl ??= t; const x = build(t); x.popup = () => {}; return x }
       const sp = await open('/'); S.pageMenu(sp.view.webContents, { misspelledWord: 'teh', dictionarySuggestions: ['the', 'tea'], x: 1, y: 1 })

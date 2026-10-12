@@ -107,7 +107,7 @@ function settings(S) {
     <div class="line"><label>Archive unused tabs<small>Pinned tabs and favorites are never archived</small></label><select data-hours>${hrs.map(([v, l]) => `<option value="${v}" ${v === st.archiveHours ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     ${toggle('autoPip', 'Automatic picture-in-picture', 'A playing video keeps playing in a floating window when you leave its tab')}
     ${toggle('littleExternal', 'Open links from other apps in a small window', 'Needs Heliarc to be your default browser')}
-    ${toggle('autoUpdateCheck', 'Tell me when a new version is out', `Heliarc ${esc(S.version)}. Checks the GitHub releases every few hours; you decide when to install`)}
+    ${toggle('autoUpdateCheck', 'Keep Heliarc up to date', `Heliarc ${esc(S.version)}. Looks for a new version every few hours, downloads it in the background (Mac) and asks you to restart`)}
     <div class="line"><label>Updates</label><button class="btn" data-a="checkUpdate">Check now</button></div><div class="msg ${note?.update?.error ? 'bad' : note?.update ? 'ok' : ''}">${esc(note?.update?.error || note?.update?.text || '')}</div>
     <div class="line"><label>Default browser</label><button class="btn" data-a="defaultBrowser">Make Heliarc the default</button></div><div class="msg ${note?.cls || ''}">${esc(note?.text || '')}</div></section>
   <section><h3>Privacy</h3>

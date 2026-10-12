@@ -10,6 +10,7 @@ const ext = require('./lib/extensions')
 const privacy = require('./lib/privacy')
 const importers = require('./lib/importers')
 const updates = require('./lib/updates')
+const autoupdate = require('./lib/autoupdate')
 
 const TEST = process.argv.some(a => /^--(selftest|motioncheck)/.test(a))
 if (process.env.HELIARC_USER_DATA) app.setPath('userData', process.env.HELIARC_USER_DATA)
@@ -58,7 +59,7 @@ const push = () => {
   if (!ui) return
   const nav = cur()?.view?.webContents.navigationHistory
   const s = {
-    active, space, spaces: SPACES, update, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
+    active, space, spaces: SPACES, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
     sidebar, split, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: byId(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
@@ -498,8 +499,13 @@ function askPermission(host, need) {
   return asking.get(key)
 }
 let update = null // a newer release, when there is one
+let updater = null, installing = false // the background download of that release (Mac, signed app): { state: 'downloading' | 'ready' | 'error' }
+const autoUpdate = process.platform === 'darwin' && app.isPackaged ? autoupdate.setup({
+  autoUpdater: require('electron').autoUpdater, feed: `https://update.electronjs.org/mikedotJS/heliarc/darwin-${process.arch}/${app.getVersion()}`,
+  onChange: s => { updater = s; push() },
+}) : null
 async function checkUpdate() {
-  try { update = await updates.check(app.getVersion()); push(); return update ? { text: `Heliarc ${update.version} is available.` } : { text: `Heliarc ${app.getVersion()} is up to date.` } } catch (e) { return { error: `Couldn’t check for updates: ${e.message}` } }
+  try { update = await updates.check(app.getVersion()); if (update && autoUpdate && !updater) autoUpdate.check(); push(); return update ? { text: `Heliarc ${update.version} is available.` } : { text: `Heliarc ${app.getVersion()} is up to date.` } } catch (e) { return { error: `Couldn’t check for updates: ${e.message}` } }
 }
 let blocker = null
 const LISTS = { ads: ['Ads only', 'fromPrebuiltAdsOnly'], adsTrackers: ['Ads and trackers', 'fromPrebuiltAdsAndTracking'], full: ['Ads, trackers and annoyances', 'fromPrebuiltFull'] }
@@ -572,7 +578,7 @@ app.on('second-instance', (_, argv) => whenReady.then(() => { const u = urlArg(a
 app.on('open-url', (e, u) => { e.preventDefault(); whenReady.then(() => openExternal(u)) })
 let cleaned = false
 app.on('before-quit', e => { // "clear everything when I quit": cookies, logins, caches, history, download list
-  if (!settings.clearOnQuit || cleaned) return store.flushAll()
+  if (installing || !settings.clearOnQuit || cleaned) return store.flushAll()
   e.preventDefault(); cleaned = true
   Promise.all(spaceSessions().map(wipe)).then(() => { history = []; downloads = []; store.save('history', history); store.flushAll(); app.quit() })
 })
@@ -669,6 +675,7 @@ app.whenReady().then(async () => {
     const file = r.filePaths[0]
     return attempt(() => what === 'passwords' ? addPasswords(importers.passwords(fs.readFileSync(file, 'utf8'))) : what === 'safari' ? addHistory(importers.history('safari', file)) : addBookmarks(importers.bookmarks('file', file), 'Imported file'))
   })
+  h('installUpdate', () => { installing = true; autoUpdate?.install() })
   h('checkUpdate', checkUpdate); h('openRelease', () => update && shell.openExternal(update.url))
   h('delRoute', host => { settings.routes = settings.routes.filter(r => r.host !== host); push() })
   h('setShortcut', (action, c) => {
@@ -737,7 +744,7 @@ app.whenReady().then(async () => {
     tabs: () => tabs, newTab, closeTab, sleep, activate, go, resolve, cur, switchSpace, openCmd, closeCmd, cmdOpen: () => cmdOpen,
     pin: id => { const t = byId(id); t.pinned = !t.pinned; push() }, stats: () => ({ blocked, blockerState }), win: () => win, ui: () => ui, cmd: () => cmd,
     // library of hooks for the feature tests
-    S: { checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
+    S: { setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
       ext, crx, extCommand, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },

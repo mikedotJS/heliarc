@@ -27,6 +27,16 @@ jobs:
       - run: npm run ${{ matrix.script }}
         env:
           ARCH: ${{ matrix.arch }}
+      - name: Smoke test the packaged app (launches it and runs the offline self test)
+        if: matrix.artifact != 'mac-x64'
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then APP="dist/Heliarc-darwin-arm64/Heliarc.app/Contents/MacOS/Heliarc"; else APP="dist/Heliarc-win32-x64/Heliarc.exe"; fi
+          "$APP" --selftest-local > smoke.txt 2> smoke-err.txt || true
+          echo "--- results"; grep -c '^PASS' smoke.txt || true; grep '^FAIL' smoke.txt || echo "no failures"
+          echo "--- stderr"; head -40 smoke-err.txt
+          grep -q '^PASS' smoke.txt && ! grep -q '^FAIL' smoke.txt
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

@@ -30,6 +30,7 @@ module.exports = async (a, ok) => {
     const u = q.url.split('?')[0]
     if (u === '/file.bin') { r.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="data.bin"', 'Content-Length': 200000 }); return r.end(Buffer.alloc(200000, 7)) }
     if (u === '/pic.png') { r.writeHead(200, { 'Content-Type': 'image/png', 'Content-Disposition': 'attachment; filename="pic.png"' }); return r.end(PNG) }
+    if (u === '/secret') { if (q.headers.authorization !== 'Basic ' + Buffer.from('mike:pw').toString('base64')) { r.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Test area"' }); return r.end('no') } r.writeHead(200, { 'Content-Type': 'text/html' }); return r.end('<title>Welcome</title>welcome') }
     if (u === '/embed3p') { r.writeHead(200, { 'Content-Type': 'text/html' }); return r.end(`<title>Embed</title><img src="http://localhost:${server.address().port}/tpcookie">`) }
     if (u === '/tpcookie') { r.writeHead(200, { 'Content-Type': 'image/png', 'Set-Cookie': 'tp=1; Path=/; SameSite=None; Secure' }); return r.end(PNG) } // what an embedded tracker sends
     if (u === '/cookie') { r.writeHead(200, { 'Content-Type': 'text/html', 'Set-Cookie': 'who=someone; Path=/' }); return r.end('<title>Cookie set</title>set') }
@@ -233,7 +234,40 @@ module.exports = async (a, ok) => {
     ok('a mailto: link asks before opening another app', /127.0.0.1 wants to open mailto: links in another app/.test(asked.at(-1)), asked.at(-1))
     const nAsked = asked.length; await wcP.executeJavaScript("location.href = 'file:///C:/Windows/notepad.exe'", true); await sleep(600)
     ok('a file: link is never handed over', asked.length === nAsked)
-    dialog.showMessageBox = realBox; a.closeTab(pp.id)
+    // devices (USB, serial), a page that refuses to close, a crashed tab, a password-protected page
+    dialog.showMessageBox = async (_, o) => { asked.push(o.message); return { response: 0, checkboxChecked: false } }
+    const nDev = asked.length
+    wcP.executeJavaScript("void navigator.usb.requestDevice({ filters: [] }).catch(() => {})", true); await sleep(1500) // not awaited: with no chooser the request would wait forever
+    ok('a USB device request opens the picker', /wants to connect to a USB device/.test(asked[nDev] || ''), asked[nDev])
+    wcP.executeJavaScript("void navigator.serial.requestPort().catch(() => {})", true); await sleep(1500)
+    ok('and so does a serial port request', /wants to connect to a serial device/.test(asked.at(-1)), asked.at(-1))
+    const { dialog: dlg } = require('electron'), realSync = dlg.showMessageBoxSync; let answer = 1
+    dlg.showMessageBoxSync = () => answer
+    await wcP.executeJavaScript("addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = '' }); 1", true)
+    S.userClose(pp.id); await sleep(1200)
+    ok('a page that asks "Leave site?" stays open when the user says Stay', !!a.tabs().find(t => t.id === pp.id))
+    answer = 0; S.userClose(pp.id); await sleep(1200)
+    ok('and closes when the user says Leave', !a.tabs().find(t => t.id === pp.id))
+    dlg.showMessageBoxSync = realSync
+    const cr = await open('/'); cr.view.webContents.forcefullyCrashRenderer(); await sleep(1500)
+    ok('a crashed tab says so', /crashed/.test(cr.error || ''), cr.error); a.closeTab(cr.id)
+    const sec = a.newTab(base + '/secret'); await sleep(1500)
+    ok('a password-protected page asks for a sign-in', S.authCurrent()?.info?.realm === 'Test area', JSON.stringify(S.authCurrent()?.info))
+    ok('the sign-in window explains who is asking', /Test area/.test(await S.authCurrent().w.contentView.children[0].webContents.executeJavaScript("document.querySelector('#why').textContent")))
+    S.authCurrent().finish({ user: 'mike', pass: 'pw' }); await sleep(1500)
+    ok('and the page opens once signed in', /Welcome/.test(sec.title || ''), sec.title); a.closeTab(sec.id)
+    // an invalid certificate: a warning first, the page only if the user insists (skipped where openssl is missing)
+    const key = path.join(os.tmpdir(), 'heliarc-test.key'), crt = path.join(os.tmpdir(), 'heliarc-test.crt')
+    if (require('child_process').spawnSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', crt, '-days', '1', '-subj', '/CN=localhost']).status === 0) {
+      const tls = require('https').createServer({ key: fs.readFileSync(key), cert: fs.readFileSync(crt) }, (q, r) => { r.writeHead(200, { 'Content-Type': 'text/html' }); r.end('<title>Secure page</title>ok') })
+      await new Promise(r => tls.listen(0, r)); const url = 'https://localhost:' + tls.address().port + '/'; let pick = 1
+      dialog.showMessageBox = async (_, o) => { asked.push(o.message); return { response: pick, checkboxChecked: false } } // 1 = Go back, 0 = Continue anyway
+      const bad = a.newTab(url); await sleep(2500)
+      ok('an invalid certificate shows a warning and the page stays closed', /localhost isn’t private/.test(asked.at(-1)) && bad.title !== 'Secure page' && !!bad.error, asked.at(-1) + ' | ' + bad.error)
+      pick = 0; bad.view.webContents.loadURL(url); await sleep(2500)
+      ok('and opens once the user continues anyway', bad.title === 'Secure page' && S.trustedCerts.has('localhost'), bad.title); a.closeTab(bad.id); S.trustedCerts.clear(); tls.close()
+    }
+    dialog.showMessageBox = realBox
     // private space: nothing is kept
     const PV = 3, pses = S.spaceSessions()[PV], histBefore = S.history().length
     const pt = await open('/cookie', PV); const pt2 = await open('/private-page', PV)

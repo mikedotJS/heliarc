@@ -61,7 +61,7 @@ const push = () => {
   const nav = cur()?.view?.webContents.navigationHistory
   const s = {
     active, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
-    sidebar, split, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
+    sidebar, split, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: byId(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
     pw: pwPending && { tab: pwPending.tab, origin: pwPending.origin, user: pwPending.user, update: pwPending.update },
@@ -129,6 +129,17 @@ function makeView(tab) {
   wc.on('zoom-changed', (_, dir) => { if (tab.id === active) zoom(dir === 'in' ? 1 : -1) })
   wc.on('found-in-page', (_, r) => find.webContents.send('found', { active: r.activeMatchOrdinal, total: r.matches }))
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
+  wc.on('render-process-gone', (_, d) => { if (d.reason !== 'clean-exit') { tab.error = `The tab crashed (${d.reason})`; tab.loading = false; push() } }) // the Retry button reloads it
+  wc.on('unresponsive', async () => {
+    if (tab.hung) return; tab.hung = true
+    const i = await choose(`${hostOf(tab.url) || 'This page'} isn’t responding`, ['Reload'], { cancel: 'Wait', safe: true }); tab.hung = false
+    if (i === 0 && !wc.isDestroyed()) { wc.forcefullyCrashRenderer(); wc.reload() }
+  })
+  wc.on('will-prevent-unload', e => { // the page asks "Leave site?" (unsaved changes)
+    const i = dialog.showMessageBoxSync(win, { type: 'question', message: 'Leave this page?', detail: 'Changes you made may not be saved.', buttons: ['Leave', 'Stay'], defaultId: 1, cancelId: 1 })
+    if (i === 0) e.preventDefault()
+  })
+  wc.on('select-bluetooth-device', async (e, list, cb) => { e.preventDefault(); const i = await choose(`${hostOf(tab.url)} wants to connect to a Bluetooth device`, list.map(x => x.deviceName || 'Unknown device'), { detail: 'Choose a device.' }); cb(i < 0 ? '' : list[i].deviceId) })
   wc.on('enter-html-full-screen', () => { fsTab = tab; view.setBorderRadius(0); layout() }) // the page fills the whole window, above the sidebar
   wc.on('leave-html-full-screen', () => leaveFullscreen(tab))
   wc.setAudioMuted(tab.muted)
@@ -162,7 +173,7 @@ function pageMenu(wc, p) {
 // ---- shortcuts ----
 const RUN = {
   copyLink: () => { const u = cur()?.url; if (!u) return; clipboard.writeText(u); copied = true; push(); setTimeout(() => { copied = false; push() }, 1500) },
-  newPrivateTab: () => { const had = tabs.some(t => t.space === PRIVATE); switchSpace(PRIVATE); had && newTab(null, PRIVATE) }, newTab: () => openCmd('new'), editAddress: () => openCmd('edit'), closeTab: () => active && closeTab(active), reload: () => cur()?.view?.webContents.reload(),
+  newPrivateTab: () => { const had = tabs.some(t => t.space === PRIVATE); switchSpace(PRIVATE); had && newTab(null, PRIVATE) }, newTab: () => openCmd('new'), editAddress: () => openCmd('edit'), closeTab: () => active && userClose(active), reload: () => cur()?.view?.webContents.reload(),
   find: () => openFind(), zoomIn: () => zoom(1), zoomOut: () => zoom(-1), zoomReset: () => zoom(0), toggleSidebar: () => toggleSidebar(), splitView: () => toggleSplit(),
   library: () => openPanel('downloads'), history: () => openPanel('history'), settings: () => openPanel('settings'),
   print: () => cur()?.view?.webContents.print({ printBackground: true }), devtools: () => toggleDevtools(),
@@ -254,10 +265,15 @@ function activate(id) {
 }
 function removeTab(t) {
   tabs.splice(tabs.indexOf(t), 1)
-  if (t.view) { win.contentView.removeChildView(t.view); t.view.webContents.close() }
+  if (t.view) { win.contentView.removeChildView(t.view); try { t.view.webContents.close() } catch {} /* already gone when the page closed itself */ }
   if (split?.includes(t.id)) split = null
   if (mediaTab === t.id) mediaTab = null
   if (pwPending?.tab === t.id) pwPending = null
+}
+function userClose(id) { // the page may refuse to close ("Leave site?"), so it is asked first; tabs without a live page close at once
+  const wc = byId(id)?.view?.webContents
+  if (!wc || wc.isDestroyed() || !/^https?:/.test(wc.getURL())) return closeTab(id)
+  wc.once('destroyed', () => closeTab(id)); wc.close({ waitForBeforeUnload: true })
 }
 function closeTab(id) {
   const t = byId(id); if (!t) return
@@ -471,10 +487,13 @@ function setupSession(ses) {
     cb(need.every(n => saved[n] === true) || await askPermission(host, need))
   })
   ses.setDisplayMediaRequestHandler(async (req, cb) => { // screen sharing (Meet, Zoom…): the macOS picker, or a list of screens and windows elsewhere
-    const sources = (await desktopCapturer.getSources({ types: ['screen', 'window'] })).slice(0, 8)
-    const { response } = await dialog.showMessageBox(win, { message: `${privacy.host(req.securityOrigin)} wants to share your screen`, detail: 'Choose what to share.', buttons: [...sources.map(x => x.name), 'Cancel'], cancelId: sources.length, defaultId: 0 })
-    sources[response] ? cb({ video: sources[response], ...(req.audioRequested && process.platform === 'win32' && { audio: 'loopback' }) }) : cb({})
+    const sources = (await desktopCapturer.getSources({ types: ['screen', 'window'] })).slice(0, 8), i = await choose(`${privacy.host(req.securityOrigin)} wants to share your screen`, sources.map(x => x.name), { detail: 'Choose what to share.' })
+    sources[i] ? cb({ video: sources[i], ...(req.audioRequested && process.platform === 'win32' && { audio: 'loopback' }) }) : cb({})
   }, { useSystemPicker: true })
+  const deviceBox = (kind, d, names) => choose(`${privacy.host(d.frame?.url || '')} wants to connect to a ${kind} device`, names, { detail: 'Choose a device.' }) // WebUSB, WebHID, Web Serial
+  ses.on('select-usb-device', async (e, d, cb) => { e.preventDefault(); const i = await deviceBox('USB', d, d.deviceList.map(x => x.productName || 'Unknown device')); i < 0 ? cb() : cb(d.deviceList[i].deviceId) })
+  ses.on('select-hid-device', async (e, d, cb) => { e.preventDefault(); const i = await deviceBox('HID', d, d.deviceList.map(x => x.name || 'Unknown device')); i < 0 ? cb() : cb(d.deviceList[i].deviceId) })
+  ses.on('select-serial-port', async (e, ports, wc, cb) => { e.preventDefault(); const i = await deviceBox('serial', { frame: { url: wc.getURL() } }, ports.map(x => x.displayName || x.portName)); cb(i < 0 ? '' : ports[i].portId) })
   ses.setPermissionCheckHandler((wc, permission, origin, d) => { if (SILENT.has(permission)) return true; const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}; return need.length > 0 && need.every(n => s[n] === true) })
   ses.on('will-download', onDownload)
   const api = new ElectronChromeExtensions({
@@ -498,13 +517,18 @@ function setupSession(ses) {
   api.ctx.router.apiHandler()('storage.notifyChanged', ({ extension }, area, changes) => api.ctx.router.sendEvent(extension.id, 'storage.onChanged', changes, area))
 }
 // ---- site permissions ----
-const PERMS = { camera: 'use your camera', microphone: 'use your microphone', geolocation: 'use your location', notifications: 'show notifications', 'clipboard-read': 'read your clipboard', midi: 'use your MIDI devices', midiSysex: 'fully control your MIDI devices' }
+const PERMS = { camera: 'use your camera', microphone: 'use your microphone', geolocation: 'use your location', notifications: 'show notifications', 'clipboard-read': 'read your clipboard', midi: 'use your MIDI devices', midiSysex: 'fully control your MIDI devices', fileSystem: 'read and write the files or folders you picked' }
 // what Chrome grants without asking (a video's fullscreen button, copy buttons, keeping the screen awake, DRM players…); everything else not in PERMS is refused
-const SILENT = new Set(['fullscreen', 'clipboard-sanitized-write', 'screen-wake-lock', 'pointerLock', 'sensors', 'mediaKeySystem', 'persistent-storage', 'background-sync'])
+const SILENT = new Set(['hid', 'usb', 'serial', /* these three: the device picker is the question */ 'fullscreen', 'clipboard-sanitized-write', 'screen-wake-lock', 'pointerLock', 'sensors', 'mediaKeySystem', 'persistent-storage', 'background-sync'])
 const OPEN_BLOCKED = new Set(['file', 'javascript', 'data', 'vbscript', 'ms-msdt', 'search-ms']) // links that run code or open local files are never handed to another app
 const openKey = u => { const x = String(u || '').split(':')[0].toLowerCase(); return x && !OPEN_BLOCKED.has(x) ? 'open:' + x : null } // mailto:, spotify:, zoommtg:… one answer per site and scheme
 const say = n => PERMS[n] || `open ${n.slice(5)}: links in another app`
 const permsOf = (permission, d) => permission === 'openExternal' ? [openKey(d?.externalURL)].filter(Boolean) : permission === 'media' ? (d?.mediaTypes || [d?.mediaType]).filter(t => t === 'video' || t === 'audio').map(t => t === 'video' ? 'camera' : 'microphone') : PERMS[permission] ? [permission] : []
+// one native choice box for every picker below (screens, devices, certificates); returns the index picked, or -1
+async function choose(message, names, { detail, cancel = 'Cancel', safe = false } = {}) {
+  const list = names.slice(0, 8), { response } = await dialog.showMessageBox(win, { message, detail, buttons: [...list, cancel], cancelId: list.length, defaultId: safe ? list.length : 0 })
+  return response < list.length ? response : -1
+}
 const asking = new Map() // one question at a time per site and permission
 function askPermission(host, need) {
   const key = host + need.join()
@@ -517,6 +541,34 @@ function askPermission(host, need) {
   }).finally(() => asking.delete(key)))
   return asking.get(key)
 }
+// ---- sign-in (HTTP basic auth, proxies), invalid certificates, client certificates ----
+let authCurrent = null, authQueue = Promise.resolve() // one sign-in window at a time, the others wait their turn
+function askLogin(info) {
+  return new Promise(resolve => {
+    const w = new BaseWindow({ width: 380, height: 300, parent: win, modal: true, title: 'Sign in', icon: ICON, resizable: false, minimizable: false, maximizable: false, backgroundColor: '#1e1f22' })
+    const v = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } })
+    w.contentView.addChildView(v); const fit = () => v.setBounds({ ...w.getContentBounds(), x: 0, y: 0 }); fit(); v.webContents.loadFile('ui/auth.html')
+    const finish = r => { if (!authCurrent || authCurrent.w !== w) return; authCurrent = null; resolve(r); w.close() }
+    authCurrent = { w, info, finish }
+    w.on('resize', fit); w.on('closed', () => { finish(null); v.webContents.isDestroyed() || v.webContents.close() })
+  })
+}
+app.on('login', (e, wc, d, info, cb) => {
+  e.preventDefault()
+  authQueue = authQueue.then(() => askLogin({ host: info.host, realm: info.realm, proxy: info.isProxy })).then(r => r ? cb(r.user, r.pass) : cb())
+})
+const trustedCerts = new Set(), askedCerts = new Map() // hosts the user chose to open anyway, for this session
+app.on('certificate-error', (e, wc, url, error, cert, cb) => {
+  e.preventDefault()
+  const host = privacy.host(url); if (trustedCerts.has(host)) return cb(true)
+  if (!askedCerts.has(host)) askedCerts.set(host, choose(`Your connection to ${host} isn’t private`, ['Continue anyway (unsafe)'], { detail: `${error}. Attackers might be trying to steal your information.`, cancel: 'Go back', safe: true }).then(i => { i === 0 && trustedCerts.add(host); return i === 0 }).finally(() => askedCerts.delete(host)))
+  askedCerts.get(host).then(cb)
+})
+app.on('select-client-certificate', async (e, wc, url, list, cb) => {
+  e.preventDefault()
+  const i = await choose(`${privacy.host(url)} asks for a certificate to identify you`, list.map(c => c.subjectName), { safe: true })
+  i < 0 ? cb() : cb(list[i])
+})
 let update = null // a newer release, when there is one
 let updater = null, installing = false // the background download of that release (Mac, signed app): { state: 'downloading' | 'ready' | 'error' }
 const autoUpdate = process.platform === 'darwin' && app.isPackaged ? autoupdate.setup({
@@ -566,7 +618,7 @@ function tabMenu(id) {
     { label: t.muted ? 'Unmute' : 'Mute', click: () => mute(id) },
     { label: 'Reload', enabled: !!t.view, click: () => t.view.webContents.reload() },
     { label: 'Hibernate', enabled: !!t.view && !isShown(id), click: () => sleep(id) },
-    { type: 'separator' }, { label: 'Close tab', click: () => closeTab(id) },
+    { type: 'separator' }, { label: 'Close tab', click: () => userClose(id) },
   ]).popup()
 }
 function sideMenu(fid) { // right-click on a folder header or on the empty part of the sidebar
@@ -628,7 +680,7 @@ app.whenReady().then(async () => {
 
   const h = (n, f) => ipcMain.handle(n, (_, ...a) => f(...a))
   h('new', () => openCmd('new')); h('edit', () => openCmd('edit')); h('closeCmd', closeCmd)
-  h('activate', activate); h('close', closeTab); h('sleep', sleep); h('space', switchSpace); h('mute', mute)
+  h('activate', activate); h('close', userClose); h('sleep', sleep); h('space', switchSpace); h('mute', mute)
   h('go', input => { closeCmd(); go(input) }); h('open', input => { closeCmd(); newTab(input) })
   h('pin', id => { const t = byId(id); if (t) toFavOrBack(t, t.pinned ? 'list' : 'pinned') })
   h('back', () => cur()?.view?.webContents.navigationHistory.goBack())
@@ -696,6 +748,7 @@ app.whenReady().then(async () => {
     return attempt(() => what === 'passwords' ? addPasswords(importers.passwords(fs.readFileSync(file, 'utf8'))) : what === 'safari' ? addHistory(importers.history('safari', file)) : addBookmarks(importers.bookmarks('file', file), 'Imported file'))
   })
   h('installUpdate', () => { installing = true; autoUpdate?.install() })
+  h('authInfo', () => authCurrent?.info); h('authDone', r => authCurrent?.finish(r))
   h('checkUpdate', checkUpdate); h('openRelease', async () => { // the update feed can lag behind a fresh release: try the in-app update first, the release page is the way out
     if (!update) return
     if (autoUpdate && !updater) { updater = { state: 'downloading' }; push(); if (await autoUpdate.check()) return }
@@ -768,7 +821,7 @@ app.whenReady().then(async () => {
     tabs: () => tabs, newTab, closeTab, sleep, activate, go, resolve, cur, switchSpace, openCmd, closeCmd, cmdOpen: () => cmdOpen,
     pin: id => { const t = byId(id); t.pinned = !t.pinned; push() }, stats: () => ({ blocked, blockerState }), win: () => win, ui: () => ui, cmd: () => cmd,
     // library of hooks for the feature tests
-    S: { setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
+    S: { userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
       ext, crx, extCommand, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },

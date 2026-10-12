@@ -3,7 +3,7 @@ const fs = require('fs')
 // `npm test` = everything (needs network); `npm run test:local` = offline feature tests only.
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 module.exports = async a => {
-  const out = []; const ok = (n, c, d = '') => out.push(`${c ? 'PASS' : 'FAIL'} ${n} ${d}`)
+  const out = []; const ok = (n, c, d = '') => { const l = `${c ? 'PASS' : 'FAIL'} ${n} ${d}`; out.push(l); process.env.HELIARC_VERBOSE && console.warn(l) } // HELIARC_VERBOSE=1: print each result as it happens (a hung step is then easy to spot)
   const waitLoad = async t => { for (let i = 0; i < 60 && (t.loading || !t.view); i++) await sleep(500) }
   try {
     if (!process.argv.includes('--selftest-local')) {

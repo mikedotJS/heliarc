@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css">
+<style>
+  body { background: var(--panel); padding: 22px 24px; display: flex; flex-direction: column; gap: 10px; height: 100vh; box-sizing: border-box }
+  h1 { font-size: 15px; margin: 0 } #why { color: var(--dim); font-size: 12px; margin: 0 0 6px; word-break: break-word }
+  input { background: var(--bg); color: var(--fg); border: 1px solid transparent; border-radius: 8px; padding: 9px 11px; font: inherit; outline: none }
+  input:focus { border-color: var(--acc) } input:disabled, button:disabled { opacity: .55 }
+  #row { display: flex; gap: 8px; justify-content: flex-end; margin-top: auto } #ok { background: var(--acc); color: #fff }
+</style>
+<h1>Sign in</h1><p id="why"></p>
+<input id="u" placeholder="Username" autocomplete="off" spellcheck="false"><input id="p" type="password" placeholder="Password" autocomplete="off">
+<div id="row"><button id="no">Cancel</button><button id="ok">Sign in</button></div>
+<script>
+const $ = s => document.querySelector(s); let busy = false
+api.call('authInfo').then(i => { if (i) $('#why').textContent = `${i.proxy ? 'The proxy ' : ''}${i.host} says: “${i.realm || 'Authentication required'}”. Your password is sent to this site.` })
+const done = r => { if (busy) return; busy = true; $('#u').disabled = $('#p').disabled = $('#ok').disabled = $('#no').disabled = true; $('#ok').textContent = r ? 'Signing in…' : 'Cancelling…'; api.call('authDone', r) }
+$('#ok').onclick = () => done({ user: $('#u').value, pass: $('#p').value }); $('#no').onclick = () => done(null)
+addEventListener('keydown', e => { if (e.key === 'Enter') $('#ok').click(); else if (e.key === 'Escape') $('#no').click() })
+$('#u').focus()
+</script>

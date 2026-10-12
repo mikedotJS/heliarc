@@ -101,5 +101,13 @@ if (window === top) {
 if (process.argv.includes('--heliarc-fp')) {
   require('electron').contextBridge.executeInMainWorld({ func: () => {
     for (const [k, v] of [['hardwareConcurrency', 4], ['deviceMemory', 8]]) try { Object.defineProperty(Navigator.prototype, k, { get: () => v, configurable: true }) } catch {}
+    // Google sign-in refuses browsers whose brands don't include "Google Chrome"
+    const uad = navigator.userAgentData, P = window.NavigatorUAData?.prototype
+    if (uad && P) {
+      const chrome = b => { const c = b.find(x => x.brand === 'Chromium'); return c && !b.some(x => x.brand === 'Google Chrome') ? [...b, { ...c, brand: 'Google Chrome' }] : b }
+      const brands = Object.getOwnPropertyDescriptor(P, 'brands').get, high = P.getHighEntropyValues
+      Object.defineProperty(P, 'brands', { get() { return chrome(brands.call(this)) }, configurable: true })
+      P.getHighEntropyValues = function (h) { return high.call(this, h).then(r => (r.brands && (r.brands = chrome(r.brands)), r.fullVersionList && (r.fullVersionList = chrome(r.fullVersionList)), r)) }
+    }
   } })
 }

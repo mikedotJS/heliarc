@@ -1,0 +1,156 @@
+diff --git a/node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js b/node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js
+index 67d3be4..afecece 100644
+--- a/node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js
++++ b/node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js
+@@ -449,12 +449,47 @@
+         },
+         storage: {
+           factory: (base) => {
+-            const local = base && base.local;
++            // Heliarc: service workers never receive chrome.storage.onChanged in Electron, so every context announces its writes
++            // and the workers listen through the extension event bus (Bitwarden needs this to notice that the vault was unlocked).
++            const isWorker = typeof ServiceWorkerGlobalScope !== "undefined" && self instanceof ServiceWorkerGlobalScope;
++            const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
++            const announce = (area, old, now) => {
++              const changes = {};
++              for (const k of new Set([...Object.keys(old), ...Object.keys(now)])) {
++                if (!same(old[k], now[k])) changes[k] = { ...(k in old && { oldValue: old[k] }), ...(k in now && { newValue: now[k] }) };
++              }
++              if (Object.keys(changes).length) electron.invokeExtension(extensionId, "storage.notifyChanged", {}, area, changes);
++            };
++            const watch = (store, area) => {
++              if (!store) return store;
++              const done = (cb, r) => { if (typeof cb === "function") cb(r); return r; };
++              const wrapped = {
++                set: async (items, cb) => { const old = await store.get(Object.keys(items)); await store.set(items); announce(area, old, items); return done(cb); },
++                remove: async (keys, cb) => { const list = [].concat(keys); const old = await store.get(list); await store.remove(keys); announce(area, old, {}); return done(cb); },
++                clear: async (cb) => { const old = await store.get(null); await store.clear(); announce(area, old, {}); return done(cb); }
++              };
++              let changed = null;
++              if (isWorker) {
++                const inner = new ExtensionEvent("storage.onChanged"), map = new Map();
++                changed = {
++                  addListener: (cb) => { const w = (changes, a) => { if (a === area) cb(changes); }; map.set(cb, w); inner.addListener(w); },
++                  removeListener: (cb) => { const w = map.get(cb); if (w) inner.removeListener(w); map.delete(cb); },
++                  hasListener: (cb) => map.has(cb)
++                };
++              }
++              return new Proxy(store, {
++                get: (t, p) => p in wrapped ? wrapped[p] : p === "onChanged" && changed ? changed : typeof t[p] === "function" ? t[p].bind(t) : t[p]
++              });
++            };
++            const local = watch(base && base.local, "local");
+             return {
+               ...base,
++              local,
++              session: watch(base && base.session, "session"),
+               // TODO: provide a backend for browsers to opt-in to
+               managed: local,
+-              sync: local
++              sync: local,
++              ...(isWorker && { onChanged: new ExtensionEvent("storage.onChanged") })
+             };
+           }
+         },
+@@ -560,14 +595,13 @@
+         const baseApi = chrome[apiName];
+         const api = apiDefinitions[apiName];
+         if (api.shouldInject && !api.shouldInject()) return;
+-        Object.defineProperty(chrome, apiName, {
+-          value: api.factory(baseApi),
+-          enumerable: true,
+-          configurable: true
+-        });
++        const def = { value: api.factory(baseApi), enumerable: true, configurable: true };
++        Object.defineProperty(chrome, apiName, def);
++        // Heliarc: Chromium's own `browser` alias lacks these APIs and polyfills (Proton Pass) pick it over `chrome`
++        if (globalThis.browser && globalThis.browser !== chrome) Object.defineProperty(globalThis.browser, apiName, def);
+       });
+       delete globalThis.electron;
+-      Object.freeze(chrome);
++      // Heliarc: not frozen, wrappers such as Proton Pass proxy chrome and break on the frozen invariants
+     }
+     if (!process.contextIsolated) {
+       console.warn(`injectExtensionAPIs: context isolation disabled in ${location.href}`);
+diff --git a/node_modules/electron-chrome-extensions/dist/cjs/index.js b/node_modules/electron-chrome-extensions/dist/cjs/index.js
+index b4242b0..735e89b 100644
+--- a/node_modules/electron-chrome-extensions/dist/cjs/index.js
++++ b/node_modules/electron-chrome-extensions/dist/cjs/index.js
+@@ -172,6 +172,9 @@ var _PopupView = class _PopupView extends import_node_events.EventEmitter {
+     this.alignment = opts.alignment;
+     this.browserWindow = new import_electron2.BrowserWindow({
+       show: false,
++      // Heliarc: lay the page out at the maximum size first, like Chrome, so pages sized by the viewport are not squashed
++      width: _PopupView.BOUNDS.maxWidth,
++      height: _PopupView.BOUNDS.maxHeight,
+       frame: false,
+       parent: opts.parent,
+       movable: false,
+@@ -182,7 +185,7 @@ var _PopupView = class _PopupView extends import_node_events.EventEmitter {
+       resizable: false,
+       skipTaskbar: true,
+       backgroundColor: "#ffffff",
+-      roundedCorners: false,
++      roundedCorners: true,
+       webPreferences: {
+         session: opts.session,
+         sandbox: true,
+@@ -213,7 +216,18 @@ var _PopupView = class _PopupView extends import_node_events.EventEmitter {
+     }
+     if (this.destroyed) return;
+     if (this.usingPreferredSize) {
+-      this.setSize({ width: _PopupView.BOUNDS.minWidth, height: _PopupView.BOUNDS.minHeight });
++      // Heliarc: preferred-size events can be missed while the page is still building its layout, so also grow to fit clipped content
++      for (let i = 0; i < 20 && !this.destroyed; i++) {
++        await new Promise((resolve) => setTimeout(resolve, 200));
++        if (this.destroyed || win.isDestroyed()) return;
++        const fit = await win.webContents.executeJavaScript('({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight })').catch(() => null);
++        const { width, height } = win.getContentBounds();
++        if (fit && (fit.width > width || fit.height > height)) {
++          this.setSize({ width: Math.max(fit.width, width), height: Math.max(fit.height, height) });
++          this.updatePosition();
++        }
++        if (this.hidden) this.show();
++      }
+     } else {
+       this.setSize({ width: _PopupView.BOUNDS.maxWidth, height: _PopupView.BOUNDS.maxHeight });
+       await new Promise((resolve) => setTimeout(resolve, 100));
+@@ -964,7 +978,8 @@ var _TabsAPI = class _TabsAPI {
+     return tabs.map(this.getTabDetails.bind(this));
+   }
+   getCurrent(event) {
+-    const tab = this.ctx.store.getActiveTabOfCurrentWindow();
++    // Heliarc: like Chrome, only a page that is itself a tab has a current tab (popups and workers get undefined)
++    const tab = [...this.ctx.store.tabs].find((t) => t.id === event.sender?.id);
+     return tab ? this.getTabDetails(tab) : void 0;
+   }
+   async create(event, details = {}) {
+@@ -2614,6 +2629,19 @@ function readLoadedExtensionManifest(ctx, extension) {
+ }
+ 
+ // src/browser/api/permissions.ts
++// Heliarc: host permissions are match patterns ("https://*/*" covers "https://account.proton.me/*"), not plain strings
++var matchesOrigin = (granted, origin) => {
++  if (granted === "<all_urls>") return true;
++  const parse = (p) => {
++    const m = /^(\*|[a-z-]+):\/\/([^/]*)(\/.*)?$/.exec(p);
++    return m && { scheme: m[1], host: m[2], path: m[3] || "/*" };
++  };
++  const g = parse(granted), o = parse(origin);
++  if (!g || !o) return granted === origin;
++  const scheme = g.scheme === "*" ? o.scheme === "*" || o.scheme === "http" || o.scheme === "https" : g.scheme === o.scheme;
++  const host = g.host === "*" || g.host === o.host || (g.host.startsWith("*.") && (o.host === g.host.slice(2) || o.host.endsWith(g.host.slice(1))));
++  return scheme && host && (g.path === "/*" || g.path === o.path);
++};
+ var PermissionsAPI = class {
+   constructor(ctx) {
+     this.ctx = ctx;
+@@ -2623,7 +2651,7 @@ var PermissionsAPI = class {
+       const hasPermissions = permissions.permissions ? permissions.permissions.every(
+         (permission) => currentPermissions.permissions.includes(permission)
+       ) : true;
+-      const hasOrigins = permissions.origins ? permissions.origins.every((origin) => currentPermissions.origins.includes(origin)) : true;
++      const hasOrigins = permissions.origins ? permissions.origins.every((origin) => currentPermissions.origins.some((granted) => matchesOrigin(granted, origin))) : true;
+       return hasPermissions && hasOrigins;
+     };
+     this.getAll = ({ extension }) => {

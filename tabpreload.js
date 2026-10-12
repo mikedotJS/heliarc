@@ -28,18 +28,23 @@ addEventListener('click', e => { // SPA logins submit without a form submit even
 
 // Chrome Web Store: its own "Add to Chrome" button stays disabled outside Chrome, so turn it into a working "Add to Heliarc".
 if (location.hostname === 'chromewebstore.google.com') {
-  const say = (b, t) => { b.textContent = t }
-  const swap = () => (document.querySelector('[jsname=gQ2Xie]')?.click(), document.querySelectorAll('button[disabled][class*="UywwFc-LgbsSe"]').forEach(b => {
-    b.disabled = false; say(b, 'Add to Heliarc'); if (b.dataset.heliarc) return
+  const say = (b, t) => { const el = [...b.querySelectorAll('*')].find(el => !el.children.length && el.textContent.trim()) || b; if (el.textContent !== t) el.textContent = t } // keep the button's own inner markup so it keeps Google's colors
+  const extId = () => location.pathname.split('/').find(s => /^[a-p]{32}$/.test(s))
+  let installed = false
+  const swap = () => (document.querySelector('[jsname=gQ2Xie]')?.click(), document.querySelectorAll('button[disabled][class*="UywwFc-LgbsSe"], button[data-heliarc]').forEach(b => {
+    if (b.dataset.busy) return
+    b.disabled = installed; say(b, installed ? '✓ Added to Heliarc' : 'Add to Heliarc'); if (b.dataset.heliarc) return
     b.dataset.heliarc = '1'
     b.addEventListener('click', async e => {
       e.stopImmediatePropagation(); e.preventDefault(); if (!e.isTrusted || b.dataset.busy) return
       b.dataset.busy = '1'; say(b, 'Adding…')
       const r = await ipcRenderer.invoke('ext:install', location.href).catch(err => ({ error: err.message }))
-      delete b.dataset.busy; say(b, r.error ? 'Retry — ' + r.error.slice(0, 60) : '✓ Added to Heliarc')
+      delete b.dataset.busy; installed = !r.error; r.error ? say(b, 'Retry — ' + r.error.slice(0, 60)) : swap()
     }, true)
   }))
-  addEventListener('DOMContentLoaded', () => { swap(); new MutationObserver(swap).observe(document.body, { childList: true, subtree: true }) })
+  const check = () => ipcRenderer.invoke('ext:has', extId()).then(has => { installed = has; swap() }, () => {})
+  addEventListener('DOMContentLoaded', () => { check(); new MutationObserver(swap).observe(document.body, { childList: true, subtree: true }) })
+  addEventListener('focus', check) // the extension may have been removed from Heliarc in the meantime
 }
 
 // Fill only when the user themselves just clicked the field (or tabbed into it): a script calling .focus() must not trigger a fill.
@@ -64,3 +69,30 @@ async function fill(el) {
 addEventListener('pointerdown', e => { if (e.isTrusted) { intent = { el: e.target, at: Date.now() }; fill(e.target) } }, true)
 addEventListener('keydown', e => { if (e.isTrusted && e.key === 'Tab') intent = { el: 'tab', at: Date.now() } }, true)
 addEventListener('focusin', e => { if (Date.now() - intent.at < 1000 && intent.el === 'tab') fill(e.target) }, true)
+// a two-finger horizontal swipe goes back / forward, unless the page itself can still scroll that way (the lock swallows the trackpad's momentum)
+if (window === top) {
+  let swipe = 0, swipeAt = 0, swipeLock = 0
+  const scrolls = (el, dx) => {
+    for (; el && el !== document.documentElement; el = el.parentElement) {
+      if (/auto|scroll/.test(getComputedStyle(el).overflowX) && el.scrollWidth > el.clientWidth && (dx < 0 ? el.scrollLeft > 0 : el.scrollLeft + el.clientWidth < el.scrollWidth - 1)) return true
+    }
+    const d = document.scrollingElement
+    return d && (dx < 0 ? d.scrollLeft > 0 : d.scrollLeft + d.clientWidth < d.scrollWidth - 1)
+  }
+  addEventListener('wheel', e => {
+    const now = Date.now(); if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) || now < swipeLock || e.ctrlKey || scrolls(e.target, e.deltaX)) return
+    swipe = now - swipeAt > 150 ? e.deltaX : swipe + e.deltaX; swipeAt = now
+    if (Math.abs(swipe) > 100) {
+      const dir = swipe < 0 ? 'back' : 'forward'; swipeLock = now + 800; swipe = 0
+      ipcRenderer.invoke('swipe-nav', dir).then(ok => { if (ok) { const out = slide(dir, true); setTimeout(() => out?.cancel(), 600) } }) // the cancel covers same-document navigations
+    }
+  }, { passive: true })
+  // very discreet: the old page slips a few pixels away while fading, the new one slips in
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)')
+  const slide = (dir, out) => {
+    if (reduced.matches) return
+    const x = (dir === 'back' ? 14 : -14) * (out ? 1 : -1), away = { opacity: 0.4, transform: `translateX(${x}px)` }, here = { opacity: 1, transform: 'none' }
+    return document.documentElement.animate(out ? [here, away] : [away, here], { duration: out ? 120 : 200, easing: 'ease-out', fill: out ? 'forwards' : 'none' })
+  }
+  ipcRenderer.on('swipe-in', (_, dir) => slide(dir, false))
+}

@@ -1,15 +1,24 @@
 <!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
 <style>
-  body { background: var(--panel); height: 100vh; display: flex; align-items: center; gap: 6px; padding: 0 10px; position: relative }
-  .t { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25 } b, small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap } b { font-weight: 500 } small { color: var(--dim); font-size: 11px }
-  button { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--hover) } button:hover { background: var(--sel) }
+  body { height: 100vh; background: linear-gradient(145deg, var(--c1, #5b4bff), var(--c2, #c04bff)); color: #fff; position: relative; overflow: hidden }
+  #top { height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 var(--lead, 10px); -webkit-app-region: drag }
+  #top > * { -webkit-app-region: no-drag } #top > .sp { -webkit-app-region: drag }
+  #site { flex: 1; min-width: 0; max-width: 520px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 7px; height: 30px; padding: 0 14px; border-radius: 10px; background: rgba(255,255,255,.2); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  #site span { overflow: hidden; text-overflow: ellipsis } #site .ic { flex: none }
+  #mv { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 10px; color: #fff; background: rgba(255,255,255,.2); transition: background var(--dur-micro) var(--ease-out) } #mv:hover { background: rgba(255,255,255,.32) }
   @keyframes slide { from { background-position: -40% 0 } to { background-position: 140% 0 } }
-  body.loading::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--acc), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: slide 1s linear infinite }
+  body.loading::after { content: ''; position: absolute; left: 12px; right: 12px; top: 40px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, transparent, #fff, transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: slide 1s linear infinite }
 </style>
-<span id="lock"></span><div class="t"><b id="tt">Loading…</b><small id="u"></small></div><button id="mv" title="Open this page in the main window"></button>
+<div id="top"><div id="site"><span id="lock"></span><span id="u" title="">Loading…</span></div><button id="mv" title="Open this page in the main window"></button></div>
 <script>
 const $ = s => document.querySelector(s)
+if (navigator.platform.startsWith('Mac')) document.documentElement.style.setProperty('--lead', '78px') // room for the traffic lights
 $('#lock').innerHTML = icon('lock', 14); $('#mv').innerHTML = icon('external-link', 15) + ' Open in Heliarc'
 $('#mv').onclick = () => api.call('littleToMain')
-api.on('little', p => { $('#tt').textContent = p.title || p.url || 'Loading…'; try { $('#u').textContent = new URL(p.url).hostname } catch { $('#u').textContent = p.url }; document.body.classList.toggle('loading', p.loading) })
+api.on('little', p => {
+  document.documentElement.style.setProperty('--c1', p.c1); document.documentElement.style.setProperty('--c2', p.c2)
+  let host = p.url; try { host = new URL(p.url).hostname.replace(/^www\./, '') } catch {}
+  $('#u').textContent = host || 'Loading…'; $('#site').title = p.title || p.url || ''
+  document.body.classList.toggle('loading', p.loading)
+})
 </script>

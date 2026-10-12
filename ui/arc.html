@@ -16,12 +16,11 @@
   #nav { display: flex; align-items: center; gap: 2px } #nav .sp { flex: 1 }
   #nav button, .tile, .tab, #pill, #newbtn, .fh { color: #fff }
   #nav button { font-size: 15px; width: 30px; height: 28px; padding: 0 } #nav button#zoom { width: auto; padding: 0 6px; font-size: 11px; background: rgba(255,255,255,.2) }
-  #nav button:hover:not(:disabled), .tab:hover, #newbtn:hover, .fh:hover { background: rgba(255,255,255,.16) }
+  button:hover:not(:disabled), .tab:hover, .fh:hover { background: rgba(255,255,255,.16) } /* the shared dark hover looks black on the gradient */
   #pill { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.2); border-radius: 10px; padding: 9px 12px; cursor: pointer; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
   #pill:hover { background: rgba(255,255,255,.28) } #pill span { overflow: hidden; text-overflow: ellipsis }
   #errbar, #pwbar { display: none; background: rgba(120,0,20,.55); border-radius: 8px; padding: 6px 10px; font-size: 12px; gap: 8px; align-items: center }
-  #pwbar, #extbar { background: rgba(0,0,0,.35); flex-wrap: wrap } #pwbar span, #extbar span { flex: 1 1 100% } #pwbar button, #extbar button { background: rgba(255,255,255,.2); color: #fff; padding: 3px 9px }
-  #extbar { display: none; border-radius: 8px; padding: 6px 10px; font-size: 12px; gap: 8px; align-items: center } #extbar.show { display: flex; animation: enter var(--dur-ui) var(--ease-out) } #extbar button:disabled { opacity: .6 }
+  #pwbar { background: rgba(0,0,0,.35); flex-wrap: wrap } #pwbar span { flex: 1 1 100% } #pwbar button { background: rgba(255,255,255,.2); color: #fff; padding: 3px 9px }
   #errbar.show, #pwbar.show { display: flex } #errbar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   [data-zone] { min-height: 4px } #pins:empty, #pinned:empty, #folders:empty { display: none } body.dragging #pins:empty, body.dragging #pinned:empty { display: block } body.dragging [data-zone] { outline: 1px dashed rgba(255,255,255,.45); outline-offset: 2px; border-radius: 8px }
   #pins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px } body.dragging #pins { min-height: 52px }
@@ -34,17 +33,17 @@
   #sep { height: 1px; background: rgba(255,255,255,.25); margin: 2px 4px }
   #list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 40px }
   #list::-webkit-scrollbar { width: 0 }
-  .tab { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 9px; cursor: pointer; min-height: 32px }
+  .tab { display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 9px; cursor: pointer; height: 34px }
   .tab.on { background: rgba(255,255,255,.3); font-weight: 600 } .tab.split { box-shadow: inset 3px 0 0 rgba(255,255,255,.8) }
   .tab .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   .tab.asleep { opacity: .6 } .tab .acts { display: none; gap: 0 } .tab:hover .acts { display: flex }
-  .tab .acts { gap: 2px; margin: -3px -2px -3px 0 } .tab .acts button { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border-radius: 7px; color: #fff } .tab .acts button:hover { background: rgba(255,255,255,.2) }
-  .folder { margin: 2px 0 } .fh { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 9px; cursor: pointer; font-weight: 600 }
+  .tab .acts { gap: 2px; margin-right: -2px } .tab .acts button { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border-radius: 7px; color: #fff } .tab .acts button:hover { background: rgba(255,255,255,.2) }
+  .folder { margin: 2px 0 } .fh { display: flex; align-items: center; gap: 6px; padding: 0 8px; height: 34px; border-radius: 9px; cursor: pointer; font-weight: 600 }
   .fh .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap } .fh input { flex: 1; min-width: 0; background: rgba(0,0,0,.3); border: 0; color: #fff; border-radius: 5px; padding: 2px 6px; font: inherit; user-select: text; outline: 1px solid rgba(255,255,255,.5) }
-  .fh .del { display: none; padding: 0 4px; color: #fff } .fh:hover .del { display: block }
+  .fh .del { display: none; place-items: center; width: 24px; height: 24px; padding: 0; margin-right: -2px; border-radius: 7px; color: #fff } .fh:hover .del { display: grid } .fh .del:hover:not(:disabled) { background: rgba(255,255,255,.2) }
   .fb { padding-left: 14px; display: flex; flex-direction: column; gap: 2px; min-height: 8px } .folder.shut .fb { display: none }
   .ph { width: 16px; height: 16px; border-radius: 5px; background: rgba(255,255,255,.35); display: grid; place-items: center; font-size: 10px; flex: none }
-  #newrow { display: flex; gap: 2px } #newbtn { flex: 1 } #nf { color: #fff; padding: 8px }
+  #newrow { display: flex; gap: 2px } #newbtn { flex: 1 } #nf { color: #fff; padding: 8px; border-radius: 9px; transition: background var(--dur-micro) var(--ease-out) }
   #newbtn { text-align: left; padding: 8px; border-radius: 9px; opacity: .9; display: flex; align-items: center; gap: 6px }
   #empty { text-align: center; opacity: .75; padding: 14px 8px; font-size: 12px }
   .card { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,.28); border-radius: 10px; padding: 8px 10px; font-size: 12px; cursor: pointer }
@@ -52,18 +51,20 @@
   .card button { padding: 3px 5px; color: #fff } .bar { height: 3px; background: rgba(255,255,255,.25); border-radius: 2px; margin-top: 4px } .bar i { display: block; height: 100%; background: #fff; border-radius: 2px; transition: width .25s }
   #foot { display: flex; align-items: center; gap: 4px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.2) }
   #foot .sp { flex: 1 } #foot button { padding: 4px 7px; font-size: 14px; opacity: .6; color: #fff } #foot button.on { opacity: 1; background: rgba(255,255,255,.25) } #foot button:hover { opacity: 1 }
+  #drag { position: fixed; top: 0; left: 0; right: 0; height: var(--top, 0); -webkit-app-region: drag } #nav .sp { align-self: stretch; -webkit-app-region: drag } /* the Mac window has no title bar: drag it by the strip behind the traffic lights */
+  #exts { display: flex; flex-wrap: wrap; gap: 4px } #exts:not(:defined) { display: none } #exts::part(action) { width: 30px; height: 30px; border-radius: 8px; background-color: rgba(255,255,255,.12) } #exts::part(action):hover { background-color: rgba(255,255,255,.22) } /* background-color only: the shorthand would wipe the extension icon (outer styles beat the element's inline background-image) */
   #shield { font-size: 11px; opacity: .85; padding: 0 2px; display: flex; align-items: center; gap: 5px } .ic { flex: none; display: block } button .ic { margin: auto } #pill { gap: 8px } .ph.err { background: rgba(120,0,20,.6) } .ph { color: #fff } .spin { border-color: rgba(255,255,255,.4); border-top-color: #fff }
 </style>
+<div id="drag"></div>
 <div id="side">
-  <div id="nav" style="padding-top:var(--top,0)"><button id="b" title="Back"></button><button id="f" title="Forward"></button><button id="r" title="Reload"></button><button id="zoom" title="Reset zoom" hidden></button><span class="sp"></span><button id="sp" title="Split view"></button><button id="col" title="Collapse sidebar"></button></div>
+  <div id="nav"style="padding-top:var(--top,0)"><button id="b" title="Back"></button><button id="f" title="Forward"></button><button id="r" title="Reload"></button><button id="zoom" title="Reset zoom" hidden></button><span class="sp"></span><button id="sp" title="Split view"></button><button id="col" title="Collapse sidebar"></button></div>
   <div id="pill"></div>
   <div id="errbar"><span id="msg"></span><button id="retry">Retry</button></div>
-  <div id="pwbar"></div>
-  <div id="extbar"></div>
-  <div id="pins" data-zone="fav"></div>
+  <div id="pwbar"></div>  <div id="pins" data-zone="fav"></div>
   <div id="pinned" data-zone="pinned"></div><div id="folders"></div><div id="sep"></div>
   <div id="newrow"><button id="newbtn"><span id="plus"></span> New tab <small style="opacity:.6">Ctrl+T</small></button><button id="nf" title="New folder"></button></div>
   <div id="list" data-zone="list"></div>
+  <browser-action-list id="exts" alignment="top right"></browser-action-list>
   <div id="mini"></div><div id="dl"></div>
   <div id="shield"></div>
   <div id="foot"></div>
@@ -82,7 +83,11 @@ $('#pill').onclick = () => api.call('edit'); $('#newbtn').onclick = () => api.ca
 $('#zoom').onclick = () => api.call('zoomReset'); $('#sp').onclick = () => api.call('split'); $('#col').onclick = () => api.call('toggleSidebar')
 $('#nf').onclick = async () => { editing = await api.call('newFolder'); render() }
 document.documentElement.onmouseleave = () => api.call('unreveal')
-$('#side').oncontextmenu = e => { const el = e.target.closest('.tab, .tile'); if (el) { e.preventDefault(); api.call('ctx', +el.dataset.id) } }
+$('#side').oncontextmenu = e => {
+  e.preventDefault(); const el = e.target.closest('.tab, .tile'), fh = e.target.closest('.fh')
+  el ? api.call('ctx', +el.dataset.id) : api.call('ctxSide', fh ? +fh.dataset.fid : null)
+}
+api.on('renameFolder', fid => { editing = fid; render() })
 function click(e) {
   const f = e.target.closest('[data-fid]'); if (f && !e.target.closest('.fb')) { // folder header
     const fid = +f.dataset.fid
@@ -99,14 +104,14 @@ $('#foot').onclick = e => {
   const b = e.target.closest('button'); if (!b) return
   b.dataset.sp !== undefined ? api.call('space', +b.dataset.sp) : api.call('openPanel', b.dataset.p)
 }
+let swipe = 0, swipeAt = 0, swipeLock = 0 // two-finger horizontal swipe on the sidebar switches space (the lock swallows the trackpad's momentum)
+$('#side').addEventListener('wheel', e => {
+  const now = Date.now(); if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) || now < swipeLock || !state) return
+  swipe = now - swipeAt > 150 ? e.deltaX : swipe + e.deltaX; swipeAt = now
+  const to = state.space + Math.sign(swipe)
+  if (Math.abs(swipe) > 60 && to >= 0 && to < state.spaces.length) { swipeLock = now + 600; swipe = 0; api.call('space', to) }
+}, { passive: true })
 $('#pwbar').onclick = e => { const a = e.target.dataset.pw; if (a) api.call(a) }
-let ext = null // Chrome Web Store page → "Add to Heliarc" (the store's own button only works in Chrome)
-$('#extbar').onclick = async e => {
-  const url = state?.tabs.find(t => t.id === state.active)?.url; if (!e.target.closest('button') || !url || ext?.busy) return
-  ext = { url, busy: true }; render()
-  const r = await api.call('installExtension', url).catch(err => ({ error: err.message }))
-  ext = { url, ...(r.error ? { error: r.error } : { done: r.name || r.id }) }; render()
-}
 $('#mini').onclick = e => { const m = e.target.closest('[data-m]')?.dataset.m; api.call(m === 'toggle' ? 'mediaToggle' : m === 'mute' ? 'mute' : 'mediaGo', state.media?.id) }
 $('#dl').onclick = () => api.call('openPanel', 'downloads')
 
@@ -142,9 +147,7 @@ function render() {
   $('#errbar').className = a?.error ? 'show' : ''; $('#msg').textContent = a?.error ? 'Failed to load: ' + a.error : ''
   $('#pwbar').className = s.pw && s.canSavePw ? 'show' : ''
   $('#pwbar').innerHTML = s.pw ? `<span>${s.pw.update ? 'Update' : 'Save'} password for <b>${esc(s.pw.user || 'this login')}</b> on ${esc(host(s.pw.origin))}?</span><button data-pw="pwSave">${s.pw.update ? 'Update' : 'Save'}</button><button data-pw="pwNever">Never</button><button data-pw="pwDismiss">Not now</button>` : ''
-  const store = /^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)\/detail\//.test(a?.url || ''), x = ext?.url === a?.url ? ext : null
-  $('#extbar').className = store ? 'show' : ''
-  $('#extbar').innerHTML = !store ? '' : x?.done ? `<span>✓ <b>${esc(x.done)}</b> added to Heliarc</span>` : `<span>${x?.error ? 'Couldn’t add: ' + esc(x.error) : 'Install this extension in Heliarc?'}</span><button ${x?.busy ? 'disabled' : ''}>${x?.busy ? 'Adding…' : x?.error ? 'Retry' : 'Add to Heliarc'}</button>`
+  $('#exts').setAttribute('partition', sp.partition)
   $('#pins').innerHTML = s.tabs.filter(t => t.fav).map(t => `<div class="tile ${fresh || !seen.has(t.id) ? 'enter' : ''} ${t.id === s.active ? 'on' : ''}" style="--i:${n++}" data-id="${t.id}" title="${esc(t.title)}">${ico(t)}</div>`).join('')
   const pinned = mine.filter(t => t.pinned && !t.folder), fl = s.folders.filter(f => f.space === s.space)
   $('#pinned').innerHTML = pinned.map(t => row(t, s, n++, fresh)).join('')

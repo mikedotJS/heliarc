@@ -1,7 +1,8 @@
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard } = require('electron')
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen } = require('electron')
 const path = require('path'), fs = require('fs'), os = require('os')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 const { resolve } = require('./bangs')
+const { ElectronChromeExtensions } = require('electron-chrome-extensions')
 const store = require('./lib/store')
 const keys = require('./lib/shortcuts')
 const ext = require('./lib/extensions')
@@ -103,7 +104,7 @@ function makeView(tab) {
   wc.on('did-fail-load', (_, code, desc, url, isMain) => {
     if (isMain && code !== -3) { tab.error = `${desc} — ${url}`; tab.loading = false; push() }
   })
-  wc.on('before-input-event', shortcut)
+  wc.on('before-input-event', (e, i) => { if (!extCommand(e, i, tab)) shortcut(e, i) })
   wc.on('focus', () => { if (split?.includes(tab.id) && active !== tab.id) { active = tab.id; push() } })
   wc.on('media-started-playing', () => { tab.playing = true; mediaTab = tab.id; push() })
   wc.on('media-paused', () => { tab.playing = false; push() })
@@ -112,9 +113,14 @@ function makeView(tab) {
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
   wc.setAudioMuted(tab.muted)
   win.contentView.addChildView(view)
+  crxOf(tab)?.addTab(wc, win)
   stack()
   wc.loadURL(tab.url || NEWTAB + '#' + encodeURIComponent(keys.resolve(settings.shortcuts).editAddress))
   layout()
+}
+function extItems(wc, p) {
+  const t = tabOf(wc), items = t ? crxOf(t)?.getContextMenuItems(wc, p) : []
+  return items?.length ? [{ type: 'separator' }, ...items] : []
 }
 function pageMenu(wc, p) {
   Menu.buildFromTemplate([
@@ -125,6 +131,7 @@ function pageMenu(wc, p) {
     { label: 'Forward', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() },
     { label: 'Reload', click: () => wc.reload() },
     { type: 'separator' }, { label: 'Print…', click: () => wc.print({ printBackground: true }) }, { label: 'Inspect', click: () => wc.inspectElement(p.x, p.y) },
+    ...extItems(wc, p), // e.g. Bitwarden's "Auto-fill" entries
   ]).popup()
 }
 
@@ -134,6 +141,16 @@ const RUN = {
   find: () => openFind(), zoomIn: () => zoom(1), zoomOut: () => zoom(-1), zoomReset: () => zoom(0), toggleSidebar: () => toggleSidebar(), splitView: () => toggleSplit(),
   library: () => openPanel('downloads'), history: () => openPanel('history'), settings: () => openPanel('settings'),
   print: () => cur()?.view?.webContents.print({ printBackground: true }), devtools: () => toggleDevtools(),
+}
+function extCommand(e, i, tab) { // chrome.commands: run an extension's keyboard command (e.g. Bitwarden's auto-fill) when its suggested key is pressed in a page
+  const c = i.type === 'keyDown' && !recording && keys.combo(i); if (!c) return false
+  const want = c.split('+').sort().join('+'), x = crxOf(tab), plat = process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux'
+  for (const ex of session.fromPartition(SPACES[tab.space].partition).extensions.getAllExtensions()) for (const [name, d] of Object.entries(ex.manifest.commands || {})) {
+    const k = d.suggested_key?.[plat] ?? d.suggested_key?.default; if (!k || name.startsWith('_')) continue
+    const have = k.split('+').map(p => ({ Ctrl: 'Mod', Command: 'Mod', MacCtrl: 'Ctrl' }[p] ?? (p.length === 1 ? p.toUpperCase() : p))).sort().join('+')
+    if (have === want) { e.preventDefault(); x.ctx.router.sendEvent(ex.id, 'commands.onCommand', name, x.ctx.store.tabDetailsCache.get(tab.view.webContents.id)); return true }
+  }
+  return false
 }
 function shortcut(e, i) {
   if (i.type !== 'keyDown' || recording) return
@@ -206,6 +223,7 @@ function activate(id) {
   split?.forEach(x => { const s = byId(x); if (s.asleep) makeView(s) })
   if (t.asleep) makeView(t)
   active = id; if (!t.fav) space = t.space
+  if (t.view) crxOf(t)?.selectTab(t.view.webContents)
   t.last = Date.now(); exitPip(t)
   refresh()
 }
@@ -330,17 +348,20 @@ function closePeek() {
 }
 
 // ---- little window: links from other apps ----
-function openExternal(url) {
+function openExternal(url) { // "Little" window: a roomy, borderless-looking page over a space-colored frame, like Little Arc
   if (!settings.littleExternal) { newTab(url); win.show(); win.focus(); return }
   if (little) { little.view.webContents.loadURL(url); little.win.focus(); return }
-  const lw = new BaseWindow({ width: 460, height: 720, title: 'Heliarc', icon: ICON, backgroundColor: '#2a2a33' })
+  const area = screen.getDisplayMatching(win.getBounds()).workArea, width = Math.min(1100, Math.max(760, Math.round(area.width * .55))), height = Math.min(900, Math.max(560, Math.round(area.height * .78)))
+  const lw = new BaseWindow({ width, height, x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2), minWidth: 480, minHeight: 360, title: 'Heliarc', icon: ICON, backgroundColor: '#2a2a33',
+    ...(process.platform === 'darwin' && { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 16 } }) })
   const bar = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } })
   const view = new WebContentsView({ webPreferences: { partition: SPACES[0].partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD } })
   const wc = view.webContents
+  view.setBorderRadius(12)
   little = { win: lw, view, bar }
-  lw.contentView.addChildView(view); lw.contentView.addChildView(bar)
-  const fit = () => { const { width, height } = lw.getContentBounds(); bar.setBounds({ x: 0, y: 0, width, height: LITTLEBAR }); view.setBounds({ x: 0, y: LITTLEBAR, width, height: height - LITTLEBAR }) }
-  const send = () => !bar.webContents.isDestroyed() && bar.webContents.send('little', { title: wc.getTitle(), url: wc.getURL(), loading: wc.isLoading() })
+  lw.contentView.addChildView(bar); lw.contentView.addChildView(view) // the frame sits behind the page
+  const fit = () => { const { width, height } = lw.getContentBounds(); bar.setBounds({ x: 0, y: 0, width, height }); view.setBounds({ x: GAP, y: LITTLEBAR, width: width - GAP * 2, height: height - LITTLEBAR - GAP }) }
+  const send = () => !bar.webContents.isDestroyed() && bar.webContents.send('little', { title: wc.getTitle(), url: wc.getURL(), loading: wc.isLoading(), c1: SPACES[0].c1, c2: SPACES[0].c2 })
   fit(); lw.on('resize', fit)
   wc.setWindowOpenHandler(({ url }) => { wc.loadURL(url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, send)
@@ -380,6 +401,16 @@ function savePw(p) {
 
 // ---- spaces / privacy ----
 const spaceSessions = () => SPACES.map(s => session.fromPartition(s.partition))
+
+// the toolbar only learns about extensions when asked
+const refreshExts = () => ui?.webContents.executeJavaScript("document.querySelector('#exts')?.fetchState?.()").catch(() => {})
+async function installExtension(input) {
+  try { const r = { ok: true, ...await ext.installFromStore(String(input), spaceSessions()) }; push(); refreshExts(); return r } catch (e) { return { error: e.message } }
+}
+
+// ---- Chrome extension APIs (tabs, webNavigation, popups…) for every space's session ----
+const crx = new Map()
+const crxOf = tab => crx.get(session.fromPartition(SPACES[tab.space].partition))
 function setupSession(ses) {
   if (configured.has(ses)) return; configured.add(ses)
   ses.webRequest.onBeforeSendHeaders((d, cb) => { // Global Privacy Control + Do Not Track
@@ -387,6 +418,25 @@ function setupSession(ses) {
   })
   ses.setPermissionRequestHandler((_, __, cb) => cb(false))
   ses.on('will-download', onDownload)
+  const api = new ElectronChromeExtensions({
+    license: 'GPL-3.0', session: ses,
+    createTab: async d => { const t = newTab(d.url, SPACES.findIndex(sp => session.fromPartition(sp.partition) === ses)); return [t.view.webContents, win] },
+    selectTab: wc => { const t = tabOf(wc); if (t) activate(t.id) },
+    removeTab: wc => { const t = tabOf(wc); if (t) closeTab(t.id) },
+    createWindow: async d => { // chrome.windows.create: pop-out windows (Bitwarden's unlock / login window)
+      const url = [d.url].flat()[0], sp = SPACES.find(x => session.fromPartition(x.partition) === ses)
+      const w = new BaseWindow({ width: d.width || 420, height: d.height || 640, x: d.left, y: d.top, parent: win, title: 'Heliarc', icon: ICON, backgroundColor: '#ffffff', minimizable: false })
+      const v = new WebContentsView({ webPreferences: { partition: sp.partition, sandbox: true, contextIsolation: true } })
+      w.contentView.addChildView(v)
+      const fit = () => { const { width, height } = w.getContentBounds(); v.setBounds({ x: 0, y: 0, width, height }) }
+      fit(); w.on('resize', fit); if (url) v.webContents.loadURL(url)
+      w.on('closed', () => { if (!v.webContents.isDestroyed()) v.webContents.close() })
+      return w
+    },
+  })
+  crx.set(ses, api)
+  // chrome.storage.onChanged never reaches extension service workers in Electron: contexts announce their writes (see the patch of the library preload) and we relay them
+  api.ctx.router.apiHandler()('storage.notifyChanged', ({ extension }, area, changes) => api.ctx.router.sendEvent(extension.id, 'storage.onChanged', changes, area))
 }
 async function setupPrivacy() {
   spaceSessions().forEach(setupSession)
@@ -419,6 +469,19 @@ function tabMenu(id) {
     { type: 'separator' }, { label: 'Close tab', click: () => closeTab(id) },
   ]).popup()
 }
+function sideMenu(fid) { // right-click on a folder header or on the empty part of the sidebar
+  const f = folders.find(x => x.id === fid)
+  Menu.buildFromTemplate(f ? [
+    { label: 'Rename folder', click: () => ui.webContents.send('renameFolder', f.id) },
+    { label: f.open ? 'Collapse folder' : 'Expand folder', click: () => { f.open = !f.open; push() } },
+    { type: 'separator' }, { label: 'Delete folder', click: () => delFolder(f.id) },
+  ] : [
+    { label: 'New tab', click: () => openCmd('new') }, { label: 'New folder', click: newFolder },
+    { type: 'separator' },
+    { label: 'Switch space', submenu: SPACES.map((s, i) => ({ label: s.name, type: 'radio', checked: i === space, click: () => switchSpace(i) })) },
+    { label: 'Collapse sidebar', click: toggleSidebar },
+  ]).popup()
+}
 const mute = id => { const t = byId(id); if (t) { t.muted = !t.muted; t.view?.webContents.setAudioMuted(t.muted); push() } }
 function setRoute(host, sp) { settings.routes = [...settings.routes.filter(r => r.host !== host), { host, space: sp }]; push() }
 
@@ -448,7 +511,9 @@ app.whenReady().then(async () => {
     if (TEST) v.webContents.on('console-message', d => console.warn(`[${file}]`, d.level, d.message, d.sourceId?.split('/').pop() + ':' + d.lineNumber))
     return v
   }
-  ui = new WebContentsView({ webPreferences: prefs }); win.contentView.addChildView(ui); ui.webContents.loadFile('ui/arc.html'); ui.webContents.on('before-input-event', shortcut)
+  ElectronChromeExtensions.handleCRXProtocol(session.defaultSession) // extension icons in <browser-action-list>
+  ui = new WebContentsView({ webPreferences: { ...prefs, sandbox: false } }) // not sandboxed: its preload loads the extension toolbar element
+  win.contentView.addChildView(ui); ui.webContents.loadFile('ui/arc.html'); ui.webContents.on('before-input-event', shortcut)
   peekUi = overlay('peek.html'); edge = overlay('edge.html'); find = overlay('find.html'); panel = overlay('panel.html'); cmd = overlay('cmdbar.html')
   win.on('resize', layout)
   win.on('closed', () => app.quit())
@@ -463,7 +528,7 @@ app.whenReady().then(async () => {
   h('fwd', () => cur()?.view?.webContents.navigationHistory.goForward())
   h('reload', () => cur()?.view?.webContents.reload())
   h('ready', push)
-  h('ctx', tabMenu)
+  h('ctx', tabMenu); h('ctxSide', sideMenu)
   h('move', (id, zone, fid, idx) => { const t = byId(id); t && toFavOrBack(t, zone, fid, idx) })
   h('newFolder', newFolder); h('delFolder', delFolder)
   h('renameFolder', (fid, name) => { const f = folders.find(x => x.id === fid); if (f && name.trim()) { f.name = name.trim(); push() } })
@@ -501,8 +566,8 @@ app.whenReady().then(async () => {
   h('pwNever', () => { if (pwPending) { settings.pwNever.push(pwPending.origin); pwPending = null; push() } })
   h('pwDismiss', () => { pwPending = null; push() })
   h('extensions', () => ext.list(spaceSessions()[0]))
-  h('installExtension', async input => { try { return { ok: true, ...await ext.installFromStore(input, spaceSessions()) } } catch (e) { return { error: e.message } } })
-  h('removeExtension', id => ext.remove(id, spaceSessions()))
+  h('installExtension', installExtension)
+  h('removeExtension', async id => { await ext.remove(id, spaceSessions()); push(); refreshExts() })
   // settings
   h('setSetting', (k, v) => { if (['archiveHours', 'autoPip', 'littleExternal'].includes(k)) { settings[k] = v; push() } })
   h('addRoute', (host, sp) => { host = hostOf('https://' + host.trim().replace(/^https?:\/\//, '')); if (host && SPACES[sp]) setRoute(host, sp) })
@@ -521,9 +586,16 @@ app.whenReady().then(async () => {
     if (process.platform === 'win32') shell.openExternal('ms-settings:defaultapps')
     return app.isDefaultProtocolClient('http')
   })
+  ipcMain.handle('ext:has', (e, id) => senderOrigin(e) === 'https://chromewebstore.google.com' && ext.list(spaceSessions()[0]).some(x => x.id === id))
   ipcMain.handle('ext:install', async (e, url) => { // the Web Store page's own button (see tabpreload.js)
     if (senderOrigin(e) !== 'https://chromewebstore.google.com') return { error: 'Not allowed here' }
-    try { return { ok: true, ...await ext.installFromStore(String(url), spaceSessions()) } } catch (err) { return { error: err.message } }
+    return installExtension(url)
+  })
+  ipcMain.handle('swipe-nav', (e, dir) => { // two-finger swipe on a page (see tabpreload.js); the new page is told to slide in once it commits
+    const wc = e.sender, h = wc.navigationHistory, can = dir === 'back' ? h.canGoBack() : h.canGoForward(); if (!can) return false
+    const slideIn = () => { wc.off('did-navigate', slideIn); wc.off('did-navigate-in-page', slideIn); wc.send('swipe-in', dir) }
+    wc.on('did-navigate', slideIn); wc.on('did-navigate-in-page', slideIn); setTimeout(() => { wc.off('did-navigate', slideIn); wc.off('did-navigate-in-page', slideIn) }, 5000)
+    dir === 'back' ? h.goBack() : h.goForward(); return true
   })
   ipcMain.on('pw:captured', (e, { user, pass }) => {
     const t = tabOf(e.sender), origin = senderOrigin(e)
@@ -537,6 +609,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('profile:get', e => tabOf(e.sender) ? profile : null)
 
   await ext.loadInstalled(spaceSessions()) // before any page loads, so content scripts reach restored tabs
+  refreshExts()
   // restore the previous session; only the active tab is loaded, the others wake up when selected
   nextId = Math.max(1, ...(saved.tabs || []).map(t => t.id + 1), ...(saved.folders || []).map(f => f.id + 1), ...downloads.map(d => d.id + 1), ...vault.map(v => v.id + 1))
   folders = saved.folders || []; archive = saved.archive || []; sidebar = saved.sidebar !== false; space = SPACES[saved.space] ? saved.space : 0
@@ -544,6 +617,18 @@ app.whenReady().then(async () => {
   ui.setVisible(sidebar); edge.setVisible(!sidebar)
   tabs.length ? activate(byId(saved.active)?.id ?? tabs[0].id) : newTab()
   layout(); stack(); sweep(); setInterval(sweep, 5 * 60e3).unref()
+  if (!app.isPackaged && !TEST) for (const ses of spaceSessions()) ses.serviceWorkers.on('console-message', (_, d) => console.log('extension worker:', d.level, d.message.slice(0, 300))) // dev: surface extension worker warnings and errors
+  if (!app.isPackaged && !TEST) { // dev only: reload the UI when ui/* changes, restart when the main process or the page preload changes
+    let timer
+    fs.watch(__dirname, { recursive: true }, (_, f) => {
+      if (!f || /node_modules|\.git|dist|build|selftest|assets/.test(f)) return
+      clearTimeout(timer); timer = setTimeout(() => {
+        console.log('dev: changed', f)
+        if (/^ui[\\/]/.test(f)) [ui, cmd, panel, find, edge, peekUi].forEach(v => v.webContents.reloadIgnoringCache())
+        else if (/^(main|preload|tabpreload)\.js$|^lib[\\/]/.test(f)) { app.relaunch(); app.exit() }
+      }, 250)
+    })
+  }
   ready()
   const first = urlArg(process.argv.slice(1)); if (first) openExternal(first)
 
@@ -555,7 +640,7 @@ app.whenReady().then(async () => {
     S: { place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
-      ext, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },
+      ext, crx, extCommand, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },
   })
 })
 app.on('window-all-closed', () => app.quit())

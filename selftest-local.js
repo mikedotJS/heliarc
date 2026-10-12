@@ -85,7 +85,13 @@ module.exports = async (a, ok) => {
     await js(ui(), `document.querySelector('[data-pw=pwSave]').click()`)
     ok('password saved encrypted', await until(async () => S.vault().length === 1) && !JSON.stringify(S.vault()).includes('s3cret'), JSON.stringify(S.vault()).slice(0, 80))
     ok('offer disappears after saving', S.pending() === null)
-    ok('Chrome Web Store pages offer "Add to Heliarc"', await js(ui(), `(() => { const t = state.tabs.find(t => t.id === state.active), u = t.url; t.url = 'https://chromewebstore.google.com/detail/x/abcdefghijklmnopabcdefghijklmnop'; render(); const r = document.querySelector('#extbar').innerText.includes('Add to Heliarc'); t.url = u; render(); return r && !document.querySelector('#extbar').classList.contains('show') })()`))
+    const nf = await js(ui(), `(() => { const b = document.querySelector('#nf').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) } })()`)
+    ui().sendInputEvent({ type: 'mouseMove', ...nf }); await sleep(400)
+    ok('hovering "new folder" lightens the button (no black fill)', await js(ui(), `getComputedStyle(document.querySelector('#nf')).backgroundColor`) === 'rgba(255, 255, 255, 0.16)', await js(ui(), `getComputedStyle(document.querySelector('#nf')).backgroundColor`))
+    const tabBox = () => js(ui(), `(() => { const b = document.querySelector('.tab').getBoundingClientRect(); return { x: Math.round(b.x + 40), y: Math.round(b.y + b.height / 2), h: b.height } })()`)
+    const rest = await tabBox(); ui().sendInputEvent({ type: 'mouseMove', x: rest.x, y: rest.y }); await sleep(400)
+    ok('a tab keeps its height on hover', (await tabBox()).h === rest.h, `${rest.h} → ${(await tabBox()).h}`)
+    ui().sendInputEvent({ type: 'mouseMove', x: 100, y: 600 })
     await open('/login'); const t2 = a.cur(); await sleep(300)
     const val = (wc, ids) => js(wc, `${JSON.stringify(ids)}.map(i => document.getElementById(i).value).join('/')`)
     const click = async (wc, sel) => {
@@ -117,6 +123,10 @@ module.exports = async (a, ok) => {
     await js(ui(), `document.querySelector('.fh .n').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`); await sleep(200)
     await js(ui(), `(() => { const i = document.querySelector('.fh input'); i.value = 'Research'; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })) })()`); await sleep(300)
     ok('folder can be renamed', S.folders()[0].name === 'Research', S.folders()[0].name)
+    const fhBox = () => js(ui(), `(() => { const b = document.querySelector('.fh').getBoundingClientRect(); return { x: Math.round(b.x + 60), y: Math.round(b.y + b.height / 2), h: b.height } })()`)
+    const fh0 = await fhBox(); ui().sendInputEvent({ type: 'mouseMove', x: fh0.x, y: fh0.y }); await sleep(400)
+    ok('a folder keeps its height on hover', (await fhBox()).h === fh0.h, `${fh0.h} → ${(await fhBox()).h}`)
+    ui().sendInputEvent({ type: 'mouseMove', x: 100, y: 700 })
     await snap(a.ui(), 'sidebar-organized')
     const t4 = await open('/video'); await sleep(300)
     // drag the new tab into the folder with the mouse
@@ -138,6 +148,35 @@ module.exports = async (a, ok) => {
     S.place(t1.id, 'fav'); a.switchSpace(1); await sleep(400)
     ok('favorites follow you to other spaces', await uiN('#pins .tile') === 1 && await uiN('#list .tab') === 1)
     a.switchSpace(0); await sleep(300)
+    const swipe = dx => js(ui(), `document.querySelector('#side').dispatchEvent(new WheelEvent('wheel', { deltaX: ${dx}, deltaY: 0, bubbles: true }))`)
+    await swipe(90); await sleep(400)
+    ok('swiping the sidebar left goes to the next space', S.space() === 1, 'space=' + S.space())
+    await sleep(700); await swipe(-90); await sleep(400)
+    ok('swiping it right goes back', S.space() === 0, 'space=' + S.space())
+    await sleep(700); await swipe(-90); await sleep(400)
+    ok('swiping past the first space does nothing', S.space() === 0)
+    // right-click menus on the sidebar: capture the template instead of showing a native menu
+    const { Menu } = require('electron'), realBuild = Menu.buildFromTemplate; let menu = null
+    Menu.buildFromTemplate = t => { menu ??= t; const m = realBuild(t); m.popup = () => {}; return m }
+    const rclick = sel => (menu = null, js(ui(), `document.querySelector('${sel}').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))`))
+    await rclick('#folders .fh'); await sleep(200)
+    ok('right-click on a folder offers rename and delete', menu?.some(m => m.label === 'Rename folder') && menu.some(m => m.label === 'Delete folder'), JSON.stringify(menu?.map(m => m.label)))
+    await rclick('#foot'); await sleep(200)
+    const nFolders = S.folders().length, newF = menu?.find(m => m.label === 'New folder')
+    ok('right-click on the sidebar offers new tab, folder and spaces', !!newF && menu.some(m => m.label === 'Switch space') && menu.some(m => m.label === 'New tab'), JSON.stringify(menu?.map(m => m.label)))
+    newF?.click(); await sleep(200)
+    ok('its New folder entry creates a folder', S.folders().length === nFolders + 1)
+    S.delFolder(S.folders().at(-1).id); Menu.buildFromTemplate = realBuild
+    // two-finger swipe on a page = back / forward
+    const nav = await open('/'), navUrl = () => nav.view.webContents.getURL()
+    await js(nav.view.webContents, `location.href = '/second'`); await until(async () => navUrl().endsWith('/second'))
+    const wheel = dx => js(nav.view.webContents, `document.body.dispatchEvent(new WheelEvent('wheel', { deltaX: ${dx}, deltaY: 0, bubbles: true }))`)
+    await wheel(-150); let moved = false
+    for (let i = 0; i < 40 && !moved; i++) { moved = await js(nav.view.webContents, `document.getAnimations().some(x => x.effect.target === document.documentElement)`).catch(() => false); await sleep(15) }
+    ok('the swipe plays a short slide animation', moved)
+    ok('swiping right on a page goes back', await until(async () => navUrl() === base + '/'), navUrl())
+    await sleep(1000); await wheel(150); ok('swiping left on a page goes forward', await until(async () => navUrl().endsWith('/second')), navUrl())
+    a.closeTab(nav.id)
     // split view
     a.activate(t3.id); S.openSplit(t2.id); await sleep(400)
     const b1 = t3.view.getBounds(), b2 = t2.view.getBounds()
@@ -257,7 +296,7 @@ module.exports = async (a, ok) => {
     const varint = n => { const o = []; do { o.push(n & 127 | (n > 127 ? 128 : 0)); n >>= 7 } while (n); return Buffer.from(o) }
     const pb = (tag, buf) => Buffer.concat([Buffer.from([tag << 3 | 2]), varint(buf.length), buf])
     const header = Buffer.concat([pb(2, pb(1, der)), pb(10000, pb(1, crypto.createHash('sha256').update(der).digest().subarray(0, 16)))])
-    const zip = zipSync({ 'manifest.json': Buffer.from(JSON.stringify({ manifest_version: 3, name: 'Heliarc test extension', version: '1.2', content_scripts: [{ matches: ['<all_urls>'], js: ['c.js'], run_at: 'document_start' }] })), 'c.js': Buffer.from(`document.documentElement.dataset.heliarcExt = 'on'`) })
+    const zip = zipSync({ 'manifest.json': Buffer.from(JSON.stringify({ manifest_version: 3, name: 'Heliarc test extension', version: '1.2', host_permissions: ['https://*/*'], action: { default_popup: 'p.html' }, commands: { 'do-it': { description: 'Do it', suggested_key: { default: 'Ctrl+Shift+K', mac: 'Command+Shift+K' } } }, content_scripts: [{ matches: ['<all_urls>'], js: ['c.js'], run_at: 'document_start' }] })), 'c.js': Buffer.from(`document.documentElement.dataset.heliarcExt = 'on'`), 'p.html': Buffer.from('<title>popup ok</title><p>hi</p>') })
     const u32 = n => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b }
     const crx = Buffer.concat([Buffer.from('Cr24'), u32(3), u32(header.length), header, Buffer.from(zip)])
     const r = await S.ext.installCrx(crx, S.spaceSessions())
@@ -266,6 +305,22 @@ module.exports = async (a, ok) => {
     const attr = async t => js(t.view.webContents, `document.documentElement.dataset.heliarcExt || 'off'`)
     const home = await open('/'), work = await open('/', 1)
     ok('extension runs in the first space', await attr(home) === 'on'); ok('extension runs in every space', await attr(work) === 'on')
+    a.switchSpace(0); await sleep(300); S.push()
+    const { BrowserWindow, webContents } = require('electron'), router = S.crx.get(S.spaceSessions()[0]).ctx.router, sent = [], realSend = router.sendEvent
+    router.sendEvent = (...a) => { a[1] === 'commands.onCommand' && sent.push(a.slice(0, 3)); return realSend.apply(router, a) }
+    const mac = process.platform === 'darwin', press = k => S.extCommand({ preventDefault() {} }, { type: 'keyDown', key: k, control: !mac, meta: mac, alt: false, shift: true }, home)
+    ok('an extension keyboard command runs from its suggested key', press('K') && sent.length === 1 && sent[0][2] === 'do-it', JSON.stringify(sent)); ok('other keys are left alone', !press('J') && sent.length === 1)
+    router.sendEvent = realSend
+    const actions = () => js(ui(), `document.querySelector('#exts').shadowRoot?.querySelectorAll('[part~=action]').length`)
+    ok('extension shows in the sidebar toolbar', await until(async () => await actions() === 1), String(await actions()))
+    await js(ui(), `document.querySelector('#exts').shadowRoot.querySelector('[part~=action]').click()`)
+    const popup = () => webContents.getAllWebContents().find(w => w.getURL() === `chrome-extension://${r.id}/p.html`)
+    ok('clicking it opens the extension popup', await until(async () => !!popup()), webContents.getAllWebContents().map(w => w.getURL()).join(' | '))
+    ok('the popup page loads', await until(async () => popup()?.getTitle() === 'popup ok'))
+    ok('a popup has no current tab, like in Chrome', await popup().executeJavaScript('chrome.tabs.getCurrent().then(t => t === undefined)'))
+    ok('host permissions match by pattern', await popup().executeJavaScript("chrome.permissions.contains({ origins: ['https://account.example.com/*'] })"))
+    ok('the browser alias carries the same APIs', await popup().executeJavaScript("typeof browser === 'undefined' || typeof browser.permissions?.contains === 'function'"))
+    BrowserWindow.getAllWindows().forEach(w => w.webContents.getURL().startsWith('chrome-extension://') && w.close())
     // a package Chromium refuses reports an error, leaves no folder behind and keeps the installed version
     const bad = (m, extra = {}) => Buffer.concat([Buffer.from('Cr24'), u32(3), u32(header.length), header, Buffer.from(zipSync({ 'manifest.json': Buffer.from(JSON.stringify({ manifest_version: 3, name: 'Broken', version: '2.0', content_scripts: [{ matches: [m], js: ['c.js'] }], ...extra })), 'c.js': Buffer.from('1') }))])
     const root = path.join(require('electron').app.getPath('userData'), 'extensions')
@@ -277,6 +332,28 @@ module.exports = async (a, ok) => {
     const crx2 = Buffer.concat([Buffer.from('Cr24'), u32(2), u32(der.length), u32(4), der, Buffer.from('sig!'), Buffer.from(zip)])
     const r2 = await S.ext.installCrx(crx2, S.spaceSessions())
     ok('CRX2 package keeps its id and replaces the old copy', r2.id === S.ext.idOf(der) && fs.readdirSync(root).length === 1, JSON.stringify(r2))
+    // like Bitwarden: a tiny content script asks the background worker, which injects the real scripts with chrome.scripting
+    const der2 = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ type: 'spki', format: 'der' })
+    const header2 = Buffer.concat([pb(2, pb(1, der2)), pb(10000, pb(1, crypto.createHash('sha256').update(der2).digest().subarray(0, 16)))])
+    const zip2 = zipSync({
+      'manifest.json': Buffer.from(JSON.stringify({ manifest_version: 3, name: 'Injector', version: '1', permissions: ['scripting', 'tabs', 'storage'], host_permissions: ['<all_urls>'], background: { service_worker: 'bg.js' }, content_scripts: [{ matches: ['<all_urls>'], js: ['t.js'], run_at: 'document_start', all_frames: true }] })),
+      't.js': Buffer.from(`chrome.runtime.sendMessage({ hello: 1 }); chrome.runtime.sendMessage({ ask: 1 }).then(r => { document.documentElement.dataset.reply = JSON.stringify(r) }).catch(e => { document.documentElement.dataset.reply = 'ERR ' + e.message })`),
+      'bg.js': Buffer.from(`chrome.scripting.registerContentScripts([{ id: 'reg', matches: ['<all_urls>'], js: ['reg.js'], runAt: 'document_start', allFrames: true, world: 'ISOLATED' }]).catch(e => chrome.scripting.executeScript({ target: { tabId: 0 }, func: () => 0 }).catch(() => {})); chrome.runtime.onMessage.addListener((m, s, send) => { if (m.ask) { setTimeout(() => send({ ok: 1 }), 50); return true } chrome.scripting.executeScript({ target: { tabId: s.tab.id, frameIds: [s.frameId ?? 0] }, files: ['inj.js'], injectImmediately: true, world: 'ISOLATED' }); chrome.windows.create({ url: chrome.runtime.getURL('w.html'), type: 'popup', width: 300, height: 300 }) }); chrome.storage.onChanged.addListener((c, a) => { if (c.ping) chrome.storage.session.set({ pong: [a, c.ping.newValue] }) })`),
+      'w.html': Buffer.from('<title>popout ok</title><script src="w.js"></script>'),
+      'w.js': Buffer.from(`setTimeout(() => chrome.storage.local.set({ ping: 7 }), 1500)`),
+      'reg.js': Buffer.from(`document.documentElement.dataset.registered = 'yes'`),
+      'inj.js': Buffer.from(`document.documentElement.dataset.injected = 'yes'`),
+    })
+    const r3 = await S.ext.installCrx(Buffer.concat([Buffer.from('Cr24'), u32(3), u32(header2.length), header2, Buffer.from(zip2)]), S.spaceSessions())
+    await open('/second'); const inj = a.cur()
+    ok('an extension worker can inject scripts into a page', await until(async () => await js(inj.view.webContents, `document.documentElement.dataset.injected`) === 'yes'), await js(inj.view.webContents, `document.documentElement.dataset.injected || 'no'`))
+    ok('a worker can answer a page message asynchronously', await until(async () => (await js(inj.view.webContents, `document.documentElement.dataset.reply || ''`)).length > 0) && await js(inj.view.webContents, `document.documentElement.dataset.reply`) === '{"ok":1}', await js(inj.view.webContents, `document.documentElement.dataset.reply || 'none'`))
+    ok('an extension can open a pop-out window', await until(async () => require('electron').webContents.getAllWebContents().some(w => w.getURL() === `chrome-extension://${r3.id}/w.html` && w.getTitle() === 'popout ok')))
+    const pong = async () => { try { return await wpage()?.executeJavaScript(`chrome.storage.session.get('pong').then(o => JSON.stringify(o.pong || null))`) } catch (e) { return 'ERR ' + e.message.slice(0, 80) } }
+    const wpage = () => require('electron').webContents.getAllWebContents().find(w => w.getURL() === `chrome-extension://${r3.id}/w.html`)
+    ok('a worker hears storage changes made by an extension page', await until(async () => await pong() === '["local",7]'), await pong())
+    require('electron').BaseWindow.getAllWindows().forEach(w => w.getTitle() === 'Heliarc' && w !== a.win() && w.close())
+    await S.ext.remove(r3.id, S.spaceSessions())
     S.openPanel('extensions'); await sleep(700)
     ok('extensions panel lists it', await js(panel(), `document.body.innerText.includes('Heliarc test extension')`)); await snap(S.panel(), 'panel-extensions')
     await js(panel(), `document.querySelector('#extin').value = 'not an id'; document.querySelector('[data-a=installExt]').click()`)

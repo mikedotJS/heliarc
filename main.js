@@ -677,7 +677,11 @@ app.whenReady().then(async () => {
     return attempt(() => what === 'passwords' ? addPasswords(importers.passwords(fs.readFileSync(file, 'utf8'))) : what === 'safari' ? addHistory(importers.history('safari', file)) : addBookmarks(importers.bookmarks('file', file), 'Imported file'))
   })
   h('installUpdate', () => { installing = true; autoUpdate?.install() })
-  h('checkUpdate', checkUpdate); h('openRelease', () => update && shell.openExternal(update.url))
+  h('checkUpdate', checkUpdate); h('openRelease', async () => { // the update feed can lag behind a fresh release: try the in-app update first, the release page is the way out
+    if (!update) return
+    if (autoUpdate && !updater) { updater = { state: 'downloading' }; push(); if (await autoUpdate.check()) return }
+    shell.openExternal(update.url)
+  })
   h('delRoute', host => { settings.routes = settings.routes.filter(r => r.host !== host); push() })
   h('setShortcut', (action, c) => {
     if (!keys.ACTIONS[action]) return { error: 'Unknown action' }

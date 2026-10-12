@@ -266,6 +266,8 @@ module.exports = async (a, ok) => {
       const au = AU.setup({ autoUpdater: fake, feed: 'https://example.com/feed', onChange: s => seen.push(s) })
       fake.emit('update-available'); fake.emit('update-downloaded', {}, 'notes', 'Heliarc 9'); fake.emit('error', new Error('boom')); fake.emit('update-not-available'); au.check(); au.install()
       ok('the update downloader reports its states', fake.feed === 'https://example.com/feed' && JSON.stringify(seen) === '[{"state":"downloading"},{"state":"ready","name":"Heliarc 9"},{"state":"error","error":"boom"},null]' && fake.checks === 1 && fake.installed, JSON.stringify(seen))
+      const hit = au.check(); fake.emit('update-available'); const miss = au.check(); fake.emit('update-not-available')
+      ok('a check says whether a download started', await hit === true && await miss === false)
       S.setUpdater({ state: 'downloading' }); await sleep(300)
       ok('the sidebar shows the download', /Downloading/.test(await js(ui(), "document.querySelector('#upd').textContent")))
       S.setUpdater({ state: 'ready' }); await sleep(300)

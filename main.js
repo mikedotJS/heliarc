@@ -149,7 +149,7 @@ function zoom(dir) { // step through Chromium's zoom levels; 0 resets
 function openCmd(mode) {
   cmdOpen = true
   win.contentView.addChildView(cmd); cmd.setVisible(true); cmd.webContents.focus()
-  cmd.webContents.send('open', { mode, value: mode === 'edit' ? cur()?.url || '' : '' })
+  cmd.webContents.send('open', { mode, value: mode === 'edit' ? cur()?.url || '' : '', left: content().x, right: GAP }) // center on the page area, not on the whole window
 }
 function closeCmd() { cmdOpen = false; cmd.setVisible(false); (peek?.view || cur()?.view)?.webContents.focus() }
 function openPanel(section) {

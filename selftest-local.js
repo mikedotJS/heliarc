@@ -218,6 +218,11 @@ module.exports = async (a, ok) => {
     }
     ok('context menu shows', shownBy.some(Boolean), JSON.stringify(shownBy))
     S.toggleSidebar(); await sleep(300); ok('sidebar comes back', S.sidebar() && t.view.getBounds().x === 262)
+    // the command palette sits in the middle of the page area, not of the whole window
+    const cmdCenter = async () => { a.openCmd('new'); await sleep(900); const r = await js(a.cmd().webContents, `(() => { const b = document.getElementById('box').getBoundingClientRect(); return { mid: b.x + b.width / 2, w: innerWidth } })()`); a.closeCmd(); await sleep(300); return r }
+    const pageMid = () => { const b = t.view.getBounds(); return b.x + b.width / 2 }
+    let cc = await cmdCenter(); ok('palette is centered over the page (sidebar open)', Math.abs(cc.mid - pageMid()) <= 2, `palette=${cc.mid} page=${pageMid()}`)
+    S.toggleSidebar(); await sleep(300); cc = await cmdCenter(); ok('palette is centered over the page (sidebar collapsed)', Math.abs(cc.mid - pageMid()) <= 2, `palette=${cc.mid} page=${pageMid()}`); S.toggleSidebar(); await sleep(300)
     const key = (k, extra = {}) => { let prevented = false; S.shortcut({ preventDefault: () => { prevented = true } }, { type: 'keyDown', key: k, control: process.platform !== 'darwin', meta: process.platform === 'darwin', alt: false, shift: false, ...extra }); return prevented }
     ok('Ctrl+F opens find', key('f') && S.findOpen()); S.closeFind()
     ok('Ctrl+S toggles the sidebar', key('s') && !S.sidebar()); key('s')

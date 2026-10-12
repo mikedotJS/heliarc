@@ -6,7 +6,7 @@
   body.in .row { animation: row var(--dur-ui) var(--ease-out) both; animation-delay: calc(60ms + var(--i, 0) * var(--stagger)) }
   body.out { opacity: 0; transition: opacity var(--dur-exit) var(--ease-in) } body.out #box { transform: translateY(8px) scale(.985); transition: transform var(--dur-exit) var(--ease-in) }
   .row { transition: background var(--dur-micro) var(--ease-out) }
-  #box { width: min(640px, 90vw); height: fit-content; background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,.45); overflow: hidden }
+  #box { width: min(640px, 100%); height: fit-content; background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,.45); overflow: hidden }
   #in { width: 100%; border: 0; outline: 0; padding: 18px 20px; font-family: system-ui, sans-serif; font-size: 18px; user-select: text }
   #res { border-top: 1px solid #eee; padding: 6px; max-height: 50vh; overflow-y: auto }
   .row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; cursor: pointer; overflow: hidden; white-space: nowrap }
@@ -43,5 +43,5 @@ $('#res').onclick = e => { const r = e.target.closest('.row'); r && rows[+r.data
 document.body.onmousedown = e => { if (!e.target.closest('#box')) close() }
 const close = () => { document.body.classList.add('out'); setTimeout(() => api.call('closeCmd'), 200) }
 api.onOpen(o => {
-  document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); mode = o.mode; sel = 0; hist = []; $('#in').value = o.value; render(); $('#in').focus(); $('#in').select() })
+  document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); mode = o.mode; sel = 0; hist = []; document.body.style.paddingLeft = o.left + 'px'; document.body.style.paddingRight = o.right + 'px'; $('#in').value = o.value; render(); $('#in').focus(); $('#in').select() })
 </script>

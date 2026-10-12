@@ -228,6 +228,11 @@ module.exports = async (a, ok) => {
     S.settings().sitePerms['127.0.0.1'] = { camera: true }
     ok('a camera allowed for the site shows as granted to the page', await wcP.executeJavaScript("navigator.permissions.query({ name: 'camera' }).then(p => p.state)") === 'granted')
     delete S.settings().sitePerms['127.0.0.1']
+    dialog.showMessageBox = async (_, o) => { asked.push(o.message); return { response: 0, checkboxChecked: false } } // a mailto: link asks before opening the mail app (blocked here)
+    await wcP.executeJavaScript("location.href = 'mailto:a@b.c'", true); await sleep(600)
+    ok('a mailto: link asks before opening another app', /127.0.0.1 wants to open mailto: links in another app/.test(asked.at(-1)), asked.at(-1))
+    const nAsked = asked.length; await wcP.executeJavaScript("location.href = 'file:///C:/Windows/notepad.exe'", true); await sleep(600)
+    ok('a file: link is never handed over', asked.length === nAsked)
     dialog.showMessageBox = realBox; a.closeTab(pp.id)
     // private space: nothing is kept
     const PV = 3, pses = S.spaceSessions()[PV], histBefore = S.history().length

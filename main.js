@@ -1,4 +1,4 @@
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen, dialog } = require('electron')
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen, dialog, desktopCapturer } = require('electron')
 const path = require('path'), fs = require('fs'), os = require('os')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 const bangs = require('./bangs')
@@ -464,12 +464,17 @@ function setupSession(ses) {
   privacy.filterRequests(ses, () => settings, () => blocker) // Global Privacy Control, Do Not Track, third-party cookies, ad blocker
   if (settings.fingerprint) ses.setUserAgent(app.userAgentFallback.replace(/ (Electron|Heliarc)\/\S+/g, '')) // sites see a plain Chrome, not an Electron app
   ses.setPermissionRequestHandler(async (wc, permission, cb, d) => { // camera, microphone, location, notifications, clipboard: ask once per site, then remember
-    if (SILENT.has(permission)) return cb(true)
+    if (SILENT.has(permission) || permission === 'display-capture') return cb(true) // screen sharing asks through the picker below
     const need = permsOf(permission, d), host = privacy.host(d.requestingUrl || wc.getURL()), saved = settings.sitePerms[host] || {}
     if (!need.length || !host) return cb(false)
     if (need.some(n => saved[n] === false)) return cb(false)
     cb(need.every(n => saved[n] === true) || await askPermission(host, need))
   })
+  ses.setDisplayMediaRequestHandler(async (req, cb) => { // screen sharing (Meet, Zoom…): the macOS picker, or a list of screens and windows elsewhere
+    const sources = (await desktopCapturer.getSources({ types: ['screen', 'window'] })).slice(0, 8)
+    const { response } = await dialog.showMessageBox(win, { message: `${privacy.host(req.securityOrigin)} wants to share your screen`, detail: 'Choose what to share.', buttons: [...sources.map(x => x.name), 'Cancel'], cancelId: sources.length, defaultId: 0 })
+    sources[response] ? cb({ video: sources[response], ...(req.audioRequested && process.platform === 'win32' && { audio: 'loopback' }) }) : cb({})
+  }, { useSystemPicker: true })
   ses.setPermissionCheckHandler((wc, permission, origin, d) => { if (SILENT.has(permission)) return true; const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}; return need.length > 0 && need.every(n => s[n] === true) })
   ses.on('will-download', onDownload)
   const api = new ElectronChromeExtensions({
@@ -496,12 +501,15 @@ function setupSession(ses) {
 const PERMS = { camera: 'use your camera', microphone: 'use your microphone', geolocation: 'use your location', notifications: 'show notifications', 'clipboard-read': 'read your clipboard', midi: 'use your MIDI devices', midiSysex: 'fully control your MIDI devices' }
 // what Chrome grants without asking (a video's fullscreen button, copy buttons, keeping the screen awake, DRM players…); everything else not in PERMS is refused
 const SILENT = new Set(['fullscreen', 'clipboard-sanitized-write', 'screen-wake-lock', 'pointerLock', 'sensors', 'mediaKeySystem', 'persistent-storage', 'background-sync'])
-const permsOf = (permission, d) => permission === 'media' ? (d?.mediaTypes || [d?.mediaType]).filter(t => t === 'video' || t === 'audio').map(t => t === 'video' ? 'camera' : 'microphone') : PERMS[permission] ? [permission] : []
+const OPEN_BLOCKED = new Set(['file', 'javascript', 'data', 'vbscript', 'ms-msdt', 'search-ms']) // links that run code or open local files are never handed to another app
+const openKey = u => { const x = String(u || '').split(':')[0].toLowerCase(); return x && !OPEN_BLOCKED.has(x) ? 'open:' + x : null } // mailto:, spotify:, zoommtg:… one answer per site and scheme
+const say = n => PERMS[n] || `open ${n.slice(5)}: links in another app`
+const permsOf = (permission, d) => permission === 'openExternal' ? [openKey(d?.externalURL)].filter(Boolean) : permission === 'media' ? (d?.mediaTypes || [d?.mediaType]).filter(t => t === 'video' || t === 'audio').map(t => t === 'video' ? 'camera' : 'microphone') : PERMS[permission] ? [permission] : []
 const asking = new Map() // one question at a time per site and permission
 function askPermission(host, need) {
   const key = host + need.join()
   if (!asking.has(key)) asking.set(key, dialog.showMessageBox(win, {
-    message: `${host} wants to ${need.map(n => PERMS[n]).join(' and ')}`,
+    message: `${host} wants to ${need.map(say).join(' and ')}`,
     buttons: ['Block', 'Allow'], defaultId: 0, cancelId: 0, checkboxLabel: 'Remember for this site', checkboxChecked: true,
   }).then(({ response, checkboxChecked }) => {
     if (checkboxChecked) { const s = settings.sitePerms[host] ??= {}; need.forEach(n => { s[n] = response === 1 }); push() }
@@ -678,7 +686,7 @@ app.whenReady().then(async () => {
   })
   h('delBang', trigger => { settings.bangs = settings.bangs.filter(x => x.trigger !== trigger); push() })
   h('toggleSiteAds', () => { const t = cur(), h = t && privacy.host(t.url); if (!h) return; settings.adblockOff = adsAllowed(t.url) ? settings.adblockOff.filter(x => x !== h) : [...settings.adblockOff, h]; t.view?.webContents.reload(); push() })
-  h('setSitePerm', (host, perm, value) => { const s = settings.sitePerms[host]; if (!s || !PERMS[perm]) return; value === null ? delete s[perm] : (s[perm] = !!value); if (!Object.keys(s).length) delete settings.sitePerms[host]; push() })
+  h('setSitePerm', (host, perm, value) => { const s = settings.sitePerms[host]; if (!s || !(PERMS[perm] || perm.startsWith('open:'))) return; value === null ? delete s[perm] : (s[perm] = !!value); if (!Object.keys(s).length) delete settings.sitePerms[host]; push() })
   h('importDetect', () => importers.detect().map(({ id, name, history, bookmarks }) => ({ id, name, history: !!history, bookmarks: !!bookmarks })))
   h('importRun', (id, what) => attempt(() => what === 'history' ? addHistory(importers.history(id)) : addBookmarks(importers.bookmarks(id), importers.BROWSERS[id].name)))
   h('importFile', async what => {

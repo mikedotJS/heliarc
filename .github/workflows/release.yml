@@ -80,6 +80,6 @@ jobs:
 
             `curl -fsSL https://raw.githubusercontent.com/mikedotJS/heliarc/main/scripts/install-mac.sh | zsh`
 
-            Or unzip `Heliarc-mac-arm64.zip` (Apple Silicon) / `Heliarc-mac-x64.zip` (Intel) and drag `Heliarc.app` to Applications. The app isn't notarized yet, so macOS blocks a browser-downloaded copy ("Apple could not verify…"): run `xattr -dr com.apple.quarantine /Applications/Heliarc.app` once in Terminal, or open *System Settings → Privacy & Security* and click *Open Anyway*.
+            Or unzip `Heliarc-mac-arm64.zip` (Apple Silicon) / `Heliarc-mac-x64.zip` (Intel) and drag `Heliarc.app` to Applications. The Mac app is signed and notarized by Apple: it opens like any other app.
           EOF
           gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" --title "Heliarc ${GITHUB_REF_NAME#v}" --generate-notes --notes-file notes.md

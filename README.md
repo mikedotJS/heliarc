@@ -38,7 +38,7 @@ To check session restore across launches, run `test:local` once with `HELIARC_US
 
 ## Download
 
-Get the latest Windows and Mac builds from [Releases](https://github.com/mikedotJS/heliarc/releases). They aren't code-signed yet: on Windows click *More info* → *Run anyway*; on Mac right-click the app → *Open* the first time.
+Get the latest Windows and Mac builds from [Releases](https://github.com/mikedotJS/heliarc/releases). They aren't code-signed yet: on Windows click *More info* → *Run anyway*; on Mac (macOS 15 and later) run `xattr -dr com.apple.quarantine /Applications/Heliarc.app` once in Terminal, or open *System Settings → Privacy & Security* and click *Open Anyway* after the first blocked launch.
 
 ## Package it yourself
 

@@ -42,6 +42,7 @@ let win, ui, cmd, panel, find, peekUi, edge, little
 let tabs = [], folders = [], archive = [], history = [], downloads = [], vault = [], profile = {}, settings = { ...DEFAULTS }
 let active = null, space = 0, nextId = 1, blocked = 0, blockerState = 'loading', copied = false // copied: the address pill says "Link copied" for a moment after Mod+Shift+C
 let cmdOpen = false, panelOpen = false, findOpen = false, findText = '', recording = false
+let fsTab = null // the tab whose page is in HTML fullscreen (YouTube player…): Electron puts the window in fullscreen, we make the page fill it
 let sidebar = true, floating = false, split = null, peek = null, mediaTab = null, pwPending = null, soon = null
 const dls = new Map(), configured = new Set()
 
@@ -84,7 +85,7 @@ function layout() {
   const ids = split || [], half = Math.floor((c.w - GAP) / 2)
   tabs.forEach(t => {
     const i = ids.indexOf(t.id)
-    t.view?.setBounds(i < 0 ? { x: c.x, y: c.y, width: c.w, height: c.h } : { x: c.x + i * (half + GAP), y: c.y, width: i ? c.w - half - GAP : half, height: c.h })
+    t.view?.setBounds(t === fsTab ? full : i < 0 ? { x: c.x, y: c.y, width: c.w, height: c.h } : { x: c.x + i * (half + GAP), y: c.y, width: i ? c.w - half - GAP : half, height: c.h })
     if (t.view && isShown(t.id)) fitSoon(t)
   })
   if (peek) { const r = peekRect(); peek.view.setBounds({ x: r.x, y: r.y + PEEKBAR, width: r.w, height: r.h - PEEKBAR }) }
@@ -95,6 +96,10 @@ function stack() { // z-order: sidebar < pages < peek < floating sidebar < edge 
 }
 const refresh = () => { tabs.forEach(t => t.view?.setVisible(isShown(t.id))); layout(); push() }
 
+function leaveFullscreen(tab) {
+  if (fsTab !== tab) return
+  fsTab = null; tab.view?.setBorderRadius(12); layout()
+}
 function makeView(tab) {
   const view = new WebContentsView({ webPreferences: { partition: SPACES[tab.space].partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD, additionalArguments: settings.fingerprint ? ['--heliarc-fp'] : [] } })
   const wc = view.webContents
@@ -124,6 +129,8 @@ function makeView(tab) {
   wc.on('zoom-changed', (_, dir) => { if (tab.id === active) zoom(dir === 'in' ? 1 : -1) })
   wc.on('found-in-page', (_, r) => find.webContents.send('found', { active: r.activeMatchOrdinal, total: r.matches }))
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
+  wc.on('enter-html-full-screen', () => { fsTab = tab; view.setBorderRadius(0); layout() }) // the page fills the whole window, above the sidebar
+  wc.on('leave-html-full-screen', () => leaveFullscreen(tab))
   wc.setAudioMuted(tab.muted)
   win.contentView.addChildView(view)
   crxOf(tab)?.addTab(wc, win)
@@ -457,6 +464,7 @@ function setupSession(ses) {
   privacy.filterRequests(ses, () => settings, () => blocker) // Global Privacy Control, Do Not Track, third-party cookies, ad blocker
   if (settings.fingerprint) ses.setUserAgent(app.userAgentFallback.replace(/ (Electron|Heliarc)\/\S+/g, '')) // sites see a plain Chrome, not an Electron app
   ses.setPermissionRequestHandler(async (wc, permission, cb, d) => { // camera, microphone, location, notifications, clipboard: ask once per site, then remember
+    if (permission === 'fullscreen') return cb(true) // a video's fullscreen button, no question asked
     const need = permsOf(permission, d), host = privacy.host(d.requestingUrl || wc.getURL()), saved = settings.sitePerms[host] || {}
     if (!need.length || !host) return cb(false)
     if (need.some(n => saved[n] === false)) return cb(false)
@@ -604,6 +612,7 @@ app.whenReady().then(async () => {
   win.contentView.addChildView(ui); ui.webContents.loadFile('ui/arc.html'); ui.webContents.on('before-input-event', shortcut)
   peekUi = overlay('peek.html'); edge = overlay('edge.html'); find = overlay('find.html'); panel = overlay('panel.html'); cmd = overlay('cmdbar.html')
   win.on('resize', layout)
+  win.on('enter-full-screen', layout); win.on('leave-full-screen', layout) // the page follows the window
   win.on('closed', () => app.quit())
   setupPrivacy()
 

@@ -189,6 +189,11 @@ module.exports = async (a, ok) => {
     ok('the page looks like a plain Chrome', !/Electron|Heliarc/.test(await js(emb.view.webContents, 'navigator.userAgent')), await js(emb.view.webContents, 'navigator.userAgent'))
     ok('every visitor reports the same hardware', await js(emb.view.webContents, 'navigator.hardwareConcurrency === 4 && navigator.deviceMemory === 8'))
     ok('the page is a "Google Chrome" brand, which Google sign-in requires', await js(emb.view.webContents, 'navigator.userAgentData.brands.some(b => b.brand === "Google Chrome") && navigator.userAgentData.getHighEntropyValues(["fullVersionList"]).then(r => r.fullVersionList.some(b => b.brand === "Google Chrome"))'))
+    const wcE = emb.view.webContents, area = () => a.win().getContentBounds(), placed = emb.view.getBounds() // a video's fullscreen button: the page fills the whole window, then goes back
+    await wcE.executeJavaScript('void document.documentElement.requestFullscreen()', true); for (let i = 0; i < 30 && emb.view.getBounds().x !== 0; i++) await sleep(200); await sleep(800) // the window itself takes a moment to go fullscreen
+    ok('a page can go fullscreen over the sidebar', emb.view.getBounds().x === 0 && emb.view.getBounds().y === 0 && emb.view.getBounds().width === area().width, JSON.stringify([emb.view.getBounds(), area()]))
+    wcE.executeJavaScript('void document.exitFullscreen()'); for (let i = 0; i < 30 && emb.view.getBounds().x === 0; i++) await sleep(200); await sleep(1500)
+    ok('and comes back to its place', emb.view.getBounds().x === placed.x && emb.view.getBounds().y === placed.y, JSON.stringify(emb.view.getBounds()))
     ok('WebRTC hides the local address', emb.view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only')
     S.settings().blockThirdPartyCookies = false; const emb2 = await open('/embed3p'); await sleep(800) // control: with the setting off, the same embed does store its cookie
     ok('(control) the cookie is stored when the setting is off', (await ses0.cookies.get({ name: 'tp', domain: 'localhost' })).length === 1)

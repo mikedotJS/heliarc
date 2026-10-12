@@ -1,0 +1,45 @@
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
+<style>
+  body { background: rgba(0,0,0,.35); height: 100vh; display: flex; justify-content: center; padding-top: 14vh; color: #1b1b22; }
+  @keyframes fade { from { opacity: 0 } } @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.975) } } @keyframes row { from { opacity: 0; transform: translateY(6px) } }
+  body.in { animation: fade var(--dur-ui) var(--ease-out) } body.in #box { animation: rise var(--dur-ui) var(--ease-out) }
+  body.in .row { animation: row var(--dur-ui) var(--ease-out) both; animation-delay: calc(60ms + var(--i, 0) * var(--stagger)) }
+  body.out { opacity: 0; transition: opacity var(--dur-exit) var(--ease-in) } body.out #box { transform: translateY(8px) scale(.985); transition: transform var(--dur-exit) var(--ease-in) }
+  .row { transition: background var(--dur-micro) var(--ease-out) }
+  #box { width: min(640px, 90vw); height: fit-content; background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,.45); overflow: hidden }
+  #in { width: 100%; border: 0; outline: 0; padding: 18px 20px; font-family: system-ui, sans-serif; font-size: 18px; user-select: text }
+  #res { border-top: 1px solid #eee; padding: 6px; max-height: 50vh; overflow-y: auto }
+  .row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; cursor: pointer; overflow: hidden; white-space: nowrap }
+  .row.sel { background: #ece9ff } .row .ic { color: #6b5cff; flex: none } .row small { color: #888; overflow: hidden; text-overflow: ellipsis } .row b { font-weight: 500 }
+  .row .k { margin-left: auto; font-size: 11px; color: #999; flex: none }
+  #hint { padding: 8px 18px; font-size: 11px; color: #999; border-top: 1px solid #eee }
+</style>
+<div id="box"><input id="in" placeholder="Search or enter address…" spellcheck="false" autocomplete="off"><div id="res"></div>
+<div id="hint">Enter to go · ↑↓ to pick · Esc to close · Bangs: !w !yt !gh !g !ddg</div></div>
+<script>
+const $ = s => document.querySelector(s), esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+let state = { tabs: [] }, mode = 'new', sel = 0, rows = []
+api.onState(s => { state = s })
+function render() {
+  const q = $('#in').value.trim(), ql = q.toLowerCase()
+  rows = []
+  if (q) rows.push({ kind: 'go', label: mode === 'edit' ? `Go to “${q}”` : `Open “${q}” in a new tab`, run: () => api.call(mode === 'edit' ? 'go' : 'open', q), key: '↵' })
+  state.tabs.filter(t => !q || (t.title + ' ' + t.url).toLowerCase().includes(ql)).slice(0, 8)
+    .forEach(t => rows.push({ kind: 'tab', label: t.title || t.url, sub: t.url, run: () => api.call('activate', t.id).then(() => api.call('closeCmd')), key: 'Switch to tab' }))
+  if (!rows.length) rows.push({ kind: 'none', label: 'Type to search the web or open a site', run: () => {} })
+  sel = Math.min(sel, rows.length - 1)
+  $('#res').innerHTML = rows.map((r, i) => `<div class="row ${i === sel ? 'sel' : ''}" data-i="${i}" style="--i:${i}">${icon(r.kind === 'tab' ? 'layers' : r.kind === 'go' ? 'search' : 'globe', 16)} <b>${esc(r.label)}</b> <small>${esc(r.sub || '')}</small><span class="k">${r.key || ''}</span></div>`).join('')
+}
+$('#in').oninput = () => { sel = 0; render() }
+$('#in').onkeydown = e => {
+  if (e.key === 'Escape') close()
+  else if (e.key === 'ArrowDown') { sel = (sel + 1) % rows.length; render(); e.preventDefault() }
+  else if (e.key === 'ArrowUp') { sel = (sel - 1 + rows.length) % rows.length; render(); e.preventDefault() }
+  else if (e.key === 'Enter') rows[sel]?.run()
+}
+$('#res').onclick = e => { const r = e.target.closest('.row'); r && rows[+r.dataset.i]?.run() }
+document.body.onmousedown = e => { if (!e.target.closest('#box')) close() }
+const close = () => { document.body.classList.add('out'); setTimeout(() => api.call('closeCmd'), 200) }
+api.onOpen(o => {
+  document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); mode = o.mode; sel = 0; $('#in').value = o.value; render(); $('#in').focus(); $('#in').select() })
+</script>

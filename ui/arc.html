@@ -1,0 +1,90 @@
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
+<style>
+  @property --c1 { syntax: '<color>'; inherits: true; initial-value: #5b4bff }
+  @property --c2 { syntax: '<color>'; inherits: true; initial-value: #c04bff }
+  html { transition: --c1 520ms var(--ease-inout), --c2 520ms var(--ease-inout) }
+  @keyframes enter { from { opacity: 0; transform: translateX(-10px) } }
+  @keyframes pop { from { opacity: 0; transform: scale(.85) } }
+  .tab.enter { animation: enter var(--dur-ui) var(--ease-out) both; animation-delay: calc(var(--i, 0) * var(--stagger)) }
+  .tile.enter { animation: pop var(--dur-ui) var(--ease-out) both; animation-delay: calc(var(--i, 0) * var(--stagger)) }
+  .tab, .tile, #pill { transition: background var(--dur-micro) var(--ease-out), border-color var(--dur-micro), opacity var(--dur-ui) var(--ease-out) }
+  #foot button .ic { transition: transform var(--dur-micro) var(--ease-out) } #foot button:hover .ic { transform: translateY(-2px) }
+  #errbar.show { animation: enter var(--dur-ui) var(--ease-out) }
+  body { height: 100vh; background: linear-gradient(145deg, var(--c1, #5b4bff), var(--c2, #c04bff)); transition: background .35s; color: #fff }
+  #side { width: 262px; height: 100vh; display: flex; flex-direction: column; padding: 10px 10px 8px; gap: 8px }
+  #nav { display: flex; align-items: center; gap: 2px } #nav .sp { flex: 1 }
+  #nav button, .tile, .tab, #pill, #newbtn { color: #fff }
+  #nav button { font-size: 15px; width: 30px; height: 28px; padding: 0 }
+  #nav button:hover:not(:disabled), .tab:hover, #newbtn:hover { background: rgba(255,255,255,.16) }
+  #pill { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.2); border-radius: 10px; padding: 9px 12px; cursor: pointer; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
+  #pill:hover { background: rgba(255,255,255,.28) } #pill span { overflow: hidden; text-overflow: ellipsis }
+  #errbar { display: none; background: rgba(120,0,20,.55); border-radius: 8px; padding: 6px 10px; font-size: 12px; gap: 8px; align-items: center }
+  #errbar.show { display: flex } #errbar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  #pins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px }
+  .tile { height: 52px; border-radius: 12px; background: rgba(255,255,255,.18); display: grid; place-items: center; cursor: pointer; position: relative; border: 2px solid transparent }
+  .tile:hover { background: rgba(255,255,255,.28) } .tile.on { border-color: rgba(255,255,255,.85) }
+  .tile img, .tab img { width: 22px; height: 22px; border-radius: 5px } .tab img { width: 16px; height: 16px }
+  .tile .spin { position: absolute; top: 4px; right: 4px }
+  #sep { height: 1px; background: rgba(255,255,255,.25); margin: 2px 4px }
+  #list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px }
+  #list::-webkit-scrollbar { width: 0 }
+  .tab { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 9px; cursor: pointer; min-height: 32px }
+  .tab.on { background: rgba(255,255,255,.3); font-weight: 600 }
+  .tab .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .tab.asleep { opacity: .6 } .tab .acts { display: none; gap: 0 } .tab:hover .acts { display: flex }
+  .tab .acts button { padding: 0 4px; font-size: 12px; color: #fff }
+  .ph { width: 16px; height: 16px; border-radius: 5px; background: rgba(255,255,255,.35); display: grid; place-items: center; font-size: 10px; flex: none }
+  #newbtn { text-align: left; padding: 8px; border-radius: 9px; opacity: .9 }
+  #empty { text-align: center; opacity: .75; padding: 14px 8px; font-size: 12px }
+  #foot { display: flex; align-items: center; gap: 4px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.2) }
+  #foot .sp { flex: 1 } #foot button { padding: 4px 7px; font-size: 14px; opacity: .6 } #foot button.on { opacity: 1; background: rgba(255,255,255,.25) }
+  #shield { font-size: 11px; opacity: .85; padding: 0 2px; display: flex; align-items: center; gap: 5px } .ic { flex: none; display: block } button .ic { margin: auto } #newbtn { display: flex; align-items: center; gap: 6px } #pill { gap: 8px } .ph.err { background: rgba(120,0,20,.6) } .ph { color: #fff } .spin { border-color: rgba(255,255,255,.4); border-top-color: #fff }
+</style>
+<div id="side">
+  <div id="nav" style="padding-top:var(--top,0)"><button id="b" title="Back"></button><button id="f" title="Forward"></button><button id="r" title="Reload"></button><span class="sp"></span></div>
+  <div id="pill" title="Edit address (Ctrl/⌘+L)"></div>
+  <div id="errbar"><span id="msg"></span><button id="retry">Retry</button></div>
+  <div id="pins"></div><div id="sep"></div>
+  <button id="newbtn"><span id="plus"></span> New tab <small style="opacity:.6">Ctrl+T</small></button>
+  <div id="list"></div>
+  <div id="shield"></div>
+  <div id="foot"></div>
+</div>
+<script>
+const MAC = navigator.platform.startsWith("Mac"); if (MAC) { document.documentElement.style.setProperty("--top", "26px"); document.querySelector("#newbtn small").textContent = "⌘T" }
+const $ = s => document.querySelector(s), esc = s => (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+$('#b').innerHTML = icon('arrow-left', 18); $('#f').innerHTML = icon('arrow-right', 18); $('#r').innerHTML = icon('rotate-cw', 16); $('#plus').innerHTML = icon('plus', 16)
+const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } }
+const ico = t => t.loading ? '<span class="spin"></span>' : t.error ? `<span class="ph err">${icon('triangle-alert', 11)}</span>` : t.icon ? `<img src="${esc(t.icon)}" onerror="this.outerHTML='<span class=ph>${esc((t.title||'?')[0]).toUpperCase()}</span>'">` : `<span class="ph">${icon('globe', 11)}</span>`
+$('#b').onclick = () => api.call('back'); $('#f').onclick = () => api.call('fwd')
+$('#r').onclick = $('#retry').onclick = () => api.call('reload')
+$('#pill').onclick = () => api.call('edit'); $('#newbtn').onclick = () => api.call('new')
+function click(e) {
+  const el = e.target.closest('[data-id]'); if (!el) return
+  const id = +el.dataset.id, a = e.target.dataset.a
+  a ? api.call(a, id) : api.call('activate', id)
+}
+$('#list').onclick = $('#pins').onclick = click
+$('#foot').onclick = e => e.target.dataset.sp !== undefined && api.call('space', +e.target.dataset.sp)
+const seen = new Set(); let lastSpace = null
+api.onState(s => {
+  const fresh = s.space !== lastSpace; lastSpace = s.space; let n = 0
+  const sp = s.spaces[s.space]; document.documentElement.style.setProperty('--c1', sp.c1); document.documentElement.style.setProperty('--c2', sp.c2)
+  const mine = s.tabs.filter(t => t.space === s.space), a = s.tabs.find(t => t.id === s.active)
+  $('#b').disabled = !s.canBack; $('#f').disabled = !s.canFwd
+  $('#pill').innerHTML = a?.url ? `${icon('lock', 14)} <span>${esc(host(a.url) || a.url)}</span>` : '<span style="opacity:.8">Search or enter address…</span>'
+  $('#errbar').className = a?.error ? 'show' : ''; $('#msg').textContent = a?.error ? 'Failed to load: ' + a.error : ''
+  $('#pins').innerHTML = mine.filter(t => t.pinned).map(t => `<div class="tile ${fresh || !seen.has(t.id) ? 'enter' : ''} ${t.id === s.active ? 'on' : ''}" style="--i:${n++}" data-id="${t.id}" title="${esc(t.title)}">${ico(t)}</div>`).join('')
+  $('#sep').style.display = mine.some(t => t.pinned) ? '' : 'none'
+  const rest = mine.filter(t => !t.pinned)
+  $('#list').innerHTML = rest.map(t => `
+    <div class="tab ${fresh || !seen.has(t.id) ? 'enter' : ''} ${t.id === s.active ? 'on' : ''} ${t.asleep ? 'asleep' : ''}" style="--i:${n++}" data-id="${t.id}">
+      ${ico(t)}<span class="t" title="${esc(t.url)}">${esc(t.title || t.url || 'New tab')}</span>
+      <span class="acts"><button data-a="mute" title="Mute">${icon(t.muted ? 'volume-x' : 'volume-2', 14)}</button><button data-a="pin" title="Pin">${icon('pin', 14)}</button>
+      ${t.id !== s.active && !t.asleep ? `<button data-a="sleep" title="Hibernate">${icon('moon', 14)}</button>` : ''}<button data-a="close" title="Close">${icon('x', 14)}</button></span>
+    </div>`).join('') || (mine.some(t => t.pinned) ? '' : '<div id="empty">No tabs in this space</div>')
+  s.tabs.forEach(t => seen.add(t.id))
+  $('#shield').innerHTML = s.blockerState === 'loading' ? 'Loading ad blocker…' : s.blockerState === 'error' ? `${icon('shield-alert', 13)} Ad blocker offline (lists unreachable)` : `${icon('shield-check', 13)} ${s.blocked} ads & trackers blocked`
+  $('#foot').innerHTML = s.spaces.map((x, i) => `<button class="${i === s.space ? 'on' : ''}" data-sp="${i}" title="${x.name}">${icon(x.icon, 16)}</button>`).join('') + '<span class="sp"></span>'
+})
+</script>

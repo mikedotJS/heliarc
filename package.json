@@ -1,0 +1,16 @@
+{
+  "name": "heliarc",
+  "version": "0.1.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "electron . --selftest",
+    "icons": "node scripts/gen-icons.js",
+    "package:mac": "zsh scripts/build-mac.sh"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.20.1",
+    "electron": "^44.7.0",
+    "lucide-static": "^1.55.0"
+  }
+}

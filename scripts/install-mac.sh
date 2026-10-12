@@ -12,6 +12,5 @@ ditto -x -k "$TMP/heliarc.zip" "$TMP"
 osascript -e 'tell application "Heliarc" to quit' >/dev/null 2>&1 || true
 rm -rf /Applications/Heliarc.app
 ditto "$TMP/Heliarc.app" /Applications/Heliarc.app
-xattr -dr com.apple.quarantine /Applications/Heliarc.app 2>/dev/null || true
 echo "Installed. Opening Heliarc…"
 open /Applications/Heliarc.app

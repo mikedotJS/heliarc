@@ -18,7 +18,7 @@
 <div id="hint">Enter to go · ↑↓ to pick · Esc to close · Bangs: !w !yt !gh !g !ddg</div></div>
 <script>
 const $ = s => document.querySelector(s), esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
-let state = { tabs: [] }, mode = 'new', sel = 0, rows = []
+let state = { tabs: [] }, mode = 'new', sel = 0, rows = [], hist = []
 api.onState(s => { state = s })
 function render() {
   const q = $('#in').value.trim(), ql = q.toLowerCase()
@@ -26,11 +26,13 @@ function render() {
   if (q) rows.push({ kind: 'go', label: mode === 'edit' ? `Go to “${q}”` : `Open “${q}” in a new tab`, run: () => api.call(mode === 'edit' ? 'go' : 'open', q), key: '↵' })
   state.tabs.filter(t => !q || (t.title + ' ' + t.url).toLowerCase().includes(ql)).slice(0, 8)
     .forEach(t => rows.push({ kind: 'tab', label: t.title || t.url, sub: t.url, run: () => api.call('activate', t.id).then(() => api.call('closeCmd')), key: 'Switch to tab' }))
+  const open = new Set(state.tabs.map(t => t.url))
+  hist.filter(h => !open.has(h.url)).slice(0, 5).forEach(h => rows.push({ kind: 'hist', label: h.title || h.url, sub: h.url, run: () => api.call(mode === 'edit' ? 'go' : 'open', h.url), key: 'History' }))
   if (!rows.length) rows.push({ kind: 'none', label: 'Type to search the web or open a site', run: () => {} })
   sel = Math.min(sel, rows.length - 1)
-  $('#res').innerHTML = rows.map((r, i) => `<div class="row ${i === sel ? 'sel' : ''}" data-i="${i}" style="--i:${i}">${icon(r.kind === 'tab' ? 'layers' : r.kind === 'go' ? 'search' : 'globe', 16)} <b>${esc(r.label)}</b> <small>${esc(r.sub || '')}</small><span class="k">${r.key || ''}</span></div>`).join('')
+  $('#res').innerHTML = rows.map((r, i) => `<div class="row ${i === sel ? 'sel' : ''}" data-i="${i}" style="--i:${i}">${icon(r.kind === 'tab' ? 'layers' : r.kind === 'go' ? 'search' : r.kind === 'hist' ? 'history' : 'globe', 16)} <b>${esc(r.label)}</b> <small>${esc(r.sub || '')}</small><span class="k">${r.key || ''}</span></div>`).join('')
 }
-$('#in').oninput = () => { sel = 0; render() }
+$('#in').oninput = async () => { sel = 0; render(); const q = $('#in').value.trim(); hist = q ? await api.call('history', q) : []; if (q === $('#in').value.trim()) render() }
 $('#in').onkeydown = e => {
   if (e.key === 'Escape') close()
   else if (e.key === 'ArrowDown') { sel = (sel + 1) % rows.length; render(); e.preventDefault() }
@@ -41,5 +43,5 @@ $('#res').onclick = e => { const r = e.target.closest('.row'); r && rows[+r.data
 document.body.onmousedown = e => { if (!e.target.closest('#box')) close() }
 const close = () => { document.body.classList.add('out'); setTimeout(() => api.call('closeCmd'), 200) }
 api.onOpen(o => {
-  document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); mode = o.mode; sel = 0; $('#in').value = o.value; render(); $('#in').focus(); $('#in').select() })
+  document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); mode = o.mode; sel = 0; hist = []; $('#in').value = o.value; render(); $('#in').focus(); $('#in').select() })
 </script>

@@ -5,5 +5,10 @@
   code { background: #2a2a33; padding: 2px 6px; border-radius: 4px }
 </style>
 <img src="../assets/icon.png" width="96" style="margin:0 auto 10px"><h1>Heliarc</h1>
-<p>Private, quiet, fast.<br>Type in the address bar (<code>Ctrl+L</code>) — or use a bang:<br>
+<p>Private, quiet, fast.<br>Type in the address bar (<code id="k">Ctrl+L</code>) — or use a bang:<br>
 <code>!w cats</code> <code>!yt lofi</code> <code>!gh electron</code> <code>!g weather</code></p>
+<script>
+// the address-bar shortcut comes from main (user-customizable) in the URL hash, e.g. #Mod+L
+const MAC = navigator.platform.startsWith('Mac'), k = decodeURIComponent(location.hash.slice(1)) || 'Mod+L'
+document.getElementById('k').textContent = k.split('+').map(p => ({ Mod: MAC ? '⌘' : 'Ctrl', Shift: MAC ? '⇧' : 'Shift', Alt: MAC ? '⌥' : 'Alt', Ctrl: MAC ? '⌃' : 'Ctrl' }[p] || p)).join(MAC ? '' : '+')
+</script>

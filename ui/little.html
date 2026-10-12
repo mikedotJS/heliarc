@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
+<style>
+  body { background: var(--panel); height: 100vh; display: flex; align-items: center; gap: 6px; padding: 0 10px; position: relative }
+  .t { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25 } b, small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap } b { font-weight: 500 } small { color: var(--dim); font-size: 11px }
+  button { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--hover) } button:hover { background: var(--sel) }
+  @keyframes slide { from { background-position: -40% 0 } to { background-position: 140% 0 } }
+  body.loading::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--acc), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: slide 1s linear infinite }
+</style>
+<span id="lock"></span><div class="t"><b id="tt">Loading…</b><small id="u"></small></div><button id="mv" title="Open this page in the main window"></button>
+<script>
+const $ = s => document.querySelector(s)
+$('#lock').innerHTML = icon('lock', 14); $('#mv').innerHTML = icon('external-link', 15) + ' Open in Heliarc'
+$('#mv').onclick = () => api.call('littleToMain')
+api.on('little', p => { $('#tt').textContent = p.title || p.url || 'Loading…'; try { $('#u').textContent = new URL(p.url).hostname } catch { $('#u').textContent = p.url }; document.body.classList.toggle('loading', p.loading) })
+</script>

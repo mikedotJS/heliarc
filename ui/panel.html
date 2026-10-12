@@ -1,0 +1,168 @@
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
+<style>
+  body { background: rgba(0,0,0,.35); height: 100vh; display: flex; justify-content: center; align-items: center; color: var(--fg) }
+  @keyframes fade { from { opacity: 0 } } @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.975) } }
+  body.in { animation: fade var(--dur-ui) var(--ease-out) } body.in #card { animation: rise var(--dur-ui) var(--ease-out) }
+  body.out { opacity: 0; transition: opacity var(--dur-exit) var(--ease-in) }
+  #card { width: min(860px, 94vw); height: min(620px, 88vh); background: var(--panel); border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,.5); display: flex; overflow: hidden }
+  #nav { width: 190px; background: var(--bg); padding: 14px 8px; display: flex; flex-direction: column; gap: 2px; flex: none }
+  #nav h1 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding: 4px 10px 8px }
+  #nav button { display: flex; align-items: center; gap: 9px; text-align: left; padding: 8px 10px; border-radius: 8px; color: var(--dim) }
+  #nav button.on { background: var(--sel); color: var(--fg) } #nav .sp { flex: 1 }
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0 }
+  #head { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px } #head h2 { font-size: 16px; font-weight: 600; flex: 1 }
+  #head input { background: var(--bg); border: 1px solid var(--hover); border-radius: 8px; color: var(--fg); padding: 6px 10px; width: 220px; font: inherit; user-select: text; outline: 0 } #head input:focus { border-color: var(--acc) }
+  #head button, .btn { background: var(--hover); padding: 5px 11px } #head button:hover, .btn:hover { background: var(--sel) }
+  #body { flex: 1; overflow-y: auto; padding: 0 12px 14px } #body::-webkit-scrollbar { width: 8px } #body::-webkit-scrollbar-thumb { background: var(--hover); border-radius: 4px }
+  .row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px } .row:hover { background: var(--hover) }
+  .row.click { cursor: pointer } .row .mt { flex: 1; min-width: 0; display: flex; flex-direction: column }
+  .row b, .row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500 } .row small { color: var(--dim) }
+  .row .acts { display: flex; gap: 2px } .row .acts button { padding: 4px 6px; color: var(--dim) } .row .acts button:hover { color: var(--fg) }
+  .row img.fav, .row .ph { width: 20px; height: 20px; border-radius: 5px; flex: none } .row .ph { background: var(--hover); display: grid; place-items: center; color: var(--dim) }
+  .bar { height: 3px; background: var(--hover); border-radius: 2px; margin-top: 4px } .bar i { display: block; height: 100%; background: var(--acc); border-radius: 2px }
+  .empty, .err, .load { text-align: center; color: var(--dim); padding: 48px 20px } .err { color: var(--err) }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 4px 0 }
+  .thumb { background: var(--bg); border-radius: 10px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column } .thumb:hover { outline: 2px solid var(--acc) }
+  .thumb .pv { height: 100px; display: grid; place-items: center; background: #0e0e12; color: var(--dim) } .thumb .pv img, .thumb .pv video { width: 100%; height: 100%; object-fit: cover }
+  .thumb span { padding: 6px 8px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  section { padding: 6px 6px 16px } section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 12px 4px 8px }
+  .line { display: flex; align-items: center; gap: 10px; padding: 7px 4px } .line label { flex: 1 } .line small { color: var(--dim); display: block }
+  select, .fld { background: var(--bg); border: 1px solid var(--hover); border-radius: 8px; color: var(--fg); padding: 6px 8px; font: inherit; user-select: text; outline: 0 } select:focus, .fld:focus { border-color: var(--acc) }
+  .toggle { appearance: none; width: 36px; height: 20px; border-radius: 10px; background: var(--hover); position: relative; cursor: pointer; transition: background var(--dur-micro) } .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform var(--dur-micro) var(--ease-out) }
+  .toggle:checked { background: var(--acc) } .toggle:checked::after { transform: translateX(16px) }
+  kbd { background: var(--bg); border: 1px solid var(--hover); border-radius: 6px; padding: 2px 7px; font: 12px system-ui; min-width: 70px; text-align: center } kbd.rec { border-color: var(--acc); color: var(--acc) }
+  .msg { font-size: 12px; color: var(--dim); padding: 2px 4px } .msg.bad { color: var(--err) } .msg.ok { color: #6bd68a }
+  .form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 4px } .form .fld { width: 100% } .form .wide { grid-column: 1 / -1 }
+</style>
+<div id="card"><div id="nav"></div><div id="main"><div id="head"></div><div id="body"></div></div></div>
+<script>
+const MAC = navigator.platform.startsWith('Mac')
+const $ = s => document.querySelector(s), esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+const fmt = k => (k || '').split('+').map(p => ({ Mod: MAC ? '⌘' : 'Ctrl', Shift: MAC ? '⇧' : 'Shift', Alt: MAC ? '⌥' : 'Alt', Ctrl: MAC ? '⌃' : 'Ctrl' }[p] || p)).join(MAC ? '' : '+')
+const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return u } }
+const size = b => b > 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB'
+const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+const ago = at => { const m = Math.round((at - Date.now()) / 6e4); return Math.abs(m) < 60 ? rtf.format(m, 'minute') : Math.abs(m) < 1440 ? rtf.format(Math.round(m / 60), 'hour') : rtf.format(Math.round(m / 1440), 'day') }
+const SECTIONS = [['downloads', 'Downloads', 'download'], ['media', 'Media', 'image'], ['archive', 'Archive', 'archive'], ['history', 'History', 'history'], ['passwords', 'Passwords', 'key-round'], ['extensions', 'Extensions', 'puzzle'], ['settings', 'Settings', 'settings']]
+const MEDIA = /^(image|video|audio)\//, MEDIAEXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|mp4|webm|mov|mkv|mp3|wav|ogg|m4a|flac)$/i
+let state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false
+const fileUrl = p => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '').split('/').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:')
+
+async function load() { // sections that need data from the main process: loading -> ready | error
+  if (!['history', 'passwords', 'settings', 'extensions'].includes(section)) { data = null; status = 'ready'; return render() }
+  const mine = ++token; status = 'loading'; data = null; render()
+  try {
+    const r = section === 'history' ? await api.call('history', q) : section === 'passwords' ? await api.call('passwords') : section === 'extensions' ? await api.call('extensions') : await api.call('profile')
+    if (mine === token) { data = r; status = 'ready' }
+  } catch (e) { if (mine === token) status = 'error' }
+  if (mine === token) render()
+}
+function open(sec) { section = sec; q = ''; note = null; recordingFor && stopRec(); load() }
+function nav() {
+  $('#nav').innerHTML = '<h1>Library</h1>' + SECTIONS.map(([k, l, i]) => (k === 'history' ? '<h1 style="padding-top:14px">Browser</h1>' : '') + `<button data-s="${k}" class="${k === section ? 'on' : ''}">${icon(i, 16)}${l}</button>`).join('') + '<span class="sp"></span>' + `<button data-s="close">${icon('x', 16)}Close</button>`
+}
+$('#nav').onclick = e => { const b = e.target.closest('button'); if (!b) return; b.dataset.s === 'close' ? close() : open(b.dataset.s) }
+const stateMsg = () => status === 'loading' ? '<div class="load"><span class="spin" style="display:inline-block"></span></div>' : status === 'error' ? '<div class="err">Could not load this section. <button class="btn" data-a="retry">Retry</button></div>' : null
+
+function render() {
+  if (!state) return
+  nav()
+  const S = state, title = SECTIONS.find(x => x[0] === section)[1]
+  let head = `<h2>${title}</h2>`, body = ''
+  if (section === 'downloads' || section === 'media') {
+    const list = S.downloads.filter(d => section === 'downloads' || (d.state === 'completed' && (MEDIA.test(d.mime || '') || MEDIAEXT.test(d.name))))
+    if (section === 'downloads' && list.length) head += '<button data-a="clearDownloads">Clear all</button>'
+    body = !list.length ? `<div class="empty">${section === 'media' ? 'Images, videos and audio you download show up here.' : 'No downloads yet.'}</div>` : section === 'media'
+      ? `<div class="grid">${list.map(d => `<div class="thumb" data-a="openFile" data-id="${d.id}" title="${esc(d.name)}"><div class="pv">${/^video\/|\.(mp4|webm|mov|mkv)$/i.test(d.mime + d.name) ? `<video src="${esc(fileUrl(d.path))}" preload="metadata" muted></video>` : /^audio\/|\.(mp3|wav|ogg|m4a|flac)$/i.test(d.mime + d.name) ? icon('music', 28) : `<img src="${esc(fileUrl(d.path))}" onerror="this.replaceWith(document.createTextNode('File moved or deleted'))">`}</div><span>${esc(d.name)}</span></div>`).join('')}</div>`
+      : list.map(d => {
+        const live = d.state === 'progressing' || d.state === 'paused', pct = d.total ? d.received / d.total * 100 : 5
+        const sub = live ? `${d.state === 'paused' ? 'Paused · ' : ''}${size(d.received)}${d.total ? ' of ' + size(d.total) : ''}` : d.state === 'completed' ? `${size(d.received || d.total)} · ${ago(d.at)}` : d.state === 'cancelled' ? 'Cancelled' : 'Failed or interrupted'
+        return `<div class="row" data-id="${d.id}"><span class="ph">${icon(d.state === 'completed' ? 'file' : 'download', 12)}</span><div class="mt"><b>${esc(d.name)}</b><small>${sub}</small>${live ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}</div>
+          <span class="acts">${d.state === 'completed' ? `<button data-a="openFile" title="Open">${icon('external-link', 15)}</button><button data-a="showFile" title="Show in folder">${icon('folder', 15)}</button>` : ''}${live ? `<button data-a="cancelDownload" title="Cancel">${icon('x', 15)}</button>` : `<button data-a="delDownload" title="Remove from list">${icon('trash-2', 15)}</button>`}</span></div>`
+      }).join('')
+  } else if (section === 'archive') {
+    const hrs = S.settings.archiveHours
+    if (S.archive.length) head += '<button data-a="clearArchive">Clear all</button>'
+    body = `<div class="msg" style="padding:0 10px 8px">${hrs ? `Tabs you haven’t opened for ${hrs >= 24 ? hrs / 24 + ' day(s)' : hrs + ' hours'} are archived here. Pinned tabs and favorites are never archived.` : 'Automatic archiving is off (see Settings).'}</div>` +
+      (S.archive.length ? S.archive.map((a, i) => `<div class="row click" data-a="restoreArchive" data-i="${i}"><span class="ph">${a.icon ? `<img class="fav" src="${esc(a.icon)}">` : icon('globe', 12)}</span><div class="mt"><b>${esc(a.title || a.url)}</b><small>${esc(host(a.url))} · ${S.spaces[a.space]?.name} · archived ${ago(a.at)}</small></div><span class="acts"><button title="Restore">${icon('undo-2', 15)}</button></span></div>`).join('') : '<div class="empty">Nothing archived yet.</div>')
+  } else if (section === 'history') {
+    head += `<input id="q" placeholder="Search history" value="${esc(q)}" spellcheck="false">` + (data?.length || q ? '<button data-a="clearHistory">Clear all</button>' : '')
+    body = stateMsg() ?? (data.length ? data.map(h => `<div class="row click" data-a="openUrl" data-url="${esc(h.url)}"><span class="ph">${icon('globe', 12)}</span><div class="mt"><b>${esc(h.title || h.url)}</b><small>${esc(host(h.url))} · ${ago(h.at)}</small></div><span class="acts"><button data-a="delHistory" data-at="${h.at}" title="Remove">${icon('x', 15)}</button></span></div>`).join('') : `<div class="empty">${q ? 'No match.' : 'No history yet.'}</div>`)
+  } else if (section === 'passwords') {
+    body = (S.canSavePw ? '' : '<div class="err" style="padding:12px">This system can’t encrypt passwords, so Heliarc doesn’t save them.</div>') + (stateMsg() ?? (data.length ? data.map(p => `<div class="row"><span class="ph">${icon('key-round', 12)}</span><div class="mt"><b>${esc(host(p.origin))}</b><small>${esc(p.user || '(no username)')}</small></div><span class="acts"><button data-a="delPassword" data-id="${p.id}" title="Delete">${icon('trash-2', 15)}</button></span></div>`).join('') : '<div class="empty">No saved passwords. Heliarc offers to save a login after you sign in to a site.</div>'))
+  } else if (section === 'extensions') {
+    body = `<div class="msg" style="padding:0 10px 8px">Install extensions from the Chrome Web Store. They work in every space; toolbar buttons and popups aren’t supported yet.</div>
+      <div class="line"><input class="fld" id="extin" placeholder="Chrome Web Store link or extension ID" style="flex:1" spellcheck="false" ${installing ? 'disabled' : ''}><button class="btn" data-a="installExt" ${installing ? 'disabled' : ''}>${installing ? 'Installing…' : 'Install'}</button></div>
+      <div class="msg ${note?.cls || ''}" style="padding:0 10px 8px">${esc(note?.text || '')}</div>` +
+      (stateMsg() ?? (data.length ? data.map(x => `<div class="row"><span class="ph">${icon('puzzle', 12)}</span><div class="mt"><b>${esc(x.name)}</b><small>Version ${esc(x.version)} · ${esc(x.id)}</small></div><span class="acts"><button data-a="removeExt" data-eid="${esc(x.id)}" title="Remove">${icon('trash-2', 15)}</button></span></div>`).join('') : '<div class="empty">No extensions installed.</div>'))
+  } else body = settings(S)
+  $('#head').innerHTML = head; $('#body').innerHTML = body
+  if (section === 'history') { const i = $('#q'); i.oninput = () => { q = i.value; clearTimeout(i.t); i.t = setTimeout(load, 150) }; if (document.activeElement !== i && q) { i.focus(); i.setSelectionRange(q.length, q.length) } }
+}
+function settings(S) {
+  const st = S.settings, p = data || {}
+  const hrs = [[0, 'Never'], [1, 'After 1 hour'], [12, 'After 12 hours'], [24, 'After 1 day'], [168, 'After 7 days'], [720, 'After 30 days']]
+  const toggle = (k, label, sub) => `<div class="line"><label>${label}<small>${sub}</small></label><input type="checkbox" class="toggle" data-set="${k}" ${st[k] ? 'checked' : ''}></div>`
+  return `<section><h3>General</h3>
+    <div class="line"><label>Archive unused tabs<small>Pinned tabs and favorites are never archived</small></label><select data-hours>${hrs.map(([v, l]) => `<option value="${v}" ${v === st.archiveHours ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    ${toggle('autoPip', 'Automatic picture-in-picture', 'A playing video keeps playing in a floating window when you leave its tab')}
+    ${toggle('littleExternal', 'Open links from other apps in a small window', 'Needs Heliarc to be your default browser')}
+    <div class="line"><label>Default browser</label><button class="btn" data-a="defaultBrowser">Make Heliarc the default</button></div><div class="msg ${note?.cls || ''}">${esc(note?.text || '')}</div></section>
+  <section><h3>Spaces: open sites in the right space</h3>
+    ${st.routes.map(r => `<div class="line"><label>${esc(r.host)}<small>always opens in ${esc(S.spaces[r.space]?.name)}</small></label><button class="btn" data-a="delRoute" data-host="${esc(r.host)}">${icon('trash-2', 14)}</button></div>`).join('') || '<div class="msg">No rules yet. You can also right-click a tab → “Always open … in”.</div>'}
+    <div class="line"><input class="fld" id="rhost" placeholder="example.com" style="flex:1" spellcheck="false"><select id="rspace">${S.spaces.map((s, i) => `<option value="${i}">${esc(s.name)}</option>`).join('')}</select><button class="btn" data-a="addRoute">Add</button></div></section>
+  <section><h3>Keyboard shortcuts</h3>
+    ${Object.entries(S.keys).map(([a, k]) => `<div class="line"><label>${esc(S.labels[a])}</label><kbd class="${recordingFor === a ? 'rec' : ''}">${recordingFor === a ? 'Press keys…' : esc(fmt(k))}</kbd><button class="btn" data-a="record" data-action="${a}">${recordingFor === a ? 'Cancel' : 'Change'}</button>${st.shortcuts[a] ? `<button class="btn" data-a="resetKey" data-action="${a}" title="Back to default">${icon('undo-2', 14)}</button>` : ''}</div>`).join('')}
+    <div class="msg ${note?.key ? 'bad' : ''}">${note?.key ? esc(note.key) : 'Click Change, then press the new combination (Esc to cancel).'}</div></section>
+  <section><h3>Autofill</h3><div class="msg">Used to fill address forms when you click a field. Stored on this device only.</div>
+    <div class="form">${[['first', 'First name'], ['last', 'Last name'], ['email', 'Email'], ['phone', 'Phone'], ['org', 'Organization'], ['street', 'Street address'], ['zip', 'Postal code'], ['city', 'City'], ['country', 'Country']].map(([k, l]) => `<input class="fld" data-pf="${k}" placeholder="${l}" value="${esc(p[k] || '')}">`).join('')}
+    <button class="btn wide" data-a="saveProfile">Save autofill</button><div class="msg wide ${note?.profile ? 'ok' : ''}">${note?.profile || ''}</div></div></section>`
+}
+const did = el => +el.closest('[data-id]').dataset.id
+const ACT = {
+  retry: load, clearDownloads: () => api.call('clearDownloads'), clearArchive: () => api.call('clearArchive'), clearHistory: async () => { await api.call('clearHistory'); load() },
+  openFile: el => api.call('openFile', did(el)), showFile: el => api.call('showFile', did(el)), cancelDownload: el => api.call('cancelDownload', did(el)), delDownload: el => api.call('delDownload', did(el)),
+  restoreArchive: async el => { await api.call('restoreArchive', +el.dataset.i); close() },
+  openUrl: async el => { await api.call('open', el.dataset.url); close() },
+  delHistory: async el => { await api.call('delHistory', +el.dataset.at); load() }, delPassword: async el => { await api.call('delPassword', did(el)); load() },
+  delRoute: el => api.call('delRoute', el.dataset.host),
+  installExt: async () => {
+    const v = $('#extin').value.trim(); if (!v) { note = { text: 'Paste a Chrome Web Store link or an extension ID.', cls: 'bad' }; return render() }
+    installing = true; note = null; render()
+    const r = await api.call('installExtension', v); installing = false
+    note = r.error ? { text: r.error, cls: 'bad' } : { text: `Installed “${r.name}”.`, cls: 'ok' }; load()
+  },
+  removeExt: async el => { await api.call('removeExtension', el.dataset.eid); note = null; load() },
+  addRoute: async () => { const h = $('#rhost').value; if (h.trim()) await api.call('addRoute', h, +$('#rspace').value) },
+  defaultBrowser: async () => { const ok = await api.call('defaultBrowser'); note = { text: ok ? 'Heliarc is now the default browser.' : 'Choose Heliarc in the system settings window that just opened.', cls: ok ? 'ok' : '' }; render() },
+  saveProfile: async () => { const p = {}; document.querySelectorAll('[data-pf]').forEach(i => p[i.dataset.pf] = i.value.trim()); await api.call('setProfile', p); data = p; note = { profile: 'Saved ✓' }; render(); setTimeout(() => { note = null; section === 'settings' && render() }, 2500) },
+  record: el => recordingFor === el.dataset.action ? stopRec() : startRec(el.dataset.action),
+  resetKey: async el => { await api.call('setShortcut', el.dataset.action, null); note = null },
+}
+$('#body').onclick = $('#head').onclick = e => {
+  const el = e.target.closest('[data-a]'); if (!el) return
+  e.stopPropagation(); ACT[el.dataset.a]?.(el)
+}
+$('#body').oninput = e => { if (e.target.dataset.pf) (data ??= {})[e.target.dataset.pf] = e.target.value } // keep unsaved autofill edits across re-renders
+$('#body').onchange = async e => {
+  const t = e.target
+  if (t.matches('[data-hours]')) await api.call('setSetting', 'archiveHours', +t.value)
+  else if (t.dataset.set) await api.call('setSetting', t.dataset.set, t.checked)
+}
+function startRec(a) { recordingFor = a; note = null; api.call('recording', true); render() }
+function stopRec() { recordingFor = null; api.call('recording', false); render() }
+addEventListener('keydown', async e => {
+  if (recordingFor) {
+    if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return
+    e.preventDefault(); e.stopPropagation()
+    if (e.key === 'Escape') return stopRec()
+    const c = await api.call('comboOf', { key: e.key, control: e.ctrlKey, meta: e.metaKey, alt: e.altKey, shift: e.shiftKey })
+    const r = await api.call('setShortcut', recordingFor, c)
+    note = r.error ? { key: r.error } : null; if (!r.error) stopRec(); else render()
+  } else if (e.key === 'Escape') close()
+}, true)
+document.body.onmousedown = e => { if (!e.target.closest('#card')) close() }
+const close = () => { recordingFor = null; api.call('recording', false); document.body.classList.add('out'); setTimeout(() => api.call('closePanel'), 200) }
+api.onState(s => { state = s; if (section !== 'history' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'SELECT') render() })
+api.on('panel', o => { document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); open(o.section) })
+</script>

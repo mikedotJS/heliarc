@@ -1,4 +1,4 @@
-<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script><script src="../node_modules/sortablejs/Sortable.min.js"></script>
 <style>
   @property --c1 { syntax: '<color>'; inherits: true; initial-value: #5b4bff }
   @property --c2 { syntax: '<color>'; inherits: true; initial-value: #c04bff }
@@ -7,84 +7,160 @@
   @keyframes pop { from { opacity: 0; transform: scale(.85) } }
   .tab.enter { animation: enter var(--dur-ui) var(--ease-out) both; animation-delay: calc(var(--i, 0) * var(--stagger)) }
   .tile.enter { animation: pop var(--dur-ui) var(--ease-out) both; animation-delay: calc(var(--i, 0) * var(--stagger)) }
-  .tab, .tile, #pill { transition: background var(--dur-micro) var(--ease-out), border-color var(--dur-micro), opacity var(--dur-ui) var(--ease-out) }
+  .tab, .tile, #pill, .fh { transition: background var(--dur-micro) var(--ease-out), border-color var(--dur-micro), opacity var(--dur-ui) var(--ease-out) }
   #foot button .ic { transition: transform var(--dur-micro) var(--ease-out) } #foot button:hover .ic { transform: translateY(-2px) }
-  #errbar.show { animation: enter var(--dur-ui) var(--ease-out) }
+  #errbar.show, #pwbar.show, .card { animation: enter var(--dur-ui) var(--ease-out) }
   body { height: 100vh; background: linear-gradient(145deg, var(--c1, #5b4bff), var(--c2, #c04bff)); transition: background .35s; color: #fff }
+  body.floating { box-shadow: 6px 0 24px rgba(0,0,0,.4) }
   #side { width: 262px; height: 100vh; display: flex; flex-direction: column; padding: 10px 10px 8px; gap: 8px }
   #nav { display: flex; align-items: center; gap: 2px } #nav .sp { flex: 1 }
-  #nav button, .tile, .tab, #pill, #newbtn { color: #fff }
-  #nav button { font-size: 15px; width: 30px; height: 28px; padding: 0 }
-  #nav button:hover:not(:disabled), .tab:hover, #newbtn:hover { background: rgba(255,255,255,.16) }
+  #nav button, .tile, .tab, #pill, #newbtn, .fh { color: #fff }
+  #nav button { font-size: 15px; width: 30px; height: 28px; padding: 0 } #nav button#zoom { width: auto; padding: 0 6px; font-size: 11px; background: rgba(255,255,255,.2) }
+  #nav button:hover:not(:disabled), .tab:hover, #newbtn:hover, .fh:hover { background: rgba(255,255,255,.16) }
   #pill { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.2); border-radius: 10px; padding: 9px 12px; cursor: pointer; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
   #pill:hover { background: rgba(255,255,255,.28) } #pill span { overflow: hidden; text-overflow: ellipsis }
-  #errbar { display: none; background: rgba(120,0,20,.55); border-radius: 8px; padding: 6px 10px; font-size: 12px; gap: 8px; align-items: center }
-  #errbar.show { display: flex } #errbar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-  #pins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px }
+  #errbar, #pwbar { display: none; background: rgba(120,0,20,.55); border-radius: 8px; padding: 6px 10px; font-size: 12px; gap: 8px; align-items: center }
+  #pwbar { background: rgba(0,0,0,.35); flex-wrap: wrap } #pwbar span { flex: 1 1 100% } #pwbar button { background: rgba(255,255,255,.2); color: #fff; padding: 3px 9px }
+  #errbar.show, #pwbar.show { display: flex } #errbar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  [data-zone] { min-height: 4px } #pins:empty, #pinned:empty, #folders:empty { display: none } body.dragging #pins:empty, body.dragging #pinned:empty { display: block } body.dragging [data-zone] { outline: 1px dashed rgba(255,255,255,.45); outline-offset: 2px; border-radius: 8px }
+  #pins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px } body.dragging #pins { min-height: 52px }
+  #pinned { display: flex; flex-direction: column; gap: 2px } body.dragging #pinned { min-height: 34px }
   .tile { height: 52px; border-radius: 12px; background: rgba(255,255,255,.18); display: grid; place-items: center; cursor: pointer; position: relative; border: 2px solid transparent }
   .tile:hover { background: rgba(255,255,255,.28) } .tile.on { border-color: rgba(255,255,255,.85) }
   .tile img, .tab img { width: 22px; height: 22px; border-radius: 5px } .tab img { width: 16px; height: 16px }
   .tile .spin { position: absolute; top: 4px; right: 4px }
+  .sortable-ghost { opacity: .35 } .sortable-drag { opacity: .95 }
   #sep { height: 1px; background: rgba(255,255,255,.25); margin: 2px 4px }
-  #list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px }
+  #list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 40px }
   #list::-webkit-scrollbar { width: 0 }
   .tab { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 9px; cursor: pointer; min-height: 32px }
-  .tab.on { background: rgba(255,255,255,.3); font-weight: 600 }
+  .tab.on { background: rgba(255,255,255,.3); font-weight: 600 } .tab.split { box-shadow: inset 3px 0 0 rgba(255,255,255,.8) }
   .tab .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   .tab.asleep { opacity: .6 } .tab .acts { display: none; gap: 0 } .tab:hover .acts { display: flex }
   .tab .acts button { padding: 0 4px; font-size: 12px; color: #fff }
+  .folder { margin: 2px 0 } .fh { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 9px; cursor: pointer; font-weight: 600 }
+  .fh .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap } .fh input { flex: 1; min-width: 0; background: rgba(0,0,0,.3); border: 0; color: #fff; border-radius: 5px; padding: 2px 6px; font: inherit; user-select: text; outline: 1px solid rgba(255,255,255,.5) }
+  .fh .del { display: none; padding: 0 4px; color: #fff } .fh:hover .del { display: block }
+  .fb { padding-left: 14px; display: flex; flex-direction: column; gap: 2px; min-height: 8px } .folder.shut .fb { display: none }
   .ph { width: 16px; height: 16px; border-radius: 5px; background: rgba(255,255,255,.35); display: grid; place-items: center; font-size: 10px; flex: none }
-  #newbtn { text-align: left; padding: 8px; border-radius: 9px; opacity: .9 }
+  #newrow { display: flex; gap: 2px } #newbtn { flex: 1 } #nf { color: #fff; padding: 8px }
+  #newbtn { text-align: left; padding: 8px; border-radius: 9px; opacity: .9; display: flex; align-items: center; gap: 6px }
   #empty { text-align: center; opacity: .75; padding: 14px 8px; font-size: 12px }
+  .card { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,.28); border-radius: 10px; padding: 8px 10px; font-size: 12px; cursor: pointer }
+  .card .mt { flex: 1; min-width: 0; display: flex; flex-direction: column } .card b, .card small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap } .card small { opacity: .7 }
+  .card button { padding: 3px 5px; color: #fff } .bar { height: 3px; background: rgba(255,255,255,.25); border-radius: 2px; margin-top: 4px } .bar i { display: block; height: 100%; background: #fff; border-radius: 2px; transition: width .25s }
   #foot { display: flex; align-items: center; gap: 4px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.2) }
-  #foot .sp { flex: 1 } #foot button { padding: 4px 7px; font-size: 14px; opacity: .6 } #foot button.on { opacity: 1; background: rgba(255,255,255,.25) }
-  #shield { font-size: 11px; opacity: .85; padding: 0 2px; display: flex; align-items: center; gap: 5px } .ic { flex: none; display: block } button .ic { margin: auto } #newbtn { display: flex; align-items: center; gap: 6px } #pill { gap: 8px } .ph.err { background: rgba(120,0,20,.6) } .ph { color: #fff } .spin { border-color: rgba(255,255,255,.4); border-top-color: #fff }
+  #foot .sp { flex: 1 } #foot button { padding: 4px 7px; font-size: 14px; opacity: .6; color: #fff } #foot button.on { opacity: 1; background: rgba(255,255,255,.25) } #foot button:hover { opacity: 1 }
+  #shield { font-size: 11px; opacity: .85; padding: 0 2px; display: flex; align-items: center; gap: 5px } .ic { flex: none; display: block } button .ic { margin: auto } #pill { gap: 8px } .ph.err { background: rgba(120,0,20,.6) } .ph { color: #fff } .spin { border-color: rgba(255,255,255,.4); border-top-color: #fff }
 </style>
 <div id="side">
-  <div id="nav" style="padding-top:var(--top,0)"><button id="b" title="Back"></button><button id="f" title="Forward"></button><button id="r" title="Reload"></button><span class="sp"></span></div>
-  <div id="pill" title="Edit address (Ctrl/⌘+L)"></div>
+  <div id="nav" style="padding-top:var(--top,0)"><button id="b" title="Back"></button><button id="f" title="Forward"></button><button id="r" title="Reload"></button><button id="zoom" title="Reset zoom" hidden></button><span class="sp"></span><button id="sp" title="Split view"></button><button id="col" title="Collapse sidebar"></button></div>
+  <div id="pill"></div>
   <div id="errbar"><span id="msg"></span><button id="retry">Retry</button></div>
-  <div id="pins"></div><div id="sep"></div>
-  <button id="newbtn"><span id="plus"></span> New tab <small style="opacity:.6">Ctrl+T</small></button>
-  <div id="list"></div>
+  <div id="pwbar"></div>
+  <div id="pins" data-zone="fav"></div>
+  <div id="pinned" data-zone="pinned"></div><div id="folders"></div><div id="sep"></div>
+  <div id="newrow"><button id="newbtn"><span id="plus"></span> New tab <small style="opacity:.6">Ctrl+T</small></button><button id="nf" title="New folder"></button></div>
+  <div id="list" data-zone="list"></div>
+  <div id="mini"></div><div id="dl"></div>
   <div id="shield"></div>
   <div id="foot"></div>
 </div>
 <script>
-const MAC = navigator.platform.startsWith("Mac"); if (MAC) { document.documentElement.style.setProperty("--top", "26px"); document.querySelector("#newbtn small").textContent = "⌘T" }
+const MAC = navigator.platform.startsWith("Mac"); if (MAC) document.documentElement.style.setProperty("--top", "26px")
 const $ = s => document.querySelector(s), esc = s => (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+const fmt = k => (k || '').split('+').map(p => ({ Mod: MAC ? '⌘' : 'Ctrl', Shift: MAC ? '⇧' : 'Shift', Alt: MAC ? '⌥' : 'Alt', Ctrl: MAC ? '⌃' : 'Ctrl' }[p] || p)).join(MAC ? '' : '+')
 $('#b').innerHTML = icon('arrow-left', 18); $('#f').innerHTML = icon('arrow-right', 18); $('#r').innerHTML = icon('rotate-cw', 16); $('#plus').innerHTML = icon('plus', 16)
+$('#sp').innerHTML = icon('columns-2', 16); $('#col').innerHTML = icon('panel-left', 16); $('#nf').innerHTML = icon('folder-plus', 16)
 const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } }
 const ico = t => t.loading ? '<span class="spin"></span>' : t.error ? `<span class="ph err">${icon('triangle-alert', 11)}</span>` : t.icon ? `<img src="${esc(t.icon)}" onerror="this.outerHTML='<span class=ph>${esc((t.title||'?')[0]).toUpperCase()}</span>'">` : `<span class="ph">${icon('globe', 11)}</span>`
 $('#b').onclick = () => api.call('back'); $('#f').onclick = () => api.call('fwd')
 $('#r').onclick = $('#retry').onclick = () => api.call('reload')
 $('#pill').onclick = () => api.call('edit'); $('#newbtn').onclick = () => api.call('new')
+$('#zoom').onclick = () => api.call('zoomReset'); $('#sp').onclick = () => api.call('split'); $('#col').onclick = () => api.call('toggleSidebar')
+$('#nf').onclick = async () => { editing = await api.call('newFolder'); render() }
+document.documentElement.onmouseleave = () => api.call('unreveal')
+$('#side').oncontextmenu = e => { const el = e.target.closest('.tab, .tile'); if (el) { e.preventDefault(); api.call('ctx', +el.dataset.id) } }
 function click(e) {
+  const f = e.target.closest('[data-fid]'); if (f && !e.target.closest('.fb')) { // folder header
+    const fid = +f.dataset.fid
+    if (e.target.closest('.del')) api.call('delFolder', fid); else if (!editing) api.call('toggleFolder', fid)
+    return
+  }
   const el = e.target.closest('[data-id]'); if (!el) return
-  const id = +el.dataset.id, a = e.target.dataset.a
+  const id = +el.dataset.id, a = e.target.closest('[data-a]')?.dataset.a
   a ? api.call(a, id) : api.call('activate', id)
 }
-$('#list').onclick = $('#pins').onclick = click
-$('#foot').onclick = e => e.target.dataset.sp !== undefined && api.call('space', +e.target.dataset.sp)
-const seen = new Set(); let lastSpace = null
-api.onState(s => {
+$('#side').onclick = click
+$('#folders').ondblclick = e => { const n = e.target.closest('.n'); if (n) { editing = +n.closest('[data-fid]').dataset.fid; render() } }
+$('#foot').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return
+  b.dataset.sp !== undefined ? api.call('space', +b.dataset.sp) : api.call('openPanel', b.dataset.p)
+}
+$('#pwbar').onclick = e => { const a = e.target.dataset.pw; if (a) api.call(a) }
+$('#mini').onclick = e => { const m = e.target.closest('[data-m]')?.dataset.m; api.call(m === 'toggle' ? 'mediaToggle' : m === 'mute' ? 'mute' : 'mediaGo', state.media?.id) }
+$('#dl').onclick = () => api.call('openPanel', 'downloads')
+
+const seen = new Set(); let lastSpace = null, state = null, editing = null, drag = false, pressed = false, stale = false
+const sortables = []
+function mount() { // drag & drop between favorites, pinned, folders and today's tabs
+  sortables.forEach(s => s.destroy()); sortables.length = 0
+  document.querySelectorAll('[data-zone]').forEach(el => sortables.push(Sortable.create(el, {
+    group: 'tabs', animation: 150, draggable: '[data-id]', filter: '.acts', preventOnFilter: false, forceFallback: true, fallbackTolerance: 4,
+    onStart: () => { drag = true; document.body.classList.add('dragging') },
+    onEnd: e => { drag = false; document.body.classList.remove('dragging'); api.call('move', +e.item.dataset.id, e.to.dataset.zone, e.to.dataset.fid ? +e.to.dataset.fid : null, e.newDraggableIndex).then(() => render()) },
+  })))
+}
+function row(t, s, n, fresh) {
+  return `<div class="tab ${fresh || !seen.has(t.id) ? 'enter' : ''} ${t.id === s.active ? 'on' : ''} ${s.split?.includes(t.id) ? 'split' : ''} ${t.asleep ? 'asleep' : ''}" style="--i:${n}" data-id="${t.id}">
+      ${ico(t)}<span class="t" title="${esc(t.url)}">${esc(t.title || t.url || 'New tab')}</span>
+      <span class="acts"><button data-a="mute" title="Mute">${icon(t.muted ? 'volume-x' : 'volume-2', 14)}</button><button data-a="pin" title="${t.pinned || t.folder ? 'Unpin' : 'Pin'}">${icon('pin', 14)}</button>
+      ${t.id !== s.active && !t.asleep ? `<button data-a="sleep" title="Hibernate">${icon('moon', 14)}</button>` : ''}<button data-a="close" title="Close">${icon('x', 14)}</button></span>
+    </div>`
+}
+const card = (cls, ic, title, sub, btns, pct) => `<div class="card ${cls}"><span class="ph">${icon(ic, 12)}</span><div class="mt"><b>${esc(title)}</b><small>${esc(sub)}</small>${pct != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}</div>${btns || ''}</div>`
+function render() {
+  const s = state; if (!s) return; stale = false
   const fresh = s.space !== lastSpace; lastSpace = s.space; let n = 0
   const sp = s.spaces[s.space]; document.documentElement.style.setProperty('--c1', sp.c1); document.documentElement.style.setProperty('--c2', sp.c2)
-  const mine = s.tabs.filter(t => t.space === s.space), a = s.tabs.find(t => t.id === s.active)
+  document.body.classList.toggle('floating', !s.sidebar)
+  const mine = s.tabs.filter(t => t.space === s.space && !t.fav), a = s.tabs.find(t => t.id === s.active)
   $('#b').disabled = !s.canBack; $('#f').disabled = !s.canFwd
+  $('#zoom').hidden = !a || a.zoom === 1; $('#zoom').textContent = a ? Math.round(a.zoom * 100) + '%' : ''
+  $('#sp').title = `Split view (${fmt(s.keys.splitView)})`; $('#sp').style.background = s.split ? 'rgba(255,255,255,.25)' : ''; $('#col').title = `Collapse sidebar (${fmt(s.keys.toggleSidebar)})`
+  $('#newbtn small').textContent = fmt(s.keys.newTab); $('#pill').title = `Edit address (${fmt(s.keys.editAddress)})`
   $('#pill').innerHTML = a?.url ? `${icon('lock', 14)} <span>${esc(host(a.url) || a.url)}</span>` : '<span style="opacity:.8">Search or enter address…</span>'
   $('#errbar').className = a?.error ? 'show' : ''; $('#msg').textContent = a?.error ? 'Failed to load: ' + a.error : ''
-  $('#pins').innerHTML = mine.filter(t => t.pinned).map(t => `<div class="tile ${fresh || !seen.has(t.id) ? 'enter' : ''} ${t.id === s.active ? 'on' : ''}" style="--i:${n++}" data-id="${t.id}" title="${esc(t.title)}">${ico(t)}</div>`).join('')
-  $('#sep').style.display = mine.some(t => t.pinned) ? '' : 'none'
-  const rest = mine.filter(t => !t.pinned)
-  $('#list').innerHTML = rest.map(t => `
-    <div class="tab ${fresh || !seen.has(t.id) ? 'enter' : ''} ${t.id === s.active ? 'on' : ''} ${t.asleep ? 'asleep' : ''}" style="--i:${n++}" data-id="${t.id}">
-      ${ico(t)}<span class="t" title="${esc(t.url)}">${esc(t.title || t.url || 'New tab')}</span>
-      <span class="acts"><button data-a="mute" title="Mute">${icon(t.muted ? 'volume-x' : 'volume-2', 14)}</button><button data-a="pin" title="Pin">${icon('pin', 14)}</button>
-      ${t.id !== s.active && !t.asleep ? `<button data-a="sleep" title="Hibernate">${icon('moon', 14)}</button>` : ''}<button data-a="close" title="Close">${icon('x', 14)}</button></span>
-    </div>`).join('') || (mine.some(t => t.pinned) ? '' : '<div id="empty">No tabs in this space</div>')
+  $('#pwbar').className = s.pw && s.canSavePw ? 'show' : ''
+  $('#pwbar').innerHTML = s.pw ? `<span>${s.pw.update ? 'Update' : 'Save'} password for <b>${esc(s.pw.user || 'this login')}</b> on ${esc(host(s.pw.origin))}?</span><button data-pw="pwSave">${s.pw.update ? 'Update' : 'Save'}</button><button data-pw="pwNever">Never</button><button data-pw="pwDismiss">Not now</button>` : ''
+  $('#pins').innerHTML = s.tabs.filter(t => t.fav).map(t => `<div class="tile ${fresh || !seen.has(t.id) ? 'enter' : ''} ${t.id === s.active ? 'on' : ''}" style="--i:${n++}" data-id="${t.id}" title="${esc(t.title)}">${ico(t)}</div>`).join('')
+  const pinned = mine.filter(t => t.pinned && !t.folder), fl = s.folders.filter(f => f.space === s.space)
+  $('#pinned').innerHTML = pinned.map(t => row(t, s, n++, fresh)).join('')
+  $('#folders').innerHTML = fl.map(f => `<div class="folder ${f.open ? '' : 'shut'}" data-fid="${f.id}">
+      <div class="fh" data-fid="${f.id}">${icon(f.open ? 'chevron-down' : 'chevron-right', 14)}${icon('folder', 15)}${editing === f.id ? `<input value="${esc(f.name)}" maxlength="40">` : `<span class="n" title="Double-click to rename">${esc(f.name)}</span>`}<button class="del" title="Delete folder (keeps tabs)">${icon('x', 12)}</button></div>
+      <div class="fb" data-zone="folder" data-fid="${f.id}">${mine.filter(t => t.folder === f.id).map(t => row(t, s, n++, fresh)).join('')}</div></div>`).join('')
+  const inp = $('#folders input')
+  if (inp) { // rename: Enter saves, Esc/blur-without-change cancels
+    const done = ok => { const id = editing; editing = null; ok && inp.value.trim() ? api.call('renameFolder', id, inp.value) : render() }
+    inp.onkeydown = e => { if (e.key === 'Enter') done(true); else if (e.key === 'Escape') done(false) }; inp.onblur = () => editing && done(true); inp.onclick = e => e.stopPropagation()
+    inp.focus(); inp.select()
+  }
+  $('#sep').style.display = pinned.length || fl.length || s.tabs.some(t => t.fav) ? '' : 'none'
+  const rest = mine.filter(t => !t.pinned && !t.folder)
+  $('#list').innerHTML = rest.map(t => row(t, s, n++, fresh)).join('') || (mine.length || s.tabs.some(t => t.fav) ? '' : '<div id="empty">No tabs in this space</div>')
   s.tabs.forEach(t => seen.add(t.id))
+  const m = s.media && s.tabs.find(t => t.id === s.media.id)
+  $('#mini').innerHTML = m && m.id !== s.active ? card('', 'music', m.title || m.url, host(m.url), `<button data-m="toggle" title="${s.media.playing ? 'Pause' : 'Play'}">${icon(s.media.playing ? 'pause' : 'play', 14)}</button><button data-m="mute" title="Mute">${icon(m.muted ? 'volume-x' : 'volume-2', 14)}</button><button data-m="go" title="Go to tab">${icon('external-link', 14)}</button>`) : ''
+  const d = s.downloads.find(x => x.state === 'progressing' || x.state === 'paused') || s.downloads.find(x => x.state === 'completed' && Date.now() - x.at < 8000)
+  const busy = s.downloads.filter(x => x.state === 'progressing').length
+  $('#dl').innerHTML = d ? card('', d.state === 'completed' ? 'check' : 'download', d.name, d.state === 'completed' ? 'Download complete' : `${d.total ? Math.round(d.received / d.total * 100) + '%' : 'Downloading…'}${busy > 1 ? ` · ${busy} downloads` : ''}`, '', d.state === 'completed' ? null : d.total ? d.received / d.total * 100 : 5) : ''
   $('#shield').innerHTML = s.blockerState === 'loading' ? 'Loading ad blocker…' : s.blockerState === 'error' ? `${icon('shield-alert', 13)} Ad blocker offline (lists unreachable)` : `${icon('shield-check', 13)} ${s.blocked} ads & trackers blocked`
-  $('#foot').innerHTML = s.spaces.map((x, i) => `<button class="${i === s.space ? 'on' : ''}" data-sp="${i}" title="${x.name}">${icon(x.icon, 16)}</button>`).join('') + '<span class="sp"></span>'
-})
+  $('#foot').innerHTML = s.spaces.map((x, i) => `<button class="${i === s.space ? 'on' : ''}" data-sp="${i}" title="${x.name}">${icon(x.icon, 16)}</button>`).join('') + '<span class="sp"></span>' +
+    `<button data-p="downloads" title="Library (${fmt(s.keys.library)})">${icon('archive', 16)}</button><button data-p="history" title="History (${fmt(s.keys.history)})">${icon('history', 16)}</button><button data-p="settings" title="Settings (${fmt(s.keys.settings)})">${icon('settings', 16)}</button>`
+  mount()
+}
+// never rebuild the list under a pressed mouse button: it would cancel a drag that is about to start
+addEventListener('pointerdown', e => { if (e.target.closest('.tab, .tile')) pressed = true }, true)
+for (const ev of ['pointerup', 'pointercancel', 'blur']) addEventListener(ev, () => { pressed = false; stale && setTimeout(() => !pressed && !drag && render(), 60) }, true)
+api.onState(s => { state = s; if (drag || pressed || editing) stale = true; else { stale = false; render() } })
 </script>

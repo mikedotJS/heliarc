@@ -1,4 +1,4 @@
-<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
+<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="script-src file: 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
 <style>
   body { background: var(--scrim); height: 100vh; display: flex; justify-content: center; align-items: center; color: var(--fg) }
   @keyframes fade { from { opacity: 0 } } @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.975) } }
@@ -84,7 +84,7 @@ function render() {
     const hrs = S.settings.archiveHours
     if (S.archive.length) head += '<button data-a="clearArchive">Clear all</button>'
     body = `<div class="msg" style="padding:0 10px 8px">${hrs ? `Tabs you haven’t opened for ${hrs >= 24 ? hrs / 24 + ' day(s)' : hrs + ' hours'} are archived here. Pinned tabs and favorites are never archived.` : 'Automatic archiving is off (see Settings).'}</div>` +
-      (S.archive.length ? S.archive.map((a, i) => `<div class="row click" data-a="restoreArchive" data-i="${i}"><span class="ph">${a.icon ? `<img class="fav" src="${esc(a.icon)}">` : icon('globe', 12)}</span><div class="mt"><b>${esc(a.title || a.url)}</b><small>${esc(host(a.url))} · ${S.spaces[a.space]?.name} · archived ${ago(a.at)}</small></div><span class="acts"><button title="Restore">${icon('undo-2', 15)}</button></span></div>`).join('') : '<div class="empty">Nothing archived yet.</div>')
+      (S.archive.length ? S.archive.map((a, i) => `<div class="row click" data-a="restoreArchive" data-i="${i}"><span class="ph">${a.icon ? `<img class="fav" src="${esc(a.icon)}">` : icon('globe', 12)}</span><div class="mt"><b>${esc(a.title || a.url)}</b><small>${esc(host(a.url))} · ${esc(S.spaces[a.space]?.name)} · archived ${ago(a.at)}</small></div><span class="acts"><button title="Restore">${icon('undo-2', 15)}</button></span></div>`).join('') : '<div class="empty">Nothing archived yet.</div>')
   } else if (section === 'history') {
     head += `<input id="q" placeholder="Search history" value="${esc(q)}" spellcheck="false">` + (data?.length || q ? '<button data-a="clearHistory">Clear all</button>' : '')
     body = stateMsg() ?? (data.length ? data.map(h => `<div class="row click" data-a="openUrl" data-url="${esc(h.url)}"><span class="ph">${icon('globe', 12)}</span><div class="mt"><b>${esc(h.title || h.url)}</b><small>${esc(host(h.url))} · ${ago(h.at)}</small></div><span class="acts"><button data-a="delHistory" data-at="${h.at}" title="Remove">${icon('x', 15)}</button></span></div>`).join('') : `<div class="empty">${q ? 'No match.' : 'No history yet.'}</div>`)

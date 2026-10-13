@@ -15,6 +15,7 @@ npx @electron/packager . Heliarc --platform=darwin --arch=$ARCH --out=dist --ove
   --ignore='^/(dist|build|motion-.*|shot-.*|screenshot.*|site|\.git|\.github|\.gitignore)'
 APP=dist/Heliarc-darwin-$ARCH/Heliarc.app
 cp build/icon.icns "$APP/Contents/Resources/electron.icns"
+node scripts/fuses.js "$APP"
 if [ -n "$APPLE_ID" ]; then node scripts/sign-mac.js "$APP"; else codesign --force --deep --sign - "$APP"; fi # signed + notarized when the Apple secrets are set, ad-hoc otherwise
 ditto -c -k --keepParent "$APP" dist/Heliarc-mac-$ARCH.zip
 echo "Built: $APP and dist/Heliarc-mac-$ARCH.zip"

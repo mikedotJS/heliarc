@@ -10,6 +10,7 @@ const root = path.join(__dirname, '..')
     dir: root, name: 'Heliarc', platform: 'win32', arch: 'x64', out: path.join(root, 'dist'), overwrite: true, icon: path.join(root, 'build', 'icon.ico'),
     ignore: [/^\/(dist|build|motion-.*|shot-.*|screenshot.*|site|\.git|\.github|\.gitignore)/],
   })
+  execFileSync(process.execPath, [path.join(__dirname, 'fuses.js'), path.join(root, 'dist', 'Heliarc-win32-x64', 'Heliarc.exe')], { stdio: 'inherit' })
   const zip = path.join(root, 'dist', 'Heliarc-windows-x64.zip')
   fs.rmSync(zip, { force: true })
   execFileSync('tar', ['-a', '-c', '-f', zip, '-C', path.join(root, 'dist'), 'Heliarc-win32-x64'], { stdio: 'inherit' }) // bsdtar writes a zip for a .zip name

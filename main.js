@@ -110,6 +110,10 @@ function leaveFullscreen(tab) {
   if (fsTab !== tab) return
   fsTab = null; tab.view?.setBorderRadius(12); layout()
 }
+const lockScreen = wc => { // Heliarc's own screens (the ones with the bridge to the app) never open windows and never leave the app's files
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }))
+  wc.on('will-navigate', (e, u) => { if (!u.startsWith(require('url').pathToFileURL(path.join(__dirname, 'ui')).href)) e.preventDefault() })
+}
 const pagePrefs = partition => ({ partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD, additionalArguments: settings.fingerprint ? ['--heliarc-fp'] : [] }) // the same for tabs, Peek and the Little window
 const hardenWc = wc => { if (settings.webrtcProtect) wc.setWebRTCIPHandlingPolicy('default_public_interface_only') } // WebRTC doesn't reveal the local network address
 // which system screen a failed load gets: Chromium's net error codes
@@ -438,7 +442,7 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   const area = screen.getDisplayMatching(win.getBounds()).workArea, width = Math.min(1100, Math.max(760, Math.round(area.width * .55))), height = Math.min(900, Math.max(560, Math.round(area.height * .78)))
   const lw = new BaseWindow({ width, height, x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2), minWidth: 480, minHeight: 360, title: 'Heliarc', icon: ICON, backgroundColor: '#2a2a33',
     ...(process.platform === 'darwin' && { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 16 } }) })
-  const sp = routeFor(resolve(url)) ?? 0, bar = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } })
+  const sp = routeFor(resolve(url)) ?? 0, bar = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } }); lockScreen(bar.webContents)
   const view = new WebContentsView({ webPreferences: pagePrefs(SPACES[sp].partition) })
   const wc = view.webContents
   hardenWc(wc); view.setBorderRadius(12)
@@ -606,7 +610,7 @@ let authCurrent = null, authQueue = Promise.resolve() // one sign-in window at a
 function askLogin(info) {
   return new Promise(resolve => {
     const w = new BaseWindow({ width: 380, height: 300, parent: win, modal: true, title: 'Sign in', icon: ICON, resizable: false, minimizable: false, maximizable: false, backgroundColor: '#1e1f22' })
-    const v = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } })
+    const v = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } }); lockScreen(v.webContents)
     w.contentView.addChildView(v); const fit = () => v.setBounds({ ...w.getContentBounds(), x: 0, y: 0 }); fit(); v.webContents.loadFile('ui/auth.html')
     const finish = r => { if (!authCurrent || authCurrent.w !== w) return; authCurrent = null; resolve(r); w.close() }
     authCurrent = { w, info, finish }
@@ -736,14 +740,14 @@ app.whenReady().then(async () => {
   win = new BaseWindow({ width: 1280, height: 820, title: 'Heliarc', icon: ICON, backgroundColor: '#2a2a33', ...(process.platform === 'darwin' && { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 16 } }) })
   const prefs = { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true }
   const overlay = (file, visible = false) => {
-    const v = new WebContentsView({ webPreferences: prefs })
+    const v = new WebContentsView({ webPreferences: prefs }); lockScreen(v.webContents)
     v.setBackgroundColor('#00000000'); v.setVisible(visible); win.contentView.addChildView(v)
     v.webContents.loadFile('ui/' + file); v.webContents.on('before-input-event', shortcut)
     if (TEST) v.webContents.on('console-message', d => console.warn(`[${file}]`, d.level, d.message, d.sourceId?.split('/').pop() + ':' + d.lineNumber))
     return v
   }
   ElectronChromeExtensions.handleCRXProtocol(session.defaultSession) // extension icons in <browser-action-list>
-  ui = new WebContentsView({ webPreferences: { ...prefs, sandbox: false } }) // not sandboxed: its preload loads the extension toolbar element
+  ui = new WebContentsView({ webPreferences: { ...prefs, sandbox: false } }); lockScreen(ui.webContents) // not sandboxed: its preload loads the extension toolbar element
   win.contentView.addChildView(ui); ui.webContents.loadFile('ui/arc.html'); ui.webContents.on('before-input-event', shortcut)
   peekUi = overlay('peek.html'); edge = overlay('edge.html'); find = overlay('find.html'); panel = overlay('panel.html'); cmd = overlay('cmdbar.html'); hungUi = overlay('hung.html')
   win.on('resize', layout)
@@ -853,7 +857,7 @@ app.whenReady().then(async () => {
   h('checkUpdate', checkUpdate); h('openRelease', async () => { // the update feed can lag behind a fresh release: try the in-app update first, the release page is the way out
     if (!update) return
     if (autoUpdate && !updater) { updater = { state: 'downloading' }; push(); if (await autoUpdate.check()) return }
-    shell.openExternal(update.url)
+    if (update.url?.startsWith('https://github.com/mikedotJS/heliarc/')) shell.openExternal(update.url) // only our own release page, whatever the feed says
   })
   h('delRoute', host => { settings.routes = settings.routes.filter(r => r.host !== host); push() })
   h('setShortcut', (action, c) => {

@@ -225,6 +225,18 @@ module.exports = async (a, ok) => {
     const typed = async v => js(a.cmd().webContents, `(async () => { const i = document.getElementById('in'); i.value = ${JSON.stringify(v)}; i.oninput(); await new Promise(r => setTimeout(r, 300)); return [...document.querySelectorAll('.row')].map(r => r.textContent) })()`)
     const listed = await typed('!yt'), going = await typed('!yt lofi')
     const tagged = await js(a.cmd().webContents, `(() => { const t = document.getElementById('tag'), i = document.getElementById('in'); const s = [t.hidden, t.textContent, getComputedStyle(t).backgroundColor, i.value]; i.setSelectionRange(0, 0); i.onkeydown({ key: 'Backspace', preventDefault() {} }); return [s, t.hidden, i.value] })()`)
+    // a visited site is offered as the end of what is typed: selected, so typing goes on over it; Tab accepts, Backspace drops it
+    const cw = () => a.cmd().webContents, seen = await js(cw(), "api.call('history', '127.0.0')")
+    const autoc = (v, ev) => js(cw(), `(async () => { const i = document.getElementById('in'); i.value = ${JSON.stringify(v)}; i.oninput(${ev || ''}); await new Promise(r => setTimeout(r, 300)); return [i.value, i.selectionStart, i.selectionEnd, document.querySelector('.row').textContent] })()`)
+    const offered = await autoc('127.0.0')
+    ok('typing the start of a visited site offers its address, the rest selected', seen.length > 0 && offered[0] === '127.0.0.1' && offered[1] === 7 && offered[2] === 9, JSON.stringify([seen.length, offered]))
+    ok('and the first line of the list is that site', /Open “127\.0\.0\.1” in a new tab/.test(offered[3]), offered[3])
+    const accepted = await js(cw(), "(() => { const i = document.getElementById('in'); i.onkeydown({ key: 'Tab', preventDefault() {} }); return [i.value, i.selectionStart, i.selectionEnd] })()")
+    ok('Tab accepts it', JSON.stringify(accepted) === '["127.0.0.1",9,9]', JSON.stringify(accepted))
+    const deleted = await autoc('127.0.0', "{ inputType: 'deleteContentBackward' }")
+    ok('deleting does not bring it back', deleted[0] === '127.0.0' && deleted[1] === 7 && deleted[2] === 7, JSON.stringify(deleted))
+    const nope = await autoc('qqqnever'), spaced = await autoc('127.0.0 x')
+    ok('an unknown site, or a search with spaces, offers nothing', nope[0] === 'qqqnever' && spaced[0] === '127.0.0 x', JSON.stringify([nope, spaced]))
     a.closeCmd(); await sleep(300)
     ok('a full bang becomes a tag in the site\'s colour, and only the search stays typed', JSON.stringify(tagged[0]) === JSON.stringify([false, 'YouTube', 'rgb(255, 0, 51)', 'lofi']), JSON.stringify(tagged[0]))
     ok('Backspace at the start turns the tag back into text', tagged[1] === true && tagged[2] === '!yt lofi', JSON.stringify(tagged.slice(1)))
@@ -701,7 +713,9 @@ module.exports = async (a, ok) => {
     ok('settings show an icon catalogue and a name field for each space but the Private one', await js(panel(), `[document.querySelectorAll('.spedit').length, document.querySelectorAll('.spedit')[0].querySelectorAll('.ibtn').length, document.querySelector('.spedit input[data-f=name]').value].join()`) === '3,' + 50 + ',Home', 'got ' + await js(panel(), `document.querySelectorAll('.spedit').length + ',' + document.querySelectorAll('.ibtn.on').length`))
     ok('settings list shortcuts for this OS', await js(panel(), `[...document.querySelectorAll('.line')].find(l => l.innerText.startsWith('Split view')).querySelector('kbd').textContent`) === want.split)
     // macOS formatting, checked by running the page's own formatter with a Mac platform
-    const macText = await js(blank.view.webContents, `(() => { const el = { textContent: '' }; new Function('navigator', 'location', 'document', document.querySelector('script').textContent)({ platform: 'MacIntel' }, { hash: '#Mod%2BShift%2BK' }, { getElementById: () => el }); return el.textContent })()`)
+    const pageScript = await js(blank.view.webContents, `document.querySelector('script').textContent`) // the page's CSP forbids new Function, so the script text is run from here
+    const macText = await js(blank.view.webContents, `(() => { const el = { textContent: '' }; ((navigator, location, document) => { ${pageScript}
+ })({ platform: 'MacIntel' }, { hash: '#Mod%2BShift%2BK' }, { getElementById: () => el }); return el.textContent })()`)
     ok('macOS shows symbols (⌘⇧K)', macText === '⌘⇧K', macText)
     await js(panel(), `api.call('setShortcut', 'editAddress', 'Mod+Shift+K')`); const b2 = a.newTab(); await sleep(1000)
     ok('new tab page follows a customized shortcut', await js(b2.view.webContents, `document.getElementById('k').textContent`) === (mac ? '⌘⇧K' : 'Ctrl+Shift+K'))
@@ -715,6 +729,15 @@ module.exports = async (a, ok) => {
     reset(); await sleep(300); const t1 = await open('/'), t2 = await open('/second'); S.place(t1.id, 'pinned'); S.place(t2.id, 'fav'); const f = S.newFolder(); S.push(); S.store.flushAll()
     const saved = JSON.parse(fs.readFileSync(path.join(require('electron').app.getPath('userData'), 'session.json'), 'utf8'))
     ok('session is saved to disk', saved.tabs.length === a.tabs().length && saved.tabs.some(t => t.pinned && t.url === base + '/') && saved.tabs.some(t => t.fav) && saved.folders.some(x => x.id === f), `tabs=${saved.tabs.length}`)
+  })
+
+  await section('security: the app\'s own screens are locked down', async () => {
+    const here = ui().getURL()
+    ok('a screen of the app cannot open a window', await js(ui(), `window.open('https://example.com') === null`))
+    await js(ui(), `location.href = 'https://example.com/'`).catch(() => {}); await sleep(800)
+    ok('and cannot be sent away from the app\'s files', ui().getURL() === here, ui().getURL())
+    ok('a screen of the app cannot run eval (content security policy)', await js(ui(), `new Promise(r => { const s = document.createElement('script'); s.textContent = 'window.__e = (() => { try { eval("1"); return "ran" } catch (e) { return "blocked" } })()'; document.head.append(s); r(window.__e) })`) === 'blocked')
+    ok('and every screen of the app has that policy', fs.readdirSync(path.join(__dirname, 'ui')).filter(f => f.endsWith('.html')).every(f => fs.readFileSync(path.join(__dirname, 'ui', f), 'utf8').includes('Content-Security-Policy')))
   })
 
   server.close()

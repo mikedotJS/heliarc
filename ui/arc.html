@@ -1,4 +1,4 @@
-<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script><script src="../node_modules/sortablejs/Sortable.min.js"></script>
+<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="script-src file: 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'"><link rel="stylesheet" href="common.css"><script src="icons.js"></script><script src="../node_modules/sortablejs/Sortable.min.js"></script>
 <style>
   @property --c1 { syntax: '<color>'; inherits: true; initial-value: #5b4bff }
   @property --c2 { syntax: '<color>'; inherits: true; initial-value: #c04bff }
@@ -176,7 +176,7 @@ function render() {
   $('#shield').innerHTML = s.blockerState === 'loading' ? 'Loading ad blocker…' : s.blockerState === 'error' ? `${icon('shield-alert', 13)} Ad blocker offline (lists unreachable)` : `${icon('shield-check', 13)} ${s.blocked} ads & trackers blocked`
   $('#shield').classList.toggle('off', !!s.adsAllowed); $('#shield').title = s.blockerState !== 'on' || !s.adHost ? '' : s.adsAllowed ? 'Click to block ads on ' + s.adHost : 'Click to allow ads on ' + s.adHost
   if (s.blockerState === 'on' && s.adsAllowed) $('#shield').innerHTML = `${icon('shield-off', 13)} Ads allowed on ${esc(s.adHost)}`
-  $('#foot').innerHTML = s.spaces.map((x, i) => `<button class="${i === s.space ? 'on' : ''}" data-sp="${i}" title="${x.name}">${icon(x.icon, 16)}</button>`).join('') + '<span class="sp"></span>' +
+  $('#foot').innerHTML = s.spaces.map((x, i) => `<button class="${i === s.space ? 'on' : ''}" data-sp="${i}" title="${esc(x.name)}">${icon(x.icon, 16)}</button>`).join('') + '<span class="sp"></span>' +
     `<button data-p="downloads" title="Library (${fmt(s.keys.library)})">${icon('archive', 16)}</button><button data-p="history" title="History (${fmt(s.keys.history)})">${icon('history', 16)}</button><button data-p="settings" title="Settings (${fmt(s.keys.settings)})">${icon('settings', 16)}</button>`
   mount()
 }

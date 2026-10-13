@@ -1,12 +1,12 @@
 <!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
 <style>
-  body { background: rgba(0,0,0,.45); height: 100vh; position: relative }
+  body { background: var(--scrim); height: 100vh; position: relative }
   @keyframes fade { from { opacity: 0 } } @keyframes rise { from { opacity: 0; transform: translateY(18px) scale(.97) } }
   body.in { animation: fade var(--dur-ui) var(--ease-out) } body.in #card { animation: rise var(--dur-ui) var(--ease-out) }
-  #card { position: absolute; background: var(--pbar, var(--panel)); border-radius: 12px; box-shadow: 0 24px 60px rgba(0,0,0,.55); overflow: hidden }
+  #card { position: absolute; background: var(--pbar, var(--panel)); border-radius: var(--r-view); box-shadow: 0 24px 60px var(--shade-2); overflow: hidden }
   #bar { height: var(--bar, 44px); display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--pbar, var(--panel)); color: var(--pfg, var(--fg)); transition: background var(--dur-ui) var(--ease-out), color var(--dur-ui) var(--ease-out) }
-  #bar .t { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25 } #bar b, #bar small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap } #bar b { font-weight: 500 } #bar small { opacity: .65; font-size: 11px }
-  #bar button { display: flex; align-items: center; gap: 6px; padding: 6px 10px; color: inherit; background: rgba(128,128,128,.22) } #bar button:hover { background: rgba(128,128,128,.38) } #bar #x { background: none; padding: 6px }
+  #bar .t { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25 } #bar b, #bar small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap } #bar b { font-weight: 500 } #bar small { opacity: .65; font-size: var(--fs-xs) }
+  #bar button { display: flex; align-items: center; gap: 6px; padding: 6px 10px; color: inherit; background: var(--veil-1) } #bar button:hover { background: var(--veil-2) } #bar #x { background: none; padding: 6px }
   #bar.loading::after { content: ''; position: absolute; left: 0; right: 0; top: var(--bar); height: 2px; background: linear-gradient(90deg, transparent, var(--acc), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: slide 1s linear infinite }
   @keyframes slide { from { background-position: -40% 0 } to { background-position: 140% 0 } }
 </style>
@@ -23,7 +23,7 @@ api.on('peek', p => {
   const c = $('#card'), r = p.rect
   Object.assign(c.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' }); document.documentElement.style.setProperty('--bar', p.bar + 'px')
   const rgb = (p.color || '').match(/\d+/g)?.map(Number), dark = rgb && (rgb[0] * .299 + rgb[1] * .587 + rgb[2] * .114) < 140 // light text on a dark bar, dark text on a light one
-  c.style.setProperty('--pbar', rgb ? p.color : ''); c.style.setProperty('--pfg', rgb ? (dark ? '#f2f2f5' : '#1b1b1f') : '')
+  c.style.setProperty('--pbar', rgb ? p.color : ''); c.style.setProperty('--pfg', rgb ? (dark ? 'var(--on-color)' : 'var(--on-light)') : '')
   $('#tt').textContent = p.title || p.url || 'Loading…'; try { $('#u').textContent = new URL(p.url).hostname } catch { $('#u').textContent = p.url }
   $('#sp').style.display = p.loading ? '' : 'none'; $('#bar').classList.toggle('loading', p.loading)
   if (!shown) { shown = true; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700) }

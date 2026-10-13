@@ -1,38 +1,38 @@
 <!doctype html><meta charset="utf-8"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
 <style>
-  body { background: rgba(0,0,0,.35); height: 100vh; display: flex; justify-content: center; align-items: center; color: var(--fg) }
+  body { background: var(--scrim); height: 100vh; display: flex; justify-content: center; align-items: center; color: var(--fg) }
   @keyframes fade { from { opacity: 0 } } @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.975) } }
   body.in { animation: fade var(--dur-ui) var(--ease-out) } body.in #card { animation: rise var(--dur-ui) var(--ease-out) }
   body.out { opacity: 0; transition: opacity var(--dur-exit) var(--ease-in) }
-  #card { width: min(860px, 94vw); height: min(620px, 88vh); background: var(--panel); border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,.5); display: flex; overflow: hidden }
+  #card { width: min(860px, 94vw); height: min(620px, 88vh); background: var(--panel); border-radius: var(--r-lg); box-shadow: 0 24px 60px var(--shade-2); display: flex; overflow: hidden }
   #nav { width: 190px; background: var(--bg); padding: 14px 8px; display: flex; flex-direction: column; gap: 2px; flex: none }
-  #nav h1 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding: 4px 10px 8px }
-  #nav button { display: flex; align-items: center; gap: 9px; text-align: left; padding: 8px 10px; border-radius: 8px; color: var(--dim) }
+  #nav h1 { font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding: 4px 10px 8px }
+  #nav button { display: flex; align-items: center; gap: 9px; text-align: left; padding: 8px 10px; border-radius: var(--r-md); color: var(--dim) }
   #nav button.on { background: var(--sel); color: var(--fg) } #nav .sp { flex: 1 }
   #main { flex: 1; display: flex; flex-direction: column; min-width: 0 }
-  #head { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px } #head h2 { font-size: 16px; font-weight: 600; flex: 1 }
-  #head input { background: var(--bg); border: 1px solid var(--hover); border-radius: 8px; color: var(--fg); padding: 6px 10px; width: 220px; font: inherit; user-select: text; outline: 0 } #head input:focus { border-color: var(--acc) }
-  #head button, .btn { background: var(--hover); padding: 5px 11px } #head button:hover, .btn:hover { background: var(--sel) }
-  #body { flex: 1; overflow-y: auto; padding: 0 12px 14px } #body::-webkit-scrollbar { width: 8px } #body::-webkit-scrollbar-thumb { background: var(--hover); border-radius: 4px }
-  .row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px } .row:hover { background: var(--hover) }
+  #head { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px } #head h2 { font-size: var(--fs-base); font-weight: 600; flex: 1 }
+  #head input { background: var(--bg); border: 1px solid var(--hover); border-radius: var(--r-md); color: var(--fg); padding: 6px 10px; width: 220px; font: inherit; user-select: text; outline: 0 } #head input:focus { border-color: var(--acc) }
+  #head button { background: var(--hover); padding: 5px 11px } #head button:hover { background: var(--sel) }
+  #body { flex: 1; overflow-y: auto; padding: 0 12px 14px } #body::-webkit-scrollbar { width: 8px } #body::-webkit-scrollbar-thumb { background: var(--hover); border-radius: var(--r-sm) }
+  .row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-md) } .row:hover { background: var(--hover) }
   .row.click { cursor: pointer } .row .mt { flex: 1; min-width: 0; display: flex; flex-direction: column }
   .row b, .row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500 } .row small { color: var(--dim) }
   .row .acts { display: flex; gap: 2px } .row .acts button { padding: 4px 6px; color: var(--dim) } .row .acts button:hover { color: var(--fg) }
-  .row img.fav, .row .ph { width: 20px; height: 20px; border-radius: 5px; flex: none } .row .ph { background: var(--hover); display: grid; place-items: center; color: var(--dim) }
-  .bar { height: 3px; background: var(--hover); border-radius: 2px; margin-top: 4px } .bar i { display: block; height: 100%; background: var(--acc); border-radius: 2px }
+  .row img.fav, .row .ph { width: 20px; height: 20px; border-radius: var(--r-sm); flex: none } .row .ph { background: var(--hover); display: grid; place-items: center; color: var(--dim) }
+  .bar { height: 3px; background: var(--hover); border-radius: var(--r-xs); margin-top: 4px } .bar i { display: block; height: 100%; background: var(--acc); border-radius: var(--r-xs) }
   .empty, .err, .load { text-align: center; color: var(--dim); padding: 48px 20px } .err { color: var(--err) }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 4px 0 }
-  .thumb { background: var(--bg); border-radius: 10px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column } .thumb:hover { outline: 2px solid var(--acc) }
-  .thumb .pv { height: 100px; display: grid; place-items: center; background: #0e0e12; color: var(--dim) } .thumb .pv img, .thumb .pv video { width: 100%; height: 100%; object-fit: cover }
-  .thumb span { padding: 6px 8px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-  section { padding: 6px 6px 16px } section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 12px 4px 8px }
+  .thumb { background: var(--bg); border-radius: var(--r-md); overflow: hidden; cursor: pointer; display: flex; flex-direction: column } .thumb:hover { outline: 2px solid var(--acc) }
+  .thumb .pv { height: 100px; display: grid; place-items: center; background: var(--bg); color: var(--dim) } .thumb .pv img, .thumb .pv video { width: 100%; height: 100%; object-fit: cover }
+  .thumb span { padding: 6px 8px; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .spedit { padding: 4px 0 10px } .spprev { width: 30px; height: 30px; border-radius: var(--r-md); display: grid; place-items: center; color: var(--on-color); flex: none }
+  input[type=color] { width: 34px; height: 30px; padding: 2px; border: 1px solid var(--hover); border-radius: var(--r-md); background: var(--bg); cursor: pointer }
+  .icons { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 4px } .ibtn { width: 32px; height: 32px; border-radius: var(--r-md); display: grid; place-items: center; color: var(--dim) } .ibtn:hover { background: var(--hover); color: var(--fg) } .ibtn.on { background: var(--sel); color: var(--fg); outline: 2px solid var(--acc) }
+  section { padding: 6px 6px 16px } section h3 { font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 12px 4px 8px }
   .line { display: flex; align-items: center; gap: 10px; padding: 7px 4px } .line label { flex: 1 } .line small { color: var(--dim); display: block }
-  select, .fld { background: var(--bg); border: 1px solid var(--hover); border-radius: 8px; color: var(--fg); padding: 6px 8px; font: inherit; user-select: text; outline: 0 } select:focus, .fld:focus { border-color: var(--acc) }
-  .toggle { appearance: none; width: 36px; height: 20px; border-radius: 10px; background: var(--hover); position: relative; cursor: pointer; transition: background var(--dur-micro) } .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform var(--dur-micro) var(--ease-out) }
-  .toggle:checked { background: var(--acc) } .toggle:checked::after { transform: translateX(16px) }
-  kbd { background: var(--bg); border: 1px solid var(--hover); border-radius: 6px; padding: 2px 7px; font: 12px system-ui; min-width: 70px; text-align: center } kbd.rec { border-color: var(--acc); color: var(--acc) }
-  .msg { font-size: 12px; color: var(--dim); padding: 2px 4px } .msg.bad { color: var(--err) } .msg.ok { color: #6bd68a }
-  .form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 4px } .form .fld { width: 100% } .form .wide { grid-column: 1 / -1 }
+  kbd { background: var(--bg); border: 1px solid var(--hover); border-radius: var(--r-sm); padding: 2px 7px; font: var(--fs-sm) system-ui; min-width: 70px; text-align: center } kbd.rec { border-color: var(--acc); color: var(--acc) }
+  .msg { font-size: var(--fs-sm); color: var(--dim); padding: 2px 4px } .msg.bad { color: var(--err) } .msg.ok { color: var(--ok) }
+  .form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 4px } .form .ds-field { width: 100% } .form .wide { grid-column: 1 / -1 }
 </style>
 <div id="card"><div id="nav"></div><div id="main"><div id="head"></div><div id="body"></div></div></div>
 <script>
@@ -62,7 +62,7 @@ function nav() {
   $('#nav').innerHTML = '<h1>Library</h1>' + SECTIONS.map(([k, l, i]) => (k === 'history' ? '<h1 style="padding-top:14px">Browser</h1>' : '') + `<button data-s="${k}" class="${k === section ? 'on' : ''}">${icon(i, 16)}${l}</button>`).join('') + '<span class="sp"></span>' + `<button data-s="close">${icon('x', 16)}Close</button>`
 }
 $('#nav').onclick = e => { const b = e.target.closest('button'); if (!b) return; b.dataset.s === 'close' ? close() : open(b.dataset.s) }
-const stateMsg = () => status === 'loading' ? '<div class="load"><span class="spin" style="display:inline-block"></span></div>' : status === 'error' ? '<div class="err">Could not load this section. <button class="btn" data-a="retry">Retry</button></div>' : null
+const stateMsg = () => status === 'loading' ? '<div class="load"><span class="spin" style="display:inline-block"></span></div>' : status === 'error' ? '<div class="err">Could not load this section. <button class="ds-btn sm" data-a="retry">Retry</button></div>' : null
 
 function render() {
   if (!state) return
@@ -76,9 +76,9 @@ function render() {
       ? `<div class="grid">${list.map(d => `<div class="thumb" data-a="openFile" data-id="${d.id}" title="${esc(d.name)}"><div class="pv">${/^video\/|\.(mp4|webm|mov|mkv)$/i.test(d.mime + d.name) ? `<video src="${esc(fileUrl(d.path))}" preload="metadata" muted></video>` : /^audio\/|\.(mp3|wav|ogg|m4a|flac)$/i.test(d.mime + d.name) ? icon('music', 28) : `<img src="${esc(fileUrl(d.path))}" onerror="this.replaceWith(document.createTextNode('File moved or deleted'))">`}</div><span>${esc(d.name)}</span></div>`).join('')}</div>`
       : list.map(d => {
         const live = d.state === 'progressing' || d.state === 'paused', pct = d.total ? d.received / d.total * 100 : 5
-        const sub = live ? `${d.state === 'paused' ? 'Paused · ' : ''}${size(d.received)}${d.total ? ' of ' + size(d.total) : ''}` : d.state === 'completed' ? `${size(d.received || d.total)} · ${ago(d.at)}` : d.state === 'cancelled' ? 'Cancelled' : 'Failed or interrupted'
+        const sub = live ? `${d.state === 'paused' ? 'Paused · ' : ''}${size(d.received)}${d.total ? ' of ' + size(d.total) : ''}` : d.state === 'completed' ? `${size(d.received || d.total)} · ${ago(d.at)}` : d.state === 'cancelled' ? 'Cancelled' : 'Failed: the connection was lost or the site refused it'
         return `<div class="row" data-id="${d.id}"><span class="ph">${icon(d.state === 'completed' ? 'file' : 'download', 12)}</span><div class="mt"><b>${esc(d.name)}</b><small>${sub}</small>${live ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}</div>
-          <span class="acts">${d.state === 'completed' ? `<button data-a="openFile" title="Open">${icon('external-link', 15)}</button><button data-a="showFile" title="Show in folder">${icon('folder', 15)}</button>` : ''}${live ? `<button data-a="cancelDownload" title="Cancel">${icon('x', 15)}</button>` : `<button data-a="delDownload" title="Remove from list">${icon('trash-2', 15)}</button>`}</span></div>`
+          <span class="acts">${d.state === 'completed' ? `<button data-a="openFile" title="Open">${icon('external-link', 15)}</button><button data-a="showFile" title="Show in folder">${icon('folder', 15)}</button>` : ''}${d.state === 'interrupted' ? `<button data-a="retryDownload" title="Try again">${icon('rotate-cw', 15)}</button>` : ''}${live ? `<button data-a="cancelDownload" title="Cancel">${icon('x', 15)}</button>` : `<button data-a="delDownload" title="Remove from list">${icon('trash-2', 15)}</button>`}</span></div>`
       }).join('')
   } else if (section === 'archive') {
     const hrs = S.settings.archiveHours
@@ -92,60 +92,66 @@ function render() {
     body = (S.canSavePw ? '' : '<div class="err" style="padding:12px">This system can’t encrypt passwords, so Heliarc doesn’t save them.</div>') + (stateMsg() ?? (data.length ? data.map(p => `<div class="row"><span class="ph">${icon('key-round', 12)}</span><div class="mt"><b>${esc(host(p.origin))}</b><small>${esc(p.user || '(no username)')}</small></div><span class="acts"><button data-a="delPassword" data-id="${p.id}" title="Delete">${icon('trash-2', 15)}</button></span></div>`).join('') : '<div class="empty">No saved passwords. Heliarc offers to save a login after you sign in to a site.</div>'))
   } else if (section === 'extensions') {
     body = `<div class="msg" style="padding:0 10px 8px">Install extensions from the Chrome Web Store. They work in every space (not in the Private one); their buttons and popups are in the sidebar toolbar.</div>
-      <div class="line"><input class="fld" id="extin" placeholder="Chrome Web Store link or extension ID" style="flex:1" spellcheck="false" ${installing ? 'disabled' : ''}><button class="btn" data-a="installExt" ${installing ? 'disabled' : ''}>${installing ? 'Installing…' : 'Install'}</button></div>
+      <div class="line"><input class="ds-field" id="extin" placeholder="Chrome Web Store link or extension ID" style="flex:1" spellcheck="false" ${installing ? 'disabled' : ''}><button class="ds-btn sm" data-a="installExt" ${installing ? 'disabled' : ''}>${installing ? 'Installing…' : 'Install'}</button></div>
       <div class="msg ${note?.cls || ''}" style="padding:0 10px 8px">${esc(note?.text || '')}</div>` +
-      (stateMsg() ?? (data.length ? data.map(x => `<div class="row"><span class="ph">${icon('puzzle', 12)}</span><div class="mt"><b>${esc(x.name)}</b><small>Version ${esc(x.version)} · ${esc(x.id)}</small></div><span class="acts"><button data-a="removeExt" data-eid="${esc(x.id)}" title="Remove">${icon('trash-2', 15)}</button></span></div>`).join('') : '<div class="empty">No extensions installed.</div>'))
+      (stateMsg() ?? (data.length ? data.map(x => x.failed ? `<div class="row"><span class="ph err">${icon('triangle-alert', 12)}</span><div class="mt"><b>${esc(x.name)}</b><small>Couldn’t start: ${esc(x.error)}</small></div><span class="acts"><button data-a="retryExt" data-eid="${esc(x.id)}" title="Try again">${icon('rotate-cw', 15)}</button><button data-a="removeExt" data-eid="${esc(x.id)}" title="Remove">${icon('trash-2', 15)}</button></span></div>` : `<div class="row"><span class="ph">${icon('puzzle', 12)}</span><div class="mt"><b>${esc(x.name)}</b><small>Version ${esc(x.version)} · ${esc(x.id)}</small></div><span class="acts"><button data-a="removeExt" data-eid="${esc(x.id)}" title="Remove">${icon('trash-2', 15)}</button></span></div>`).join('') : '<div class="empty">No extensions installed.</div>'))
   } else body = settings(S)
+  if (section === 'downloads' && note?.dl) body = `<div class="msg bad" style="padding:0 10px 8px">${esc(note.dl)}</div>` + body
   $('#head').innerHTML = head; $('#body').innerHTML = body
   if (section === 'history') { const i = $('#q'); i.oninput = () => { q = i.value; clearTimeout(i.t); i.t = setTimeout(load, 150) }; if (document.activeElement !== i && q) { i.focus(); i.setSelectionRange(q.length, q.length) } }
 }
 function settings(S) {
   const st = S.settings, p = data || {}
   const hrs = [[0, 'Never'], [1, 'After 1 hour'], [12, 'After 12 hours'], [24, 'After 1 day'], [168, 'After 7 days'], [720, 'After 30 days']]
-  const toggle = (k, label, sub) => `<div class="line"><label>${label}<small>${sub}</small></label><input type="checkbox" class="toggle" data-set="${k}" ${st[k] ? 'checked' : ''}></div>`
+  const toggle = (k, label, sub) => `<div class="line"><label>${label}<small>${sub}</small></label><input type="checkbox" class="ds-switch" data-set="${k}" ${st[k] ? 'checked' : ''}></div>`
   return `<section><h3>General</h3>
-    <div class="line"><label>Archive unused tabs<small>Pinned tabs and favorites are never archived</small></label><select data-hours>${hrs.map(([v, l]) => `<option value="${v}" ${v === st.archiveHours ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="line"><label>Sidebar side<small>Also in the sidebar’s right-click menu</small></label><select class="ds-select" data-side><option value="left" ${st.sidebarSide === 'right' ? '' : 'selected'}>Left</option><option value="right" ${st.sidebarSide === 'right' ? 'selected' : ''}>Right</option></select></div>
+    <div class="line"><label>Archive unused tabs<small>Pinned tabs and favorites are never archived</small></label><select class="ds-select" data-hours>${hrs.map(([v, l]) => `<option value="${v}" ${v === st.archiveHours ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     ${toggle('autoPip', 'Automatic picture-in-picture', 'A playing video keeps playing in a floating window when you leave its tab')}
     ${toggle('littleExternal', 'Open links from other apps in a small window', 'Needs Heliarc to be your default browser')}
     ${toggle('autoUpdateCheck', 'Keep Heliarc up to date', `Heliarc ${esc(S.version)}. Looks for a new version every few hours, downloads it in the background (Mac) and asks you to restart`)}
-    <div class="line"><label>Updates</label><button class="btn" data-a="checkUpdate">Check now</button></div><div class="msg ${note?.update?.error ? 'bad' : note?.update ? 'ok' : ''}">${esc(note?.update?.error || note?.update?.text || '')}</div>
-    <div class="line"><label>Default browser</label><button class="btn" data-a="defaultBrowser">Make Heliarc the default</button></div><div class="msg ${note?.cls || ''}">${esc(note?.text || '')}</div></section>
+    <div class="line"><label>Updates</label><button class="ds-btn sm" data-a="checkUpdate">Check now</button></div><div class="msg ${note?.update?.error ? 'bad' : note?.update ? 'ok' : ''}">${esc(note?.update?.error || note?.update?.text || '')}</div>
+    <div class="line"><label>Default browser</label><button class="ds-btn sm" data-a="defaultBrowser">Make Heliarc the default</button></div><div class="msg ${note?.cls || ''}">${esc(note?.text || '')}</div></section>
   <section><h3>Privacy</h3>
     ${toggle('blockThirdPartyCookies', 'Block third-party cookies', 'Embedded content can no longer follow you from site to site')}
     ${toggle('httpsOnly', 'Always use HTTPS', 'http:// addresses are upgraded; a site without HTTPS still opens, in plain http, for that tab')}
     ${toggle('webrtcProtect', 'Hide your local address from WebRTC', 'Applies to tabs opened from now on')}
     ${toggle('fingerprint', 'Limit browser fingerprinting', 'Sites see a plain Chrome with common hardware. The browser identity changes right away; the hardware values apply to tabs opened from now on')}
-    <div class="line"><label>Ad blocker lists<small>You can also allow ads on one site: click the shield at the bottom of the sidebar</small></label><select data-list>${Object.entries(S.lists).map(([k, n]) => `<option value="${k}" ${k === st.adblockList ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+    <div class="line"><label>Ad blocker lists<small>You can also allow ads on one site: click the shield at the bottom of the sidebar</small></label><select class="ds-select" data-list>${Object.entries(S.lists).map(([k, n]) => `<option value="${k}" ${k === st.adblockList ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
     ${toggle('clearOnQuit', 'Clear everything when I quit', 'Cookies and site data (you get logged out of sites), caches, history and the download list. Saved passwords and open tabs stay')}
-    ${(st.pwNever || []).map(o => `<div class="line"><label>${esc(o)}<small>Heliarc never offers to save a password here</small></label><button class="btn" data-a="allowPw" data-o="${esc(o)}">Allow again</button></div>`).join('')}
+    ${(st.pwNever || []).map(o => `<div class="line"><label>${esc(o)}<small>Heliarc never offers to save a password here</small></label><button class="ds-btn sm" data-a="allowPw" data-o="${esc(o)}">Allow again</button></div>`).join('')}
     <div class="msg">The Private space (${esc(fmt(S.keys.newPrivateTab))}) keeps nothing: no history, no saved tabs, no extensions, and it is wiped when its last tab closes. Pages are never preloaded in the background.</div></section>
   <section><h3>Search</h3>
-    <div class="line"><label>Search engine<small>Used when you type something that isn’t an address</small></label><select data-engine>${Object.entries(S.engines).map(([k, n]) => `<option value="${k}" ${k === st.searchEngine ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
-    <div class="msg">Bangs jump straight to a site: type <b>!w cats</b> or <b>!yt lofi</b>. Built in: !g !w !yt !gh !ddg !a !r. Add your own:</div>
-    ${st.bangs.map(x => `<div class="line"><label>!${esc(x.trigger)}<small>${esc(x.url)}</small></label><button class="btn" data-a="delBang" data-trigger="${esc(x.trigger)}">${icon('trash-2', 14)}</button></div>`).join('')}
-    <div class="line"><input class="fld" id="btrig" placeholder="npm" style="width:70px" spellcheck="false"><input class="fld" id="burl" placeholder="https://www.npmjs.com/search?q=%s" style="flex:1" spellcheck="false"><button class="btn" data-a="addBang">Add</button></div>
+    <div class="line"><label>Search engine<small>Used when you type something that isn’t an address</small></label><select class="ds-select" data-engine>${Object.entries(S.engines).map(([k, n]) => `<option value="${k}" ${k === st.searchEngine ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+    <div class="msg">Bangs jump straight to a site: type <b>!w cats</b> or <b>!yt lofi</b>. Type <b>!</b> in the command bar to see them all. Add your own:</div>
+    ${st.bangs.map(x => `<div class="line"><label>!${esc(x.trigger)}<small>${esc(x.url)}</small></label><button class="ds-btn sm" data-a="delBang" data-trigger="${esc(x.trigger)}">${icon('trash-2', 14)}</button></div>`).join('')}
+    <div class="line"><input class="ds-field" id="btrig" placeholder="npm" style="width:70px" spellcheck="false"><input class="ds-field" id="burl" placeholder="https://www.npmjs.com/search?q=%s" style="flex:1" spellcheck="false"><button class="ds-btn sm" data-a="addBang">Add</button></div>
     <div class="msg ${note?.bang ? 'bad' : ''}">${esc(note?.bang || '')}</div></section>
   <section><h3>Site permissions</h3>
     <div class="msg">Sites ask before using your camera, microphone, location, notifications or clipboard. Answers you chose to remember are listed here.</div>
-    ${Object.entries(st.sitePerms).map(([h, ps]) => Object.entries(ps).map(([k, v]) => `<div class="line"><label>${esc(h)}<small>${esc(S.permLabels[k] || 'Open ' + k.slice(5) + ' links')}</small></label><select data-perm="${esc(h)}|${k}"><option value="1" ${v ? 'selected' : ''}>Allow</option><option value="0" ${v ? '' : 'selected'}>Block</option><option value="x">Ask again</option></select></div>`).join('')).join('') || '<div class="msg">Nothing remembered yet.</div>'}</section>
+    ${Object.entries(st.sitePerms).map(([h, ps]) => Object.entries(ps).map(([k, v]) => `<div class="line"><label>${esc(h)}<small>${esc(S.permLabels[k] || 'Open ' + k.slice(5) + ' links')}</small></label><select class="ds-select" data-perm="${esc(h)}|${k}"><option value="1" ${v ? 'selected' : ''}>Allow</option><option value="0" ${v ? '' : 'selected'}>Block</option><option value="x">Ask again</option></select></div>`).join('')).join('') || '<div class="msg">Nothing remembered yet.</div>'}</section>
   <section><h3>Import from another browser</h3>
-    ${detected.map(b => `<div class="line"><label>${esc(b.name)}</label>${b.history ? `<button class="btn" data-a="importRun" data-id="${b.id}" data-what="history">History</button>` : ''}${b.passwords ? `<button class="btn" data-a="importRun" data-id="${b.id}" data-what="passwords">Passwords</button>` : ''}${b.bookmarks ? `<button class="btn" data-a="importRun" data-id="${b.id}" data-what="bookmarks">Bookmarks</button>` : ''}</div>`).join('') || '<div class="msg">No other browser found on this computer.</div>'}
-    <div class="line"><label>From a file<small>Bookmarks exported as HTML, or Safari’s History.db. For passwords from Firefox or Safari, export them as a CSV from that browser first</small></label><button class="btn" data-a="importFile" data-what="bookmarks">Bookmarks…</button><button class="btn" data-a="importFile" data-what="passwords">Passwords…</button><button class="btn" data-a="importFile" data-what="safari">Safari history…</button></div>
+    ${detected.map(b => `<div class="line"><label>${esc(b.name)}</label>${b.history ? `<button class="ds-btn sm" data-a="importRun" data-id="${b.id}" data-what="history">History</button>` : ''}${b.passwords ? `<button class="ds-btn sm" data-a="importRun" data-id="${b.id}" data-what="passwords">Passwords</button>` : ''}${b.bookmarks ? `<button class="ds-btn sm" data-a="importRun" data-id="${b.id}" data-what="bookmarks">Bookmarks</button>` : ''}</div>`).join('') || '<div class="msg">No other browser found on this computer.</div>'}
+    <div class="line"><label>From a file<small>Bookmarks exported as HTML, or Safari’s History.db. For passwords from Firefox or Safari, export them as a CSV from that browser first</small></label><button class="ds-btn sm" data-a="importFile" data-what="bookmarks">Bookmarks…</button><button class="ds-btn sm" data-a="importFile" data-what="passwords">Passwords…</button><button class="ds-btn sm" data-a="importFile" data-what="safari">Safari history…</button></div>
     <div class="msg ${note?.import?.error ? 'bad' : note?.import ? 'ok' : ''}">${esc(note?.import?.error || note?.import?.text || '')}</div></section>
+  <section><h3>Spaces: name, icon and colours</h3>
+    ${S.spaces.map((s, i) => s.private ? '' : `<div class="spedit"><div class="line"><span class="spprev" style="background:linear-gradient(145deg,${esc(s.c1)},${esc(s.c2)})">${icon(s.icon, 16)}</span><input class="ds-field" data-sp="${i}" data-f="name" value="${esc(s.name)}" maxlength="20" spellcheck="false" style="flex:1"><input type="color" data-sp="${i}" data-f="c1" value="${esc(s.c1)}" title="First colour"><input type="color" data-sp="${i}" data-f="c2" value="${esc(s.c2)}" title="Second colour"></div>
+      <div class="icons">${SPACE_ICONS.map(n => `<button class="ibtn ${n === s.icon ? 'on' : ''}" data-a="spaceIcon" data-sp="${i}" data-icon="${n}" title="${n}">${icon(n, 16)}</button>`).join('')}</div></div>`).join('')}</section>
   <section><h3>Spaces: open sites in the right space</h3>
-    ${st.routes.map(r => `<div class="line"><label>${esc(r.host)}<small>always opens in ${esc(S.spaces[r.space]?.name)}</small></label><button class="btn" data-a="delRoute" data-host="${esc(r.host)}">${icon('trash-2', 14)}</button></div>`).join('') || '<div class="msg">No rules yet. You can also right-click a tab → “Always open … in”.</div>'}
-    <div class="line"><input class="fld" id="rhost" placeholder="example.com" style="flex:1" spellcheck="false"><select id="rspace">${S.spaces.map((s, i) => s.private ? '' : `<option value="${i}">${esc(s.name)}</option>`).join('')}</select><button class="btn" data-a="addRoute">Add</button></div></section>
+    ${st.routes.map(r => `<div class="line"><label>${esc(r.host)}<small>always opens in ${esc(S.spaces[r.space]?.name)}</small></label><button class="ds-btn sm" data-a="delRoute" data-host="${esc(r.host)}">${icon('trash-2', 14)}</button></div>`).join('') || '<div class="msg">No rules yet. You can also right-click a tab → “Always open … in”.</div>'}
+    <div class="line"><input class="ds-field" id="rhost" placeholder="example.com" style="flex:1" spellcheck="false"><select class="ds-select" id="rspace">${S.spaces.map((s, i) => s.private ? '' : `<option value="${i}">${esc(s.name)}</option>`).join('')}</select><button class="ds-btn sm" data-a="addRoute">Add</button></div></section>
   <section><h3>Keyboard shortcuts</h3>
-    ${Object.entries(S.keys).map(([a, k]) => `<div class="line"><label>${esc(S.labels[a])}</label><kbd class="${recordingFor === a ? 'rec' : ''}">${recordingFor === a ? 'Press keys…' : esc(fmt(k))}</kbd><button class="btn" data-a="record" data-action="${a}">${recordingFor === a ? 'Cancel' : 'Change'}</button>${st.shortcuts[a] ? `<button class="btn" data-a="resetKey" data-action="${a}" title="Back to default">${icon('undo-2', 14)}</button>` : ''}</div>`).join('')}
+    ${Object.entries(S.keys).map(([a, k]) => `<div class="line"><label>${esc(S.labels[a])}</label><kbd class="${recordingFor === a ? 'rec' : ''}">${recordingFor === a ? 'Press keys…' : esc(fmt(k))}</kbd><button class="ds-btn sm" data-a="record" data-action="${a}">${recordingFor === a ? 'Cancel' : 'Change'}</button>${st.shortcuts[a] ? `<button class="ds-btn sm" data-a="resetKey" data-action="${a}" title="Back to default">${icon('undo-2', 14)}</button>` : ''}</div>`).join('')}
     <div class="msg ${note?.key ? 'bad' : ''}">${note?.key ? esc(note.key) : 'Click Change, then press the new combination (Esc to cancel).'}</div></section>
   <section><h3>Autofill</h3><div class="msg">Used to fill address forms when you click a field. Stored on this device only.</div>
-    <div class="form">${[['first', 'First name'], ['last', 'Last name'], ['email', 'Email'], ['phone', 'Phone'], ['org', 'Organization'], ['street', 'Street address'], ['zip', 'Postal code'], ['city', 'City'], ['country', 'Country']].map(([k, l]) => `<input class="fld" data-pf="${k}" placeholder="${l}" value="${esc(p[k] || '')}">`).join('')}
-    <button class="btn wide" data-a="saveProfile">Save autofill</button><div class="msg wide ${note?.profile ? 'ok' : ''}">${note?.profile || ''}</div></div></section>`
+    <div class="form">${[['first', 'First name'], ['last', 'Last name'], ['email', 'Email'], ['phone', 'Phone'], ['org', 'Organization'], ['street', 'Street address'], ['zip', 'Postal code'], ['city', 'City'], ['country', 'Country']].map(([k, l]) => `<input class="ds-field" data-pf="${k}" placeholder="${l}" value="${esc(p[k] || '')}">`).join('')}
+    <button class="ds-btn sm wide" data-a="saveProfile">Save autofill</button><div class="msg wide ${note?.profile ? 'ok' : ''}">${note?.profile || ''}</div></div></section>`
 }
 const did = el => +el.closest('[data-id]').dataset.id
 const ACT = {
   retry: load, clearDownloads: () => api.call('clearDownloads'), clearArchive: () => api.call('clearArchive'), clearHistory: async () => { await api.call('clearHistory'); load() },
-  openFile: el => api.call('openFile', did(el)), showFile: el => api.call('showFile', did(el)), cancelDownload: el => api.call('cancelDownload', did(el)), delDownload: el => api.call('delDownload', did(el)),
+  openFile: el => api.call('openFile', did(el)), showFile: el => api.call('showFile', did(el)), cancelDownload: el => api.call('cancelDownload', did(el)), retryDownload: async el => { const r = await api.call('retryDownload', did(el)); if (r?.error) { note = { dl: r.error }; render() } },
+  retryExt: async el => { note = { text: 'Trying again…' }; render(); const r = await api.call('retryExtension', el.dataset.eid); note = r.ok ? { text: 'Started.', cls: 'ok' } : { text: 'Still can’t start. You can remove it and install it again.', cls: 'bad' }; load() }, delDownload: el => api.call('delDownload', did(el)),
   restoreArchive: async el => { await api.call('restoreArchive', +el.dataset.i); close() },
   openUrl: async el => { await api.call('open', el.dataset.url); close() },
   delHistory: async el => { await api.call('delHistory', +el.dataset.at); load() }, delPassword: async el => { await api.call('delPassword', did(el)); load() },
@@ -153,6 +159,7 @@ const ACT = {
   importFile: async el => { const r = await api.call('importFile', el.dataset.what); note = r.canceled ? null : { import: r }; render() },
   allowPw: async el => { await api.call('allowPw', el.dataset.o) },
   checkUpdate: async () => { note = { update: { text: 'Checking…' } }; render(); note = { update: await api.call('checkUpdate') }; render() },
+  spaceIcon: el => api.call('editSpace', +el.dataset.sp, { icon: el.dataset.icon }),
   delRoute: el => api.call('delRoute', el.dataset.host), delBang: el => api.call('delBang', el.dataset.trigger),
   addBang: async () => { const r = await api.call('addBang', $('#btrig').value, $('#burl').value); note = r.error ? { bang: r.error } : null; render() },
   installExt: async () => {
@@ -178,7 +185,9 @@ $('#body').onchange = async e => {
   if (t.dataset.perm) { const [h, k] = t.dataset.perm.split('|'); await api.call('setSitePerm', h, k, t.value === 'x' ? null : t.value === '1') }
   else if (t.matches('[data-list]')) await api.call('setSetting', 'adblockList', t.value)
   else if (t.matches('[data-engine]')) await api.call('setSetting', 'searchEngine', t.value)
+  else if (t.matches('[data-side]')) await api.call('setSetting', 'sidebarSide', t.value)
   else if (t.matches('[data-hours]')) await api.call('setSetting', 'archiveHours', +t.value)
+  else if (t.dataset.f) await api.call('editSpace', +t.dataset.sp, { [t.dataset.f]: t.value })
   else if (t.dataset.set) await api.call('setSetting', t.dataset.set, t.checked)
 }
 function startRec(a) { recordingFor = a; note = null; api.call('recording', true); render() }

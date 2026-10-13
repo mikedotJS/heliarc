@@ -1,4 +1,4 @@
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen, dialog, desktopCapturer } = require('electron')
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen, dialog, desktopCapturer, net } = require('electron')
 const path = require('path'), fs = require('fs'), os = require('os')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 const bangs = require('./bangs')
@@ -20,8 +20,10 @@ if (TEST) { // tests never touch the real Downloads folder (nor, unless told oth
   app.setPath('downloads', path.join(tmp, 'downloads')); fs.mkdirSync(app.getPath('downloads'))
 }
 
+const TITLEBAR = 36 // room for the Mac window buttons when the sidebar (which normally holds them) is on the right
 const SIDEBAR = 262, GAP = 8, EDGE = 6, PEEKBAR = 44, LITTLEBAR = 44
 const ICON = path.join(__dirname, 'assets', process.platform === 'darwin' ? 'icon-mac.png' : 'icon.png') // the Mac icon already carries its own rounded-square shape
+const SYSTEM = require('url').pathToFileURL(path.join(__dirname, 'ui', 'system.html')).href // the screen for a page that can't load, an offline browser, a crashed tab, an invalid certificate
 const NEWTAB = 'file://' + path.join(__dirname, 'ui', 'newtab.html').replace(/\\/g, '/')
 const TABPRELOAD = path.join(__dirname, 'tabpreload.js')
 const SPACES = [ // one browser profile (cookies, logins) per space
@@ -32,7 +34,7 @@ const SPACES = [ // one browser profile (cookies, logins) per space
 ]
 const PRIVATE = SPACES.findIndex(s => s.private)
 const ZOOMS = [.25, .33, .5, .67, .75, .8, .9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
-const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], sitePerms: {}, autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true }
+const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true }
 // Picture-in-picture for the biggest playing, unmuted video (needs a user gesture, which executeJavaScript can claim)
 const PIP_ON = `(async () => { const v = [...document.querySelectorAll('video')].filter(v => !v.paused && !v.ended && !v.muted && v.readyState > 2 && v.videoWidth && !v.disablePictureInPicture).sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0]; if (!v || document.pictureInPictureElement) return false; await v.requestPictureInPicture(); return true })()`
 const PIP_OFF = `document.pictureInPictureElement && document.exitPictureInPicture()`
@@ -51,6 +53,8 @@ const byId = id => tabs.find(t => t.id === id)
 const cur = () => byId(active)
 const isShown = id => id === active || !!split?.includes(id)
 const tabOf = wc => tabs.find(t => t.view?.webContents === wc)
+const ownerOf = wc => tabOf(wc) || [peek, little].find(o => o?.view.webContents === wc) // a tab, Peek or the Little window: all of them get the system screens
+const realUrl = (wc, o) => wc.getURL().startsWith(SYSTEM) ? o?.sys?.url || '' : wc.getURL() // the address of the page a system screen stands for
 const pageOf = wc => tabOf(wc) || (peek?.view.webContents === wc ? peek : little?.view.webContents === wc ? little : null) // a tab, or the Peek / Little window (they have a space too)
 const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } }
 const zoneOf = t => t.fav ? 'fav' : t.folder ? 'f' + t.folder : t.pinned ? 'pinned' : 'list'
@@ -75,15 +79,16 @@ const push = () => {
 }
 const pushSoon = () => { soon ??= setTimeout(() => { soon = null; push() }, 250) }
 
+const onRight = () => settings.sidebarSide === 'right'
 function content() {
-  const { width, height } = win.getContentBounds(), x = sidebar ? SIDEBAR : GAP
-  return { x, y: GAP, w: width - x - GAP, h: height - GAP * 2, width, height }
+  const { width, height } = win.getContentBounds(), side = sidebar ? SIDEBAR : GAP, y = onRight() && process.platform === 'darwin' ? TITLEBAR : GAP
+  return { x: onRight() ? GAP : side, y, w: width - side - GAP, h: height - y - GAP, width, height }
 }
 function layout() {
   const c = content(), full = { x: 0, y: 0, width: c.width, height: c.height }
-  ui.setBounds(floating ? { x: 0, y: 0, width: SIDEBAR, height: c.height } : full)
+  ui.setBounds(floating ? { x: onRight() ? c.width - SIDEBAR : 0, y: 0, width: SIDEBAR, height: c.height } : full)
   for (const v of [cmd, panel, peekUi]) v.setBounds(full)
-  edge.setBounds({ x: 0, y: 0, width: EDGE, height: c.height })
+  edge.setBounds({ x: onRight() ? c.width - EDGE : 0, y: 0, width: EDGE, height: c.height })
   find.setBounds({ x: c.x + c.w - 392, y: c.y + 4, width: 380, height: 64 })
   const ids = split || [], half = Math.floor((c.w - GAP) / 2)
   tabs.forEach(t => {
@@ -91,10 +96,12 @@ function layout() {
     t.view?.setBounds(t === fsTab ? full : i < 0 ? { x: c.x, y: c.y, width: c.w, height: c.h } : { x: c.x + i * (half + GAP), y: c.y, width: i ? c.w - half - GAP : half, height: c.h })
     if (t.view && isShown(t.id)) fitSoon(t)
   })
+  if (hungTab && !tabs.includes(hungTab)) hungTab = null
+  if (hungUi) { const on = !!hungTab && isShown(hungTab.id); on && hungUi.setBounds(hungTab.view.getBounds()); hungUi.setVisible(on) }
   if (peek) { const r = peekRect(); peek.view.setBounds({ x: r.x, y: r.y + PEEKBAR, width: r.w, height: r.h - PEEKBAR }) }
 }
 function stack() { // z-order: sidebar < pages < peek < floating sidebar < edge < find < panel < command bar
-  const order = [!floating && ui, ...tabs.map(t => t.view), peekUi, peek?.view, floating && ui, edge, find, panel, cmd]
+  const order = [!floating && ui, ...tabs.map(t => t.view), hungUi, peekUi, peek?.view, floating && ui, edge, find, panel, cmd]
   order.forEach(v => v && win.contentView.addChildView(v))
 }
 const refresh = () => { tabs.forEach(t => t.view?.setVisible(isShown(t.id))); layout(); push() }
@@ -105,6 +112,22 @@ function leaveFullscreen(tab) {
 }
 const pagePrefs = partition => ({ partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD, additionalArguments: settings.fingerprint ? ['--heliarc-fp'] : [] }) // the same for tabs, Peek and the Little window
 const hardenWc = wc => { if (settings.webrtcProtect) wc.setWebRTCIPHandlingPolicy('default_public_interface_only') } // WebRTC doesn't reveal the local network address
+// which system screen a failed load gets: Chromium's net error codes
+const sysKind = code => !net.isOnline() || code === -106 ? 'offline' : code === -105 ? 'notfound' : code === -102 || code === -101 ? 'refused' : code === -7 || code === -118 ? 'timeout' : code <= -200 && code > -300 ? 'cert' : 'load'
+function showSystem(tab, kind, { url, detail, msg }) {
+  const wc = tab.view?.webContents; if (!wc || wc.isDestroyed()) return
+  const tries = tab.sys?.url === url && tab.sys.kind === kind ? tab.sys.tries + 1 : 1
+  tab.sys = { kind, url, tries, detail, msg: msg || `${{ offline: 'You’re offline', notfound: 'Address not found', refused: 'Connection refused', timeout: 'The site took too long to answer', cert: 'Connection not private', load: 'Failed to load' }[kind]} — ${url}` }
+  tab.loading = false
+  wc.loadURL(SYSTEM + '#' + encodeURIComponent(JSON.stringify({ kind, url, host: hostOf(url), detail, tries })))
+}
+let hungTab = null, hungUi = null // the tab that stopped responding, and the card shown over it
+const endHung = () => { hungTab = null; layout() }
+function watchSystem(wc, owner) { // Peek and the Little window get the same screens as a tab
+  wc.on('did-fail-load', (_, code, desc, url, isMain) => { if (isMain && code !== -3 && !url.startsWith(SYSTEM)) showSystem(owner, sysKind(code), { url, detail: `${desc} (${code})` }) })
+  wc.on('render-process-gone', (_, d) => { if (d.reason !== 'clean-exit') showSystem(owner, 'crash', { url: wc.getURL(), detail: d.reason }) })
+  wc.on('did-navigate', (_, u) => { if (!u.startsWith(SYSTEM)) owner.sys = null })
+}
 function makeView(tab) {
   const view = new WebContentsView({ webPreferences: pagePrefs(SPACES[tab.space].partition) })
   const wc = view.webContents
@@ -116,7 +139,7 @@ function makeView(tab) {
   wc.on('page-favicon-updated', (_, icons) => { tab.icon = icons[0]; push() })
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; push() })
   wc.on('did-stop-loading', () => { tab.loading = false; push() })
-  wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (!tab.manual) wc.setZoomFactor(1); tab.url = u.startsWith('file:') ? '' : u; visit(tab, u); push() })
+  wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (!tab.manual) wc.setZoomFactor(1); if (u.startsWith(SYSTEM)) { tab.url = tab.sys?.url || ''; tab.error = tab.sys?.msg || null } else { tab.sys = null; tab.url = u.startsWith('file:') ? '' : u; visit(tab, u) } push() })
   wc.on('did-finish-load', () => { tab.upN = 0; setTimeout(() => fitSoon(tab), 500) })
   wc.on('did-navigate-in-page', (_, u) => { tab.url = u; push() })
   const toHttps = (e, u) => { const s = settings.httpsOnly && !tab.httpOk?.has(hostOf(u)) && (tab.upN = (tab.upN || 0) + 1) < 4 && privacy.upgrade(u); if (s) { e.preventDefault(); tab.upgraded = s; wc.loadURL(s) } }
@@ -125,7 +148,7 @@ function makeView(tab) {
     if (isMain && url === tab.upgraded && privacy.NO_HTTPS.includes(code)) { // the site has no HTTPS: allow plain http for this host, in this tab
       const http = url.replace(/^https:/, 'http:'); (tab.httpOk ??= new Set()).add(hostOf(url)); tab.upgraded = null; wc.loadURL(http); return
     }
-    if (isMain && code !== -3) { tab.error = `${desc} — ${url}`; tab.loading = false; push() }
+    if (isMain && code !== -3 && !url.startsWith(SYSTEM)) showSystem(tab, sysKind(code), { url, detail: `${desc} (${code})` })
   })
   wc.on('before-input-event', (e, i) => { if (!extCommand(e, i, tab)) shortcut(e, i) })
   wc.on('focus', () => { if (split?.includes(tab.id) && active !== tab.id) { active = tab.id; push() } })
@@ -134,12 +157,9 @@ function makeView(tab) {
   wc.on('zoom-changed', (_, dir) => { if (tab.id === active) zoom(dir === 'in' ? 1 : -1) })
   wc.on('found-in-page', (_, r) => find.webContents.send('found', { active: r.activeMatchOrdinal, total: r.matches }))
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
-  wc.on('render-process-gone', (_, d) => { if (d.reason !== 'clean-exit') { tab.error = `The tab crashed (${d.reason})`; tab.loading = false; push() } }) // the Retry button reloads it
-  wc.on('unresponsive', async () => {
-    if (tab.hung) return; tab.hung = true
-    const i = await choose(`${hostOf(tab.url) || 'This page'} isn’t responding`, ['Reload'], { cancel: 'Wait', safe: true }); tab.hung = false
-    if (i === 0 && !wc.isDestroyed()) { wc.forcefullyCrashRenderer(); wc.reload() }
-  })
+  wc.on('render-process-gone', (_, d) => { if (d.reason !== 'clean-exit') showSystem(tab, 'crash', { url: tab.url, detail: d.reason, msg: `The tab crashed (${d.reason})` }) })
+  wc.on('unresponsive', () => { if (hungTab) return; hungTab = tab; layout(); hungUi.webContents.send('hung', { host: hostOf(tab.url) || 'This page' }) })
+  wc.on('responsive', () => { if (hungTab === tab) endHung() })
   wc.on('will-prevent-unload', e => { // the page asks "Leave site?" (unsaved changes)
     const i = dialog.showMessageBoxSync(win, { type: 'question', message: 'Leave this page?', detail: 'Changes you made may not be saved.', buttons: ['Leave', 'Stay'], defaultId: 1, cancelId: 1 })
     if (i === 0) e.preventDefault()
@@ -220,7 +240,7 @@ const fitSoon = t => { clearTimeout(t.fitTimer); t.fitTimer = setTimeout(() => f
 function openCmd(mode) {
   cmdOpen = true
   win.contentView.addChildView(cmd); cmd.setVisible(true); cmd.webContents.focus()
-  cmd.webContents.send('open', { mode, value: mode === 'edit' ? cur()?.url || '' : '', left: content().x, right: GAP }) // center on the page area, not on the whole window
+  cmd.webContents.send('open', { mode, value: mode === 'edit' ? cur()?.url || '' : '', left: content().x, right: content().width - content().x - content().w }) // center on the page area, not on the whole window
 }
 function closeCmd() { cmdOpen = false; cmd.setVisible(false); (peek?.view || cur()?.view)?.webContents.focus() }
 function openPanel(section) {
@@ -381,7 +401,7 @@ function peekRect() {
 function peekSend() {
   if (!peek) return
   const wc = peek.view.webContents
-  peekUi.webContents.send('peek', { title: wc.getTitle(), url: wc.getURL(), loading: wc.isLoading(), rect: peekRect(), bar: PEEKBAR, color: peek.color })
+  peekUi.webContents.send('peek', { title: wc.getTitle(), url: realUrl(wc, peek), loading: wc.isLoading(), rect: peekRect(), bar: PEEKBAR, color: peek.color })
 }
 function peekSample() { // the top bar takes the colour the page has at its top edge, so the two read as one piece
   clearTimeout(peek?.timer); if (!peek) return
@@ -396,7 +416,7 @@ function openPeek(url) {
   const sp = cur()?.space ?? space, view = new WebContentsView({ webPreferences: pagePrefs(SPACES[sp].partition) })
   const wc = view.webContents
   hardenWc(wc); view.setBorderRadius(12)
-  peek = { view, space: sp }
+  peek = { view, space: sp }; watchSystem(wc, peek)
   wc.setWindowOpenHandler(({ url }) => { wc.loadURL(url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, peekSend)
   for (const e of ['did-stop-loading', 'did-navigate-in-page', 'dom-ready']) wc.on(e, peekSample)
@@ -422,7 +442,7 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   const view = new WebContentsView({ webPreferences: pagePrefs(SPACES[sp].partition) })
   const wc = view.webContents
   hardenWc(wc); view.setBorderRadius(12)
-  little = { win: lw, view, bar, space: sp }
+  little = { win: lw, view, bar, space: sp }; watchSystem(wc, little)
   const LITTLE = { closeTab: () => lw.close(), reload: () => wc.reload(), zoomIn: () => wc.setZoomLevel(wc.getZoomLevel() + .5), zoomOut: () => wc.setZoomLevel(wc.getZoomLevel() - .5), zoomReset: () => wc.setZoomLevel(0), copyLink: () => clipboard.writeText(wc.getURL()), devtools: () => wc.isDevToolsOpened() ? wc.closeDevTools() : wc.openDevTools({ mode: 'detach' }), print: () => wc.print() }
   wc.on('before-input-event', (e, i) => { // the shortcuts that act on the page itself
     if (i.type !== 'keyDown' || recording) return
@@ -431,7 +451,7 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   })
   lw.contentView.addChildView(bar); lw.contentView.addChildView(view) // the frame sits behind the page
   const fit = () => { const { width, height } = lw.getContentBounds(); bar.setBounds({ x: 0, y: 0, width, height }); view.setBounds({ x: GAP, y: LITTLEBAR, width: width - GAP * 2, height: height - LITTLEBAR - GAP }) }
-  const send = () => !bar.webContents.isDestroyed() && bar.webContents.send('little', { title: wc.getTitle(), url: wc.getURL(), loading: wc.isLoading(), c1: SPACES[sp].c1, c2: SPACES[sp].c2 })
+  const send = () => !bar.webContents.isDestroyed() && bar.webContents.send('little', { title: wc.getTitle(), url: realUrl(wc, little), loading: wc.isLoading(), c1: SPACES[sp].c1, c2: SPACES[sp].c2 })
   fit(); lw.on('resize', fit)
   wc.setWindowOpenHandler(({ url }) => { wc.loadURL(url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, send)
@@ -440,7 +460,7 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   wc.loadURL(resolve(url))
   lw.on('closed', () => { little = null; for (const v of [view, bar]) if (!v.webContents.isDestroyed()) v.webContents.close() })
 }
-const moveLittle = () => { if (!little) return; const u = little.view.webContents.getURL(); little.win.close(); newTab(u); win.show(); win.focus() }
+const moveLittle = () => { if (!little) return; const u = realUrl(little.view.webContents, little); little.win.close(); newTab(u); win.show(); win.focus() }
 
 // ---- downloads ----
 const saveDownloads = () => store.save('downloads', downloads.filter(d => !d.private).slice(0, 200)) // the Private space keeps nothing on disk
@@ -456,7 +476,7 @@ function onDownload(_, item, priv) {
     dls.delete(d.id)
     if (!downloads.includes(d)) { if (d.private && st !== 'completed') fs.rm(p, { force: true }, () => {}); return } // already removed from the list (the last Private tab closed): nothing to update, and a cancelled Private download leaves no partial file
     d.state = st; d.received = item.getReceivedBytes(); d.at = Date.now()
-    saveDownloads(); push(); setTimeout(push, 8000)
+    saveDownloads(); push(); setTimeout(push, st === 'completed' ? 8000 : 60500) // the sidebar card for a failed download stays a minute
   })
   push()
 }
@@ -601,8 +621,14 @@ const trustedCerts = new Set(), askedCerts = new Map() // hosts the user chose t
 app.on('certificate-error', (e, wc, url, error, cert, cb) => {
   e.preventDefault()
   const host = privacy.host(url); if (trustedCerts.has(host)) return cb(true)
+  if (ownerOf(wc)) return cb(false) // the load fails next and shows the warning screen (ui/system.html)
   if (!askedCerts.has(host)) askedCerts.set(host, choose(`Your connection to ${host} isn’t private`, ['Continue anyway (unsafe)'], { detail: `${error}. Attackers might be trying to steal your information.`, cancel: 'Go back', safe: true }).then(i => { i === 0 && trustedCerts.add(host); return i === 0 }).finally(() => askedCerts.delete(host)))
   askedCerts.get(host).then(cb)
+})
+ipcMain.handle('sys:trust', e => { // "Continue anyway" on the invalid-certificate screen
+  const t = ownerOf(e.sender)
+  if (!t || t.sys?.kind !== 'cert' || !e.senderFrame?.url.startsWith(SYSTEM)) return
+  trustedCerts.add(privacy.host(t.sys.url)); t.view.webContents.loadURL(t.sys.url)
 })
 app.on('select-client-certificate', async (e, wc, url, list, cb) => {
   e.preventDefault()
@@ -678,6 +704,7 @@ function sideMenu(fid) { // right-click on a folder header or on the empty part 
     { type: 'separator' },
     { label: 'Switch space', submenu: SPACES.map((s, i) => ({ label: s.name, type: 'radio', checked: i === space, click: () => switchSpace(i) })) },
     { label: 'Collapse sidebar', click: toggleSidebar },
+    { label: onRight() ? 'Move sidebar to the left' : 'Move sidebar to the right', click: () => { settings.sidebarSide = onRight() ? 'left' : 'right'; layout(); push() } },
   ]).popup()
 }
 const mute = id => { const t = byId(id); if (t) { t.muted = !t.muted; t.view?.webContents.setAudioMuted(t.muted); push() } }
@@ -704,7 +731,7 @@ app.whenReady().then(async () => {
   if (!gotLock) return // another instance is running: it handles this launch
   if (process.platform === 'darwin') app.dock?.setIcon(ICON)
   const saved = store.load('session', {})
-  settings = { ...structuredClone(DEFAULTS), ...saved.settings }; history = store.load('history', []); vault = store.load('vault', []); profile = store.load('profile', {})
+  settings = { ...structuredClone(DEFAULTS), ...saved.settings }; for (const [i, o] of Object.entries(settings.spaces)) SPACES[i] && !SPACES[i].private && Object.assign(SPACES[i], o); history = store.load('history', []); vault = store.load('vault', []); profile = store.load('profile', {})
   downloads = store.load('downloads', []).map(d => d.state === 'progressing' || d.state === 'paused' ? { ...d, state: 'interrupted' } : d)
   win = new BaseWindow({ width: 1280, height: 820, title: 'Heliarc', icon: ICON, backgroundColor: '#2a2a33', ...(process.platform === 'darwin' && { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 16 } }) })
   const prefs = { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true }
@@ -718,7 +745,7 @@ app.whenReady().then(async () => {
   ElectronChromeExtensions.handleCRXProtocol(session.defaultSession) // extension icons in <browser-action-list>
   ui = new WebContentsView({ webPreferences: { ...prefs, sandbox: false } }) // not sandboxed: its preload loads the extension toolbar element
   win.contentView.addChildView(ui); ui.webContents.loadFile('ui/arc.html'); ui.webContents.on('before-input-event', shortcut)
-  peekUi = overlay('peek.html'); edge = overlay('edge.html'); find = overlay('find.html'); panel = overlay('panel.html'); cmd = overlay('cmdbar.html')
+  peekUi = overlay('peek.html'); edge = overlay('edge.html'); find = overlay('find.html'); panel = overlay('panel.html'); cmd = overlay('cmdbar.html'); hungUi = overlay('hung.html')
   win.on('resize', layout)
   win.on('enter-full-screen', layout); win.on('leave-full-screen', layout) // the page follows the window
   win.on('closed', () => app.quit())
@@ -733,6 +760,7 @@ app.whenReady().then(async () => {
   h('fwd', () => cur()?.view?.webContents.navigationHistory.goForward())
   h('reload', () => cur()?.view?.webContents.reload())
   h('ready', push)
+  h('hungAct', act => { const t = hungTab; endHung(); if (act === 'reload' && t?.view && !t.view.webContents.isDestroyed()) { t.view.webContents.forcefullyCrashRenderer(); t.view.webContents.reload() } })
   h('ctx', tabMenu); h('ctxSide', sideMenu)
   h('move', (id, zone, fid, idx) => { const t = byId(id); t && toFavOrBack(t, zone, fid, idx) })
   h('newFolder', newFolder); h('delFolder', delFolder)
@@ -757,9 +785,15 @@ app.whenReady().then(async () => {
   h('openFile', id => { const d = downloads.find(x => x.id === id); return d && shell.openPath(d.path) })
   h('showFile', id => { const d = downloads.find(x => x.id === id); d && shell.showItemInFolder(d.path) })
   h('cancelDownload', id => { dls.get(id)?.cancel() })
+  h('retryDownload', id => { // start the same download again, from the same kind of tab (a Private one for a Private download)
+    const d = downloads.find(x => x.id === id), t = d && tabs.find(x => x.view && (d.private ? x.space === PRIVATE : x === cur()))
+    if (!t) return { error: d?.private ? 'Open a Private tab to try this download again.' : 'Open a tab to try this download again.' }
+    downloads = downloads.filter(x => x !== d); saveDownloads(); t.view.webContents.downloadURL(d.url); push()
+  })
   h('delDownload', id => { downloads = downloads.filter(d => d.id !== id); saveDownloads(); push() })
   h('clearDownloads', () => { downloads = downloads.filter(d => d.state === 'progressing'); saveDownloads(); push() })
   // history, passwords, profile
+  h('bangList', () => bangs.list(settings.bangs))
   h('history', q => history.filter(x => !q || (x.title + ' ' + x.url).toLowerCase().includes(q.toLowerCase())).slice(0, 300))
   h('delHistory', at => { history = history.filter(x => x.at !== at); store.save('history', history) })
   h('clearHistory', () => { history = []; store.save('history', history) })
@@ -771,19 +805,26 @@ app.whenReady().then(async () => {
   h('allowPw', origin => { settings.pwNever = settings.pwNever.filter(x => x !== origin); push() })
   h('pwNever', () => { if (pwPending) { if (!settings.pwNever.includes(pwPending.origin)) settings.pwNever.push(pwPending.origin); pwPending = null; push() } })
   h('pwDismiss', () => { pwPending = null; push() })
-  h('extensions', () => ext.list(extSessions()[0]))
+  h('extensions', () => [...ext.list(extSessions()[0]), ...ext.failures().map(f => ({ ...f, failed: true }))])
+  h('retryExtension', async id => { const ok = await ext.retry(id, extSessions()); push(); refreshExts(); return { ok } })
   h('installExtension', installExtension)
   h('removeExtension', async id => { await ext.remove(id, extSessions()); push(); refreshExts() })
   // settings
   h('setSetting', (k, v) => {
     if (k === 'adblockList') { if (Object.hasOwn(LISTS, v)) { settings[k] = v; loadBlocker() } return } // loadBlocker pushes by itself
     const plain = ['archiveHours', 'autoPip', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck'].includes(k)
-    if (!plain && !(k === 'searchEngine' && Object.hasOwn(bangs.ENGINES, v))) return
+    if (!plain && !(k === 'searchEngine' && Object.hasOwn(bangs.ENGINES, v)) && !(k === 'sidebarSide' && (v === 'left' || v === 'right'))) return
     settings[k] = v
+    if (k === 'sidebarSide') layout()
     if (k === 'fingerprint') spaceSessions().forEach(applyUserAgent)
     push()
   })
   h('addRoute', (host, sp) => { host = hostOf('https://' + host.trim().replace(/^https?:\/\//, '')); if (host && SPACES[sp] && !SPACES[sp].private) setRoute(host, sp) })
+  h('editSpace', (i, o) => { // rename a space, pick its icon and colours; the Private space stays as it is
+    const sp = SPACES[i]; if (!sp || sp.private || !o) return
+    const edit = { ...(typeof o.name === 'string' && o.name.trim() && { name: o.name.trim().slice(0, 20) }), ...(/^[a-z0-9-]{1,30}$/.test(o.icon) && { icon: o.icon }), ...(/^#[0-9a-f]{6}$/i.test(o.c1) && { c1: o.c1 }), ...(/^#[0-9a-f]{6}$/i.test(o.c2) && { c2: o.c2 }) }
+    Object.assign(sp, edit); settings.spaces = { ...settings.spaces, [i]: { ...settings.spaces[i], ...edit } }; push()
+  })
   h('addBang', (trigger, url) => { // a bang is "!trigger some words" -> the URL, where %s stands for the words
     trigger = String(trigger).trim().replace(/^!/, '').toLowerCase(); url = String(url).trim()
     if (!/^\w{1,12}$/.test(trigger)) return { error: 'The shortcut is one short word, like “npm”.' }
@@ -898,7 +939,7 @@ app.whenReady().then(async () => {
     S: { userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
-      ext, crx, extCommand, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },
+      ext, crx, extCommand, SYSTEM, realUrl, hungUi: () => hungUi, hungTab: () => hungTab, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },
   })
 })
 app.on('window-all-closed', () => app.quit())

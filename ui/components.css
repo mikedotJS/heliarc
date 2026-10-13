@@ -1,0 +1,46 @@
+/* Heliarc components. Each has its states: hover, focus (keyboard), disabled, loading, error, empty.
+   Only tokens (ui/tokens.css) are used here. Names start with ds- so they never collide with a screen's own classes. */
+
+/* button: .ds-btn  (+ .primary, .danger, .ghost)  (+ .is-loading while an action runs) */
+.ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); min-height: 34px; border-radius: var(--r-md); background: var(--hover); color: var(--fg); font-size: var(--fs-lg); font-weight: 500 }
+.ds-btn:hover:not(:disabled) { background: var(--sel) }
+.ds-btn.primary { background: var(--acc); color: var(--acc-ink) } .ds-btn.primary:hover:not(:disabled) { background: var(--acc); filter: brightness(1.1) }
+.ds-btn.danger { color: var(--err) } .ds-btn.ghost { background: none }
+.ds-btn.ghost:hover:not(:disabled) { background: var(--hover) }
+.ds-btn.sm { padding: 5px 11px; min-height: 28px; font-size: var(--fs-md) }
+.ds-btn.is-loading { pointer-events: none; opacity: .7 }
+
+/* keyboard focus is always visible, on everything that can take it */
+.ds-btn:focus-visible, .ds-field:focus-visible, .ds-select:focus-visible, .ds-check input:focus-visible + .box, a:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px }
+
+/* text field: .ds-field  (+ .is-error, with a .ds-hint under it) */
+.ds-field, .ds-select { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); color: var(--fg); padding: var(--space-2) var(--space-3); min-height: 34px; font: inherit; user-select: text }
+/* select: our own thin chevron, with room on the right (the native one sticks to the edge) */
+.ds-select { appearance: none; padding-right: 34px; background-image: var(--chevron); background-repeat: no-repeat; background-size: 12px 12px; background-position: calc(100% - 12px) 50% }
+.ds-field::placeholder { color: var(--dim) }
+.ds-field:disabled, .ds-select:disabled { opacity: .45 }
+.ds-field.is-error { border-color: var(--err) }
+.ds-hint { color: var(--dim); font-size: var(--fs-sm); margin-top: var(--space-1) } .ds-field.is-error + .ds-hint, .ds-hint.is-error { color: var(--err) }
+
+/* checkbox: <label class="ds-check"><input type="checkbox"><span class="box"></span>Label</label> */
+.ds-check { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer }
+.ds-check input { position: absolute; opacity: 0; width: 0; height: 0 }
+.ds-check .box { width: 18px; height: 18px; border-radius: var(--r-sm); border: 2px solid var(--dim); display: grid; place-items: center; transition: background var(--dur-micro) var(--ease-out), border-color var(--dur-micro) }
+.ds-check input:checked + .box { background: var(--acc); border-color: var(--acc) }
+.ds-check input:checked + .box::after { content: ''; width: 5px; height: 9px; border: solid var(--acc-ink); border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-1px, -1px) }
+.ds-check:hover input:not(:disabled) + .box { border-color: var(--acc) }
+.ds-check:has(input:disabled) { opacity: .45; cursor: default }
+
+/* card, modal, toast, empty state */
+.ds-card { background: var(--panel); border-radius: var(--r-lg); padding: var(--space-4) }
+.ds-scrim { position: fixed; inset: 0; display: grid; place-items: center; background: var(--scrim) }
+.ds-modal { width: min(420px, 88%); background: var(--panel); border-radius: var(--r-lg); padding: var(--space-4); box-shadow: var(--shadow-pop) }
+.ds-toast { display: inline-flex; align-items: center; gap: var(--space-2); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--space-2) var(--space-3); font-size: var(--fs-md) }
+.ds-toast.ok { border-color: var(--ok) } .ds-toast.warn { border-color: var(--warn) } .ds-toast.err { border-color: var(--err) }
+.ds-empty { text-align: center; color: var(--dim); padding: var(--space-6) var(--space-4) }
+
+/* switch: <input type="checkbox" class="ds-switch"> */
+.ds-switch { appearance: none; width: 36px; height: 20px; border-radius: var(--r-md); background: var(--hover); position: relative; cursor: pointer; flex: none; transition: background var(--dur-micro) var(--ease-out) }
+.ds-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--on-color); transition: transform var(--dur-micro) var(--ease-out) }
+.ds-switch:checked { background: var(--acc) } .ds-switch:checked::after { transform: translateX(16px) }
+.ds-switch:disabled { opacity: .45; cursor: default } .ds-switch:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px }

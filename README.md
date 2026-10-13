@@ -14,6 +14,8 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 
 **Browser basics**
 - Tabs and session are saved: reopen the app and everything is back (only the active tab loads, the rest wake up when selected)
+- Proper screens inside the tab when something goes wrong: page can't load (address not found, connection refused, timeout), offline (reloads by itself when the connection is back), crashed tab, invalid certificate, a card over a page that stops responding, a failed download (with Retry) and an extension that won't start (with Retry); Peek and the Little window get the same screens
+- A small design system (tokens, components, light and dark, a showcase page and an automatic guard): see [DESIGN.md](DESIGN.md)
 - Find in page, zoom, history, downloads (sidebar card + Library), print, developer tools (F12), spell check with suggestions
 - Chrome extensions from the Chrome Web Store (an "Add to Heliarc" button on the store pages, or Settings → Extensions), with toolbar buttons, popups, keyboard shortcuts and context-menu entries. Password managers such as Bitwarden and Proton Pass run. Not supported: `declarativeNetRequest` (the built-in blocker covers ad blocking)
 - Password manager (encrypted with the OS keychain: asks to save after a login, fills on focus) and address autofill
@@ -26,7 +28,7 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 - Vertical sidebar: favorites on top (shared by every space), pinned tabs, folders, then today's tabs; drag & drop between all of them
 - Spaces (Home / Work / Fun), each with its own cookies and logins; links can be routed to a space (Settings, or right-click a tab → *Always open … in*): new tabs, typed addresses and links from other apps follow the route
 - Split view (two pages side by side), Peek (Shift+click a link), Little window for links from other apps (set Heliarc as default browser in Settings), automatic archive of unused tabs (12 h by default, see Library → Archive)
-- Automatic picture-in-picture when you leave a playing video tab, mini player in the sidebar, collapsible sidebar (hover the left edge to peek at it)
+- Automatic picture-in-picture when you leave a playing video tab, mini player in the sidebar, collapsible sidebar (hover its edge to peek at it), on the left or the right; rename spaces and pick their icon and colours in Settings
 - Every shortcut can be changed in Settings
 
 ## Run

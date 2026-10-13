@@ -1,0 +1,25 @@
+<!doctype html><html class="ds-auto"><meta charset="utf-8"><link rel="stylesheet" href="common.css">
+<style>
+  /* shown over a tab whose page stopped responding: that page can't draw anything itself */
+  @keyframes rise { from { opacity: 0; transform: translateY(12px) } }
+  html, body { height: 100vh; background: var(--scrim); display: grid; place-items: center }
+  .ds-modal { animation: rise var(--dur-ui) var(--ease-out) }
+  .badge { width: 44px; height: 44px; border-radius: var(--r-md); display: grid; place-items: center; background: var(--hover); color: var(--acc); margin-bottom: var(--space-3) }
+  h1 { font-size: var(--fs-xl); font-weight: 600; margin-bottom: var(--space-1); overflow-wrap: anywhere } p { color: var(--dim); font-size: var(--fs-md); line-height: 1.5 }
+  .acts { display: flex; gap: var(--space-2); margin-top: var(--space-3) }
+</style>
+<main class="ds-modal" role="alertdialog" aria-labelledby="title">
+  <div class="badge" id="ic"></div>
+  <h1 id="title">This page isn’t responding</h1>
+  <p>You can wait for it to come back, or reload it. Anything you haven’t saved on the page will be lost.</p>
+  <div class="acts"><button id="wait" class="ds-btn primary">Wait</button><button id="reload" class="ds-btn">Reload page</button></div>
+</main>
+<script src="icons.js"></script>
+<script>
+const $ = s => document.querySelector(s)
+$('#ic').innerHTML = icon('timer-off', 22)
+api.on('hung', o => { $('#title').textContent = `${o.host} isn’t responding`; $('#wait').disabled = $('#reload').disabled = false; $('#reload').classList.remove('is-loading'); $('#reload').textContent = 'Reload page'; $('#wait').focus() })
+$('#wait').onclick = () => api.call('hungAct', 'wait')
+$('#reload').onclick = () => { $('#wait').disabled = $('#reload').disabled = true; $('#reload').classList.add('is-loading'); $('#reload').innerHTML = '<span class="spin"></span>Reloading…'; api.call('hungAct', 'reload') }
+addEventListener('keydown', e => { if (e.key === 'Escape') api.call('hungAct', 'wait') })
+</script>

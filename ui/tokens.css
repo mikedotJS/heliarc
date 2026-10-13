@@ -1,0 +1,48 @@
+/* Heliarc design tokens: the one place where colours, sizes, radii, shadows and motion are written down.
+   Screens use var(--…) only (npm run ds:check enforces it on the screens that moved to the design system).
+   Spacing, type scale and shadows come from Open Props; the colours and radii are Heliarc's own. */
+@import url('../node_modules/open-props/open-props.min.css');
+
+/* theme:dark (the default, and the only theme the older screens know) */
+:root {
+  color-scheme: dark;
+  --bg: #16161a; --panel: #1e1e24; --hover: #2a2a33; --sel: #34344a; --line: #34343f;
+  --fg: #e8e8ee; --dim: #9a9aa9; --acc: #7c8cff; --acc-ink: #101018; --err: #ff6b6b; --ok: #4cd08a; --warn: #f5b84a;
+  --scrim: rgba(0, 0, 0, .45);
+  --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23e8e8ee' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m2.5 4.5 3.5 3.5 3.5-3.5'/></svg>");
+}
+/* theme:light (opt in with <html class="ds-auto">, then it follows the system; <html data-theme="light|dark"> forces one) */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f4f8; --panel: #ffffff; --hover: #e9e9f0; --sel: #dcdcf0; --line: #d4d4de;
+  --fg: #1b1b22; --dim: #62626f; --acc: #4a56d0; --acc-ink: #ffffff; --err: #c0392b; --ok: #1d7a4a; --warn: #8a5a00;
+  --scrim: rgba(0, 0, 0, .3);
+  --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%231b1b22' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m2.5 4.5 3.5 3.5 3.5-3.5'/></svg>");
+}
+@media (prefers-color-scheme: light) {
+  /* theme:light */
+  :root.ds-auto:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f4f4f8; --panel: #ffffff; --hover: #e9e9f0; --sel: #dcdcf0; --line: #d4d4de;
+    --fg: #1b1b22; --dim: #62626f; --acc: #4a56d0; --acc-ink: #ffffff; --err: #c0392b; --ok: #1d7a4a; --warn: #8a5a00;
+    --scrim: rgba(0, 0, 0, .3);
+    --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%231b1b22' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m2.5 4.5 3.5 3.5 3.5-3.5'/></svg>");
+  }
+}
+
+/* sizes, type, shapes, depth, motion (the same in both themes) */
+:root {
+  --space-1: var(--size-1); --space-2: var(--size-2); --space-3: var(--size-3); --space-4: var(--size-5); --space-5: var(--size-7); --space-6: var(--size-8); /* 4 8 16 24 32 48 px */
+  --fs-sm: 12px; --fs-md: 13px; --fs-lg: 14px; --fs-xl: 18px; --fs-title: 22px;
+  --r-sm: 6px; --r-md: 10px; --r-lg: 16px; --r-pill: 999px;
+  --fs-xs: 11px; --fs-base: 16px; --fs-display: 40px; --r-xs: 2px; --r-view: 12px; /* --r-view: the rounding of the pages themselves */
+  /* over a colour (the sidebar, the Little window): white and black at a few strengths, instead of a different alpha every time */
+  --on-color: #ffffff; --on-light: #1b1b22; --on-dim: rgba(255, 255, 255, .8); --on-faint: rgba(255, 255, 255, .5);
+  --glass-0: rgba(255, 255, 255, .16); --glass-1: rgba(255, 255, 255, .2); --glass-2: rgba(255, 255, 255, .28); --glass-3: rgba(255, 255, 255, .4);
+  --shade-0: rgba(0, 0, 0, .28); --shade-1: rgba(0, 0, 0, .4); --shade-2: rgba(0, 0, 0, .55);
+  --veil-1: rgba(128, 128, 128, .22); --veil-2: rgba(128, 128, 128, .38); --err-bg: rgba(120, 0, 20, .55);
+  --brand-1: #5b4bff; --brand-2: #c04bff; /* the default colours of a space */
+  --shadow-pop: var(--shadow-6);
+  --ease-out: cubic-bezier(.16, 1, .3, 1); --ease-in: cubic-bezier(.5, 0, .75, 0); --ease-inout: cubic-bezier(.85, 0, .15, 1);
+  --dur-micro: 160ms; --dur-ui: 400ms; --dur-exit: 220ms; --stagger: 40ms;
+}

@@ -1,5 +1,6 @@
 // Runs inside every web page (isolated world): detects logins to offer saving them, and fills saved logins / profile on focus.
-const { ipcRenderer } = require('electron')
+const { ipcRenderer, contextBridge } = require('electron')
+if (location.protocol === 'file:' && location.pathname.endsWith('/ui/system.html')) contextBridge.exposeInMainWorld('sys', { trust: () => ipcRenderer.invoke('sys:trust') }) // the invalid-certificate screen's "Continue anyway"
 const PROFILE = { email: 'email', tel: 'phone', 'given-name': 'first', 'family-name': 'last', name: 'name', organization: 'org', 'street-address': 'street', 'address-line1': 'street', 'postal-code': 'zip', 'address-level2': 'city', 'country-name': 'country' }
 const LOGIN = /log ?in|sign ?in|sign ?up|continue|submit|next|connexion|connecter|identifier|valider/i
 const visible = el => { const r = el.getBoundingClientRect(); return r.width > 10 && r.height > 10 && getComputedStyle(el).visibility !== 'hidden' }

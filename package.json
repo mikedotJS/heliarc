@@ -1,6 +1,6 @@
 {
   "name": "heliarc",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -9,13 +9,15 @@
     "icons": "node scripts/gen-icons.js",
     "package:mac": "zsh scripts/build-mac.sh",
     "package:win": "node scripts/build-win.js",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "ds:check": "node scripts/ds-check.js"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.20.1",
     "electron-chrome-extensions": "^4.9.0",
     "fflate": "^0.8.3",
     "htmlparser2": "^12.0.0",
+    "open-props": "^1.7.23",
     "papaparse": "^5.7.0",
     "semver": "^7.8.5",
     "sortablejs": "^1.15.7",

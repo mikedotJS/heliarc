@@ -1,0 +1,71 @@
+<!doctype html><html class="ds-auto"><meta charset="utf-8"><title>Heliarc</title><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
+<style>
+  /* one screen for everything that leaves the normal path: the page can't load, offline, crashed tab, invalid certificate */
+  @keyframes rise { from { opacity: 0; transform: translateY(12px) } }
+  body { height: 100vh; display: grid; place-items: center; user-select: text }
+  main { width: min(480px, 90vw); animation: rise var(--dur-ui) var(--ease-out) }
+  .badge { width: 52px; height: 52px; border-radius: var(--r-lg); display: grid; place-items: center; background: var(--panel); color: var(--acc); margin-bottom: var(--space-3) }
+  body.warn .badge { color: var(--err) }
+  h1 { font-size: var(--fs-title); font-weight: 600; margin-bottom: var(--space-2); overflow-wrap: anywhere }
+  p { color: var(--dim); font-size: var(--fs-lg); line-height: 1.5 } #again { margin-top: var(--space-2); color: var(--err) }
+  .acts { display: flex; gap: var(--space-2); margin: var(--space-4) 0 var(--space-3); flex-wrap: wrap }
+  .acts a { color: var(--dim); align-self: center; font-size: var(--fs-sm) }
+  #lodge { display: block; width: 100%; image-rendering: pixelated; border-radius: var(--r-lg); margin-bottom: var(--space-3) } .quote { font-style: italic; margin-top: var(--space-2) }
+  details { color: var(--dim); font-size: var(--fs-sm) } summary { cursor: pointer; width: fit-content } code { display: block; margin-top: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--panel); border-radius: var(--r-md); overflow-wrap: anywhere; user-select: text }
+</style>
+<main>
+  <div class="badge" id="ic"></div>
+  <h1 id="title"></h1>
+  <p id="why"></p><p id="again" hidden></p>
+  <div class="acts" id="acts"></div>
+  <details><summary>Technical details</summary><code id="tech"></code></details>
+</main>
+<script>
+const $ = s => document.querySelector(s)
+const I = JSON.parse(decodeURIComponent(location.hash.slice(1)) || '{}'), host = I.host || 'this page'
+const KINDS = {
+  load:     { icon: 'triangle-alert', title: `${host} can’t be loaded`, why: 'Something went wrong while opening this page. It may work if you try again.' },
+  notfound: { icon: 'search-x', title: `We can’t find ${host}`, why: 'Check the address for typing mistakes, or try again in a moment.' },
+  refused:  { icon: 'server-off', title: `${host} refused to connect`, why: 'The site may be down, or it may be blocking the connection.' },
+  timeout:  { icon: 'timer-off', title: `${host} took too long to answer`, why: 'The site may be busy, or your connection may be slow.' },
+  offline:  { icon: 'wifi-off', title: 'You’re offline', why: 'Heliarc will reload this page by itself as soon as your connection is back.' },
+  crash:    { icon: 'bug', title: 'This tab crashed', why: `Something went wrong while showing ${host}. Reload the tab to try again.` },
+  cert:     { icon: 'shield-alert', title: `Your connection to ${host} isn’t private`, why: 'Attackers might be trying to steal your information (passwords, messages, cards).', warn: true },
+}
+const K = KINDS[I.kind] || KINDS.load
+document.title = K.title; document.body.classList.toggle('warn', !!K.warn)
+$('#ic').innerHTML = icon(K.icon, 26); $('#title').textContent = K.title; $('#why').textContent = K.why
+$('#tech').textContent = [I.detail, I.url].filter(Boolean).join('\n')
+if (I.tries > 1) { $('#again').hidden = false; $('#again').textContent = I.kind === 'offline' ? 'Still offline.' : 'Still not working. Try again later, or check your connection.' }
+if (I.kind === 'offline') { // easter egg: no network, so we are in the Red Room of the Black Lodge (pixel art, ui/lodge.js)
+  const cv = document.createElement('img'); cv.id = 'lodge'; cv.alt = 'The Red Room of the Black Lodge in pixel art: Agent Cooper in an armchair, the Man from Another Place on a sofa, and the Giant standing'
+  $('#ic').replaceWith(cv)
+  const s = document.createElement('script'); s.src = 'lodge.js'; s.onload = () => { cv.src = lodgeImage() }; document.head.append(s)
+  let dancing = false // Space: the Man from Another Place dances in the room
+  addEventListener('keydown', e => {
+    if (e.code !== 'Space' || e.repeat || dancing || !window.lodgeImage) return
+    e.preventDefault(); dancing = true; const still = cv.src; let i = 0
+    const step = () => { if (i < lodgeFrames) { cv.src = lodgeImage(i++); setTimeout(step, 90) } else { cv.src = still; dancing = false } }
+    step()
+  })
+  const q = document.createElement('p'); q.className = 'quote'; q.textContent = '“That gum you like is going to come back in style.”'; $('#why').after(q)
+}
+const btn = (label, cls, fn) => { const b = document.createElement('button'); b.textContent = label; b.className = 'ds-btn ' + cls; b.onclick = fn; $('#acts').append(b); return b }
+let busy = false
+const run = (b, text, fn) => { if (busy) return; busy = true; document.querySelectorAll('.acts button').forEach(x => x.disabled = true); b.classList.add('is-loading'); b.innerHTML = `<span class="spin"></span>${text}`; fn() }
+const retry = b => run(b || $('.acts .primary'), I.kind === 'offline' ? 'Reconnecting…' : 'Trying again…', () => { location.href = I.url })
+if (I.kind === 'cert') {
+  btn('Go back to safety', 'primary', () => history.length > 1 ? history.back() : (location.href = 'about:blank'))
+  if (I.url) btn('Continue anyway (unsafe)', 'danger', function () { run(this, 'Opening…', () => window.sys?.trust()) })
+} else if (I.kind === 'crash') {
+  btn('Reload tab', 'primary', function () { retry(this) })
+  const a = document.createElement('a'); a.target = '_blank'; a.textContent = 'Report the problem'
+  a.href = 'https://github.com/mikedotJS/heliarc/issues/new?title=' + encodeURIComponent('Tab crashed') + '&body=' + encodeURIComponent(`A tab crashed.\n\nReason: ${I.detail || 'unknown'}\n\nWhat I was doing:\n`)
+  $('#acts').append(a)
+} else {
+  btn(I.kind === 'offline' ? 'Try now' : 'Try again', 'primary', function () { retry(this) })
+  if (history.length > 1) btn('Go back', '', () => history.back())
+}
+addEventListener('hashchange', () => location.reload()) // the same tab asked to show another screen
+if (I.kind === 'offline') addEventListener('online', () => retry()) // the connection came back: reload by itself
+</script>

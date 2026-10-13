@@ -2,9 +2,9 @@
 <style>
   body { background: transparent; padding: 4px 6px 12px 6px }
   @keyframes drop { from { opacity: 0; transform: translateY(-8px) } } body.in #bar { animation: drop var(--dur-ui) var(--ease-out) }
-  #bar { display: flex; align-items: center; gap: 4px; background: var(--panel); border-radius: 12px; padding: 6px 8px; box-shadow: 0 8px 28px rgba(0,0,0,.45); border: 1px solid var(--hover) }
-  #q { flex: 1; min-width: 0; background: var(--bg); color: var(--fg); border: 1px solid transparent; border-radius: 8px; padding: 7px 10px; font: inherit; outline: 0; user-select: text } #q:focus { border-color: var(--acc) }
-  #bar.none #q { border-color: var(--err) } #n { color: var(--dim); font-size: 12px; min-width: 52px; text-align: center } #bar.none #n { color: var(--err) }
+  #bar { display: flex; align-items: center; gap: 4px; background: var(--panel); border-radius: var(--r-view); padding: 6px 8px; box-shadow: 0 8px 28px var(--scrim); border: 1px solid var(--hover) }
+  #q { flex: 1; min-width: 0; background: var(--bg); color: var(--fg); border: 1px solid transparent; border-radius: var(--r-md); padding: 7px 10px; font: inherit; outline: 0; user-select: text } #q:focus { border-color: var(--acc) }
+  #bar.none #q { border-color: var(--err) } #n { color: var(--dim); font-size: var(--fs-sm); min-width: 52px; text-align: center } #bar.none #n { color: var(--err) }
   button { padding: 5px 7px }
 </style>
 <div id="bar"><input id="q" placeholder="Find in page" spellcheck="false" autocomplete="off"><span id="n"></span><button id="p" title="Previous (Shift+Enter)"></button><button id="nx" title="Next (Enter)"></button><button id="x" title="Close (Esc)"></button></div>

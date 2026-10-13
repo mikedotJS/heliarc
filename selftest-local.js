@@ -10,6 +10,7 @@ const PAGES = {
   '/wide': '<title>Wide</title><body style="margin:0;min-width:1200px"><p>wide</p>',
   '/login': '<title>Login</title><form id=f method=post action=/done><input id=u name=user type=text><input id=p name=pass type=password><button type=button id=eye>Show</button><button>Go</button></form>',
   '/done': '<title>Done</title>ok',
+  '/darktop': '<title>Dark top</title><body style="margin:0;background:#112233;color:#fff"><p>night</p>',
   '/profile': '<title>Profile</title><form><input id=em autocomplete=email><input id=fn autocomplete=given-name><input id=ci autocomplete=address-level2></form>',
   '/video': VIDEO,
 }
@@ -361,6 +362,10 @@ module.exports = async (a, ok) => {
     ok('peek opens a floating page', !!S.peek() && S.peek().view.webContents.getTitle() === 'Second page')
     await sleep(500); await snap(S.peekUi(), 'peek-ui'); await snap(S.peek().view, 'peek-page')
     ok('peek is centered over the page', (() => { const b = S.peek().view.getBounds(), c = S.content(); return b.x > c.x && b.y > c.y && b.x + b.width < c.x + c.w })())
+    S.openPeek(base + '/darktop'); await sleep(1500)
+    ok('the peek top bar takes the colour of the top of the page', await js(S.peekUi().webContents, "getComputedStyle(document.querySelector('#bar')).backgroundColor") === 'rgb(17, 34, 51)', await js(S.peekUi().webContents, "getComputedStyle(document.querySelector('#bar')).backgroundColor"))
+    ok('and the corners behind the page share that colour', await js(S.peekUi().webContents, "getComputedStyle(document.querySelector('#card')).backgroundColor") === 'rgb(17, 34, 51)')
+    S.openPeek(base + '/second'); await sleep(800)
     const n = a.tabs().length; await js(S.peekUi().webContents, `document.querySelector('#tab').click()`); await sleep(700)
     ok('peek can be opened in a tab', S.peek() === null && a.tabs().length === n + 1 && a.cur().url === base + '/second')
     S.openPeek(base + '/'); await sleep(500); await js(S.peekUi().webContents, `document.querySelector('#x').click()`); await sleep(300); ok('peek closes', S.peek() === null)

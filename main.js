@@ -370,7 +370,13 @@ function peekRect() {
 function peekSend() {
   if (!peek) return
   const wc = peek.view.webContents
-  peekUi.webContents.send('peek', { title: wc.getTitle(), url: wc.getURL(), loading: wc.isLoading(), rect: peekRect(), bar: PEEKBAR })
+  peekUi.webContents.send('peek', { title: wc.getTitle(), url: wc.getURL(), loading: wc.isLoading(), rect: peekRect(), bar: PEEKBAR, color: peek.color })
+}
+function peekSample() { // the top bar takes the colour the page has at its top edge, so the two read as one piece
+  clearTimeout(peek?.timer); if (!peek) return
+  const p = peek; p.timer = setTimeout(async () => {
+    try { const [b, g, r, a] = (await p.view.webContents.capturePage({ x: 24, y: 1, width: 1, height: 1 })).toBitmap(); if (a && peek === p) { p.color = `rgb(${r},${g},${b})`; peekSend() } } catch {}
+  }, 350)
 }
 function openPeek(url) {
   closePeek()
@@ -380,6 +386,7 @@ function openPeek(url) {
   peek = { view }
   wc.setWindowOpenHandler(({ url }) => { wc.loadURL(url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, peekSend)
+  for (const e of ['did-stop-loading', 'did-navigate-in-page', 'dom-ready']) wc.on(e, peekSample)
   wc.on('before-input-event', (e, i) => { if (i.type === 'keyDown' && i.key === 'Escape') { e.preventDefault(); closePeek() } else shortcut(e, i) })
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
   peekUi.setVisible(true); win.contentView.addChildView(view); stack(); layout()

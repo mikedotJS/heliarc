@@ -7,7 +7,7 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 **Privacy**
 - Built-in ad and tracker blocking ([Ghostery adblocker](https://github.com/ghostery/adblocker)) with a choice of filter lists, and a one-click "allow ads on this site" (the shield at the bottom of the sidebar)
 - Third-party cookies blocked, HTTPS used whenever the site supports it, WebRTC doesn't reveal your local address, no speculative page loading, Global Privacy Control and Do Not Track headers
-- Fingerprint hardening: sites see a plain Chrome with common hardware (applies to tabs opened from now on)
+- Fingerprint hardening: sites see a plain Chrome with common hardware (the browser identity changes right away; the hardware values apply to tabs opened from now on)
 - Sites ask before using your camera, microphone, location, notifications, clipboard, MIDI or files, before opening another app (mailto:, spotify:…), and before sharing your screen or reaching a USB, serial or Bluetooth device; invalid certificates show a warning first. What you chose to remember is listed in Settings
 - A **Private** space (⌘⇧N / Ctrl+Shift+N): in memory only, no history, no saved tabs, no extensions, wiped when its last tab closes. Optional "clear everything when I quit"
 - Command bar (Ctrl/Cmd+T), a choice of search engines, bangs (`!w cats`, `!yt lofi`, `!gh electron`, `!g`, `!ddg`) and your own bangs

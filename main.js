@@ -44,7 +44,7 @@ let active = null, space = 0, nextId = 1, blocked = 0, blockerState = 'loading',
 let cmdOpen = false, panelOpen = false, findOpen = false, findText = '', recording = false
 let fsTab = null // the tab whose page is in HTML fullscreen (YouTube player…): Electron puts the window in fullscreen, we make the page fill it
 let sidebar = true, floating = false, split = null, peek = null, mediaTab = null, pwPending = null, soon = null
-let pwAsking = false // the native password question of Peek / Little is open
+let pwAsking = false, pwLater = null // the native password question of Peek / Little is open; the newest capture that came meanwhile
 const dls = new Map(), configured = new Set()
 
 const byId = id => tabs.find(t => t.id === id)
@@ -64,7 +64,7 @@ const push = () => {
   const listed = id => { const t = byId(id); return !!t && (!SPACES[t.space].private || space === PRIVATE) } // what the UI is sent must exist in the tab list it receives
   const s = {
     active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
-    sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
+    sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.filter(d => !d.private || space === PRIVATE).slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: listed(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
     pw: pwPending && { tab: pwPending.tab, origin: pwPending.origin, user: pwPending.user, update: pwPending.update },
@@ -303,7 +303,11 @@ function sleep(id) { // hibernate: free the page, keep the tab in the list
 }
 function go(input) {
   const t = cur(); if (!t) return
-  const r = routeFor(resolve(input)); if (SPACES[r] && r !== t.space && !SPACES[t.space].private && !t.fav && !t.pinned) return newTab(input) // a routed site opens in its own space (favorites and pinned tabs keep their page and navigate in place)
+  const r = routeFor(resolve(input))
+  if (SPACES[r] && r !== t.space && !SPACES[t.space].private && !t.fav && !t.pinned) { // a routed site opens in its own space (favorites and pinned tabs keep their page and navigate in place)
+    if (t.url) return newTab(input)
+    retarget(t, r); activate(t.id) // a blank tab is not left behind as an empty tab: it moves to that space
+  }
   t.error = null; t.url = resolve(input)
   const up = settings.httpsOnly && privacy.upgrade(t.url); if (up) t.upgraded = up; t.upN = 0
   t.view ? t.view.webContents.loadURL(up || t.url) : makeView(t)
@@ -476,13 +480,16 @@ function addBookmarks(list, from) { // one folder per bookmark folder; the tabs 
 }
 function addPasswords(list) {
   if (!safeStorage.isEncryptionAvailable()) return { error: 'This system can’t encrypt passwords, so Heliarc can’t store them.' }
-  list.forEach(savePw); push(); return { text: `Imported ${list.length} passwords.` }
+  const n = list.filter(savePw).length; push(); return { text: `Imported ${n} new or updated passwords.` }
 }
-const attempt = f => { try { return f() } catch (e) { return { error: /EPERM|EACCES|operation not permitted/i.test(e.message) ? 'macOS blocked access. Give Heliarc Full Disk Access (System Settings → Privacy & Security), or use the file buttons.' : e.message } } }
-function savePw(p) {
-  const o = vault.find(v => v.origin === p.origin && v.user === p.user), enc = safeStorage.encryptString(p.pass).toString('base64')
+const importError = e => ({ error: /EPERM|EACCES|operation not permitted/i.test(e.message) ? 'macOS blocked access. Give Heliarc Full Disk Access (System Settings → Privacy & Security), or use the file buttons.' : e.message })
+const attempt = f => { try { return f() } catch (e) { return importError(e) } }
+function savePw(p) { // -> true when something was added or changed
+  const o = vault.find(v => v.origin === p.origin && v.user === p.user)
+  if (o && decrypt(o.pass) === p.pass) return false
+  const enc = safeStorage.encryptString(p.pass).toString('base64')
   o ? o.pass = enc : vault.push({ id: nextId++, origin: p.origin, user: p.user, pass: enc })
-  store.save('vault', vault)
+  store.save('vault', vault); return true
 }
 
 // ---- spaces / privacy ----
@@ -605,12 +612,14 @@ async function checkUpdate() {
 let blocker = null
 const LISTS = { ads: ['Ads only', 'fromPrebuiltAdsOnly'], adsTrackers: ['Ads and trackers', 'fromPrebuiltAdsAndTracking'], full: ['Ads, trackers and annoyances', 'fromPrebuiltFull'] }
 const adsAllowed = u => settings.adblockOff.includes(privacy.host(u))
-let blockerList = null, loading = 0 // the list of the blocker that is running; loads in flight
+let blockerList = null, loading = 0, loadSeq = 0, blockerSeq = 0 // the list of the blocker that is running; loads in flight; order of the loads started / of the one that runs
 async function loadBlocker() { // (re)loads the filter lists picked in Settings, then points every space's session at them
-  const want = settings.adblockList // the list asked for by THIS call: a later pick must not be mistaken for it
+  const want = settings.adblockList, seq = ++loadSeq // the list asked for by THIS call: a later pick must not be mistaken for it
   blockerState = 'loading'; loading++; push()
   try {
     const b = await ElectronBlocker[LISTS[want]?.[1] || LISTS.adsTrackers[1]](fetch)
+    if (seq < blockerSeq) { loading--; return push() } // a newer pick already finished first: this older load must not replace it
+    blockerSeq = seq
     b.on('request-blocked', () => { blocked++; pushSoon() })
     const cosmetic = '@ghostery/adblocker/' // its cosmetic-filter handlers are global: ours skip the sites where ads are allowed
     const unhandle = () => ['inject-cosmetic-filters', 'is-mutation-observer-enabled'].forEach(ch => ipcMain.removeHandler(cosmetic + ch))
@@ -773,7 +782,7 @@ app.whenReady().then(async () => {
     try { // the browser's key may need the user's OK first (macOS keychain), so this waits
       const { list, skipped, failed } = await importers.browserPasswords(id), r = addPasswords(list)
       return r.error ? r : { text: `${r.text}${skipped ? ` ${skipped} more can only be read by ${importers.BROWSERS[id].name} itself: export them as a CSV from its settings and import the file.` : ''}${failed ? ` ${failed} couldn’t be decrypted and were left out.` : ''}` }
-    } catch (e) { return { error: /EPERM|EACCES|operation not permitted/i.test(e.message) ? 'macOS blocked access. Give Heliarc Full Disk Access (System Settings → Privacy & Security), or use the file buttons.' : e.message } }
+    } catch (e) { return importError(e) }
   })
   h('importFile', async what => {
     const filters = { bookmarks: [{ name: 'Bookmarks', extensions: ['html', 'htm', 'json', 'sqlite'] }], passwords: [{ name: 'Passwords (CSV)', extensions: ['csv'] }], safari: [{ name: 'Safari history', extensions: ['db'] }] }[what]
@@ -819,11 +828,17 @@ app.whenReady().then(async () => {
     if (!t || SPACES[t.space].private || !origin || !pass || !safeStorage.isEncryptionAvailable() || settings.pwNever.includes(origin)) return
     const old = vault.find(v => v.origin === origin && v.user === user)
     if (old && decrypt(old.pass) === pass) return
-    if (!tabs.includes(t)) { // Peek / Little have no sidebar bar: a native question instead, one at a time
-      if (pwAsking) return
+    if (!tabs.includes(t)) { // Peek / Little have no sidebar bar: a native question instead, one at a time; a capture that arrives meanwhile waits (the newest one is asked next)
+      if (pwAsking) { pwLater = { origin, user, pass }; return }
       pwAsking = true
-      const i = await choose(`${old ? 'Update' : 'Save'} the password for ${user || 'this login'} on ${privacy.host(origin)}?`, [old ? 'Update' : 'Save', 'Never for this site'], { cancel: 'Not now', safe: true }).finally(() => { pwAsking = false })
-      if (i === 0) savePw({ origin, user, pass }); else if (i === 1 && !settings.pwNever.includes(origin)) { settings.pwNever.push(origin); push() }
+      try {
+        for (let c = { origin, user, pass }; c; c = pwLater, pwLater = null) {
+          const o = vault.find(v => v.origin === c.origin && v.user === c.user)
+          if (settings.pwNever.includes(c.origin) || (o && decrypt(o.pass) === c.pass)) continue
+          const i = await choose(`${o ? 'Update' : 'Save'} the password for ${c.user || 'this login'} on ${privacy.host(c.origin)}?`, [o ? 'Update' : 'Save', 'Never for this site'], { cancel: 'Not now', safe: true })
+          if (i === 0) savePw(c); else if (i === 1 && !settings.pwNever.includes(c.origin)) { settings.pwNever.push(c.origin); push() }
+        }
+      } finally { pwAsking = false; pwLater = null }
       return
     }
     pwPending = { tab: t.id, origin, user, pass, update: !!old }; push()

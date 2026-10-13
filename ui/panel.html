@@ -114,7 +114,7 @@ function settings(S) {
     ${toggle('blockThirdPartyCookies', 'Block third-party cookies', 'Embedded content can no longer follow you from site to site')}
     ${toggle('httpsOnly', 'Always use HTTPS', 'http:// addresses are upgraded; a site without HTTPS still opens, in plain http, for that tab')}
     ${toggle('webrtcProtect', 'Hide your local address from WebRTC', 'Applies to tabs opened from now on')}
-    ${toggle('fingerprint', 'Limit browser fingerprinting', 'Sites see a plain Chrome with common hardware. Applies to tabs opened from now on')}
+    ${toggle('fingerprint', 'Limit browser fingerprinting', 'Sites see a plain Chrome with common hardware. The browser identity changes right away; the hardware values apply to tabs opened from now on')}
     <div class="line"><label>Ad blocker lists<small>You can also allow ads on one site: click the shield at the bottom of the sidebar</small></label><select data-list>${Object.entries(S.lists).map(([k, n]) => `<option value="${k}" ${k === st.adblockList ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
     ${toggle('clearOnQuit', 'Clear everything when I quit', 'Cookies and site data (you get logged out of sites), caches, history and the download list. Saved passwords and open tabs stay')}
     ${(st.pwNever || []).map(o => `<div class="line"><label>${esc(o)}<small>Heliarc never offers to save a password here</small></label><button class="btn" data-a="allowPw" data-o="${esc(o)}">Allow again</button></div>`).join('')}

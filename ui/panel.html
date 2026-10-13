@@ -114,10 +114,11 @@ function settings(S) {
     ${toggle('blockThirdPartyCookies', 'Block third-party cookies', 'Embedded content can no longer follow you from site to site')}
     ${toggle('httpsOnly', 'Always use HTTPS', 'http:// addresses are upgraded; a site without HTTPS still opens, in plain http, for that tab')}
     ${toggle('webrtcProtect', 'Hide your local address from WebRTC', 'Applies to tabs opened from now on')}
-    ${toggle('fingerprint', 'Limit browser fingerprinting', 'Sites see a plain Chrome with common hardware. Applies to tabs opened from now on')}
+    ${toggle('fingerprint', 'Limit browser fingerprinting', 'Sites see a plain Chrome with common hardware. Applies to pages loaded from now on')}
     <div class="line"><label>Ad blocker lists<small>You can also allow ads on one site: click the shield at the bottom of the sidebar</small></label><select data-list>${Object.entries(S.lists).map(([k, n]) => `<option value="${k}" ${k === st.adblockList ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
-    ${toggle('clearOnQuit', 'Clear everything when I quit', 'Cookies, logins, caches, history and the download list. Open tabs stay')}
-    <div class="msg">The Private space (⌘⇧N) keeps nothing: no history, no saved tabs, no extensions, and it is wiped when its last tab closes. Pages are never preloaded in the background.</div></section>
+    ${toggle('clearOnQuit', 'Clear everything when I quit', 'Cookies and site data (you get logged out of sites), caches, history and the download list. Saved passwords and open tabs stay')}
+    ${(st.pwNever || []).map(o => `<div class="line"><label>${esc(o)}<small>Heliarc never offers to save a password here</small></label><button class="btn" data-a="allowPw" data-o="${esc(o)}">Allow again</button></div>`).join('')}
+    <div class="msg">The Private space (${esc(fmt(S.keys.newPrivateTab))}) keeps nothing: no history, no saved tabs, no extensions, and it is wiped when its last tab closes. Pages are never preloaded in the background.</div></section>
   <section><h3>Search</h3>
     <div class="line"><label>Search engine<small>Used when you type something that isn’t an address</small></label><select data-engine>${Object.entries(S.engines).map(([k, n]) => `<option value="${k}" ${k === st.searchEngine ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
     <div class="msg">Bangs jump straight to a site: type <b>!w cats</b> or <b>!yt lofi</b>. Built in: !g !w !yt !gh !ddg !a !r. Add your own:</div>
@@ -129,7 +130,7 @@ function settings(S) {
     ${Object.entries(st.sitePerms).map(([h, ps]) => Object.entries(ps).map(([k, v]) => `<div class="line"><label>${esc(h)}<small>${esc(S.permLabels[k] || 'Open ' + k.slice(5) + ' links')}</small></label><select data-perm="${esc(h)}|${k}"><option value="1" ${v ? 'selected' : ''}>Allow</option><option value="0" ${v ? '' : 'selected'}>Block</option><option value="x">Ask again</option></select></div>`).join('')).join('') || '<div class="msg">Nothing remembered yet.</div>'}</section>
   <section><h3>Import from another browser</h3>
     ${detected.map(b => `<div class="line"><label>${esc(b.name)}</label>${b.history ? `<button class="btn" data-a="importRun" data-id="${b.id}" data-what="history">History</button>` : ''}${b.bookmarks ? `<button class="btn" data-a="importRun" data-id="${b.id}" data-what="bookmarks">Bookmarks</button>` : ''}</div>`).join('') || '<div class="msg">No other browser found on this computer.</div>'}
-    <div class="line"><label>From a file<small>Bookmarks exported as HTML, passwords as CSV, or Safari’s History.db</small></label><button class="btn" data-a="importFile" data-what="bookmarks">Bookmarks…</button><button class="btn" data-a="importFile" data-what="passwords">Passwords…</button><button class="btn" data-a="importFile" data-what="safari">Safari history…</button></div>
+    <div class="line"><label>From a file<small>Bookmarks exported as HTML, or Safari’s History.db. For passwords, export them as a CSV from Chrome, Safari or Firefox first</small></label><button class="btn" data-a="importFile" data-what="bookmarks">Bookmarks…</button><button class="btn" data-a="importFile" data-what="passwords">Passwords…</button><button class="btn" data-a="importFile" data-what="safari">Safari history…</button></div>
     <div class="msg ${note?.import?.error ? 'bad' : note?.import ? 'ok' : ''}">${esc(note?.import?.error || note?.import?.text || '')}</div></section>
   <section><h3>Spaces: open sites in the right space</h3>
     ${st.routes.map(r => `<div class="line"><label>${esc(r.host)}<small>always opens in ${esc(S.spaces[r.space]?.name)}</small></label><button class="btn" data-a="delRoute" data-host="${esc(r.host)}">${icon('trash-2', 14)}</button></div>`).join('') || '<div class="msg">No rules yet. You can also right-click a tab → “Always open … in”.</div>'}
@@ -150,6 +151,7 @@ const ACT = {
   delHistory: async el => { await api.call('delHistory', +el.dataset.at); load() }, delPassword: async el => { await api.call('delPassword', did(el)); load() },
   importRun: async el => { note = { import: { text: 'Importing…' } }; render(); note = { import: await api.call('importRun', el.dataset.id, el.dataset.what) }; render() },
   importFile: async el => { const r = await api.call('importFile', el.dataset.what); note = r.canceled ? null : { import: r }; render() },
+  allowPw: async el => { await api.call('allowPw', el.dataset.o) },
   checkUpdate: async () => { note = { update: { text: 'Checking…' } }; render(); note = { update: await api.call('checkUpdate') }; render() },
   delRoute: el => api.call('delRoute', el.dataset.host), delBang: el => api.call('delBang', el.dataset.trigger),
   addBang: async () => { const r = await api.call('addBang', $('#btrig').value, $('#burl').value); note = r.error ? { bang: r.error } : null; render() },

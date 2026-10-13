@@ -16,7 +16,7 @@ function resolve(input, { searchEngine = 'brave', bangs = [] } = {}) {
   const t = input.trim()
   if (!t) return 'about:blank'
   const m = t.match(/^!(\w+)\s+(.+)$/)
-  const url = m && (bangs.find(x => x.trigger === m[1].toLowerCase())?.url || BANGS[m[1]])
+  const url = m && (bangs.find(x => x.trigger === m[1].toLowerCase())?.url || (Object.hasOwn(BANGS, m[1].toLowerCase()) && BANGS[m[1].toLowerCase()]))
   if (url) return url.replace('%s', encodeURIComponent(m[2]))
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t
   if (/^(localhost|[\w-]+(\.[\w-]+)+)(:\d+)?(\/\S*)?$/i.test(t)) return 'https://' + t

@@ -130,7 +130,7 @@ function mount() { // drag & drop between favorites, pinned, folders and today's
 function row(t, s, n, fresh) {
   return `<div class="tab ${fresh || !seen.has(t.id) ? 'enter' : ''} ${t.id === s.active ? 'on' : ''} ${s.split?.includes(t.id) ? 'split' : ''} ${t.asleep ? 'asleep' : ''}" style="--i:${n}" data-id="${t.id}">
       ${ico(t)}<span class="t" title="${esc(t.url)}">${esc(t.title || t.url || 'New tab')}</span>
-      <span class="acts"><button data-a="mute" title="Mute">${icon(t.muted ? 'volume-x' : 'volume-2', 14)}</button><button data-a="pin" title="${t.pinned || t.folder ? 'Unpin' : 'Pin'}">${icon('pin', 14)}</button>
+      <span class="acts"><button data-a="mute" title="Mute">${icon(t.muted ? 'volume-x' : 'volume-2', 14)}</button><button data-a="pin" title="${t.pinned ? 'Unpin' : 'Pin'}">${icon('pin', 14)}</button>
       ${t.id !== s.active && !t.asleep ? `<button data-a="sleep" title="Hibernate">${icon('moon', 14)}</button>` : ''}<button data-a="close" title="Close">${icon('x', 14)}</button></span>
     </div>`
 }

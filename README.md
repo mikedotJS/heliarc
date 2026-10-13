@@ -8,7 +8,7 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 - Built-in ad and tracker blocking ([Ghostery adblocker](https://github.com/ghostery/adblocker)) with a choice of filter lists, and a one-click "allow ads on this site" (the shield at the bottom of the sidebar)
 - Third-party cookies blocked, HTTPS used whenever the site supports it, WebRTC doesn't reveal your local address, no speculative page loading, Global Privacy Control and Do Not Track headers
 - Fingerprint hardening: sites see a plain Chrome with common hardware
-- Sites ask before using your camera, microphone, location, notifications or clipboard; what you chose to remember is listed in Settings
+- Sites ask before using your camera, microphone, location, notifications, clipboard, MIDI or files, before opening another app (mailto:, spotify:…), and before sharing your screen or reaching a USB, serial or Bluetooth device; invalid certificates show a warning first. What you chose to remember is listed in Settings
 - A **Private** space (⌘⇧N / Ctrl+Shift+N): in memory only, no history, no saved tabs, no extensions, wiped when its last tab closes. Optional "clear everything when I quit"
 - Command bar (Ctrl/Cmd+T), a choice of search engines, bangs (`!w cats`, `!yt lofi`, `!gh electron`, `!g`, `!ddg`) and your own bangs
 
@@ -17,10 +17,10 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 - Find in page, zoom, history, downloads (sidebar card + Library), print, developer tools (F12), spell check with suggestions
 - Chrome extensions from the Chrome Web Store (an "Add to Heliarc" button on the store pages, or Settings → Extensions), with toolbar buttons, popups, keyboard shortcuts and context-menu entries. Password managers such as Bitwarden and Proton Pass run. Not supported: `declarativeNetRequest` (the built-in blocker covers ad blocking)
 - Password manager (encrypted with the OS keychain: asks to save after a login, fills on focus) and address autofill
-- Import history, bookmarks and passwords from Chrome, Edge, Brave, Arc (history), Firefox and Safari, or from exported files (Settings → Import)
-- Swipe two fingers on a page for back / forward, or on the sidebar to change space. A notice appears in the sidebar when a newer release is out (no automatic install yet)
+- Import history and bookmarks from Chrome, Edge, Brave, Arc (history), Firefox and Safari, or from exported files; passwords come in from a CSV you export from your old browser (Settings → Import)
+- Swipe two fingers on a page for back / forward, or on the sidebar to change space. On Mac the app updates itself in the background and asks you to restart; on Windows a notice appears in the sidebar when a newer release is out
 
-**Not there yet**: Netflix/Spotify-style protected video (Widevine needs a different Electron build), passkeys, silent automatic updates (needs signed builds).
+**Not there yet**: Netflix/Spotify-style protected video (Widevine needs a different Electron build), passkeys.
 
 **Arc-style**
 - Vertical sidebar: favorites on top (shared by every space), pinned tabs, folders, then today's tabs; drag & drop between all of them
@@ -46,7 +46,7 @@ To check session restore across launches, run `test:local` once with `HELIARC_US
 
 ## Download
 
-Get the latest Windows and Mac builds from [Releases](https://github.com/mikedotJS/heliarc/releases). They aren't code-signed yet: on Windows click *More info* → *Run anyway*; on Mac the easiest way is one line in Terminal, which installs the latest version and opens it:
+Get the latest Windows and Mac builds from [Releases](https://github.com/mikedotJS/heliarc/releases). The Mac builds are signed and notarized by Apple, so they open like any other app; the Windows builds aren't code-signed yet (click *More info* → *Run anyway*). On Mac the easiest way is one line in Terminal, which installs the latest version and opens it:
 
     curl -fsSL https://raw.githubusercontent.com/mikedotJS/heliarc/main/scripts/install-mac.sh | zsh
 

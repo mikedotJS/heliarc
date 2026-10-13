@@ -484,10 +484,11 @@ async function installExtension(input) {
 // ---- Chrome extension APIs (tabs, webNavigation, popups…) for every space's session ----
 const crx = new Map()
 const crxOf = tab => crx.get(session.fromPartition(SPACES[tab.space].partition))
+const applyUserAgent = ses => ses.setUserAgent(settings.fingerprint ? app.userAgentFallback.replace(/ (Electron|Heliarc)\/\S+/g, '') : app.userAgentFallback) // on: sites see a plain Chrome, not an Electron app
 function setupSession(ses) {
   if (configured.has(ses)) return; configured.add(ses)
   privacy.filterRequests(ses, () => settings, () => blocker) // Global Privacy Control, Do Not Track, third-party cookies, ad blocker
-  if (settings.fingerprint) ses.setUserAgent(app.userAgentFallback.replace(/ (Electron|Heliarc)\/\S+/g, '')) // sites see a plain Chrome, not an Electron app
+  applyUserAgent(ses)
   ses.setPermissionRequestHandler(async (wc, permission, cb, d) => { // camera, microphone, location, notifications, clipboard: ask once per site, then remember
     if (SILENT.has(permission) || permission === 'display-capture') return cb(true) // screen sharing asks through the picker below
     const need = permsOf(permission, d), host = privacy.host(d.requestingUrl || wc.getURL()), saved = settings.sitePerms[host] || {}
@@ -590,6 +591,7 @@ async function checkUpdate() {
 let blocker = null
 const LISTS = { ads: ['Ads only', 'fromPrebuiltAdsOnly'], adsTrackers: ['Ads and trackers', 'fromPrebuiltAdsAndTracking'], full: ['Ads, trackers and annoyances', 'fromPrebuiltFull'] }
 const adsAllowed = u => settings.adblockOff.includes(privacy.host(u))
+let blockerList = null // the list of the blocker that is running
 async function loadBlocker() { // (re)loads the filter lists picked in Settings, then points every space's session at them
   blockerState = 'loading'; push()
   try {
@@ -604,8 +606,8 @@ async function loadBlocker() { // (re)loads the filter lists picked in Settings,
     unhandle()
     ipcMain.handle(cosmetic + 'inject-cosmetic-filters', (e, ...a) => adsAllowed(e.sender.getURL()) ? undefined : b.onInjectCosmeticFilters(e, ...a))
     ipcMain.handle(cosmetic + 'is-mutation-observer-enabled', e => adsAllowed(e.sender.getURL()) ? false : b.onIsMutationObserverEnabled(e))
-    blocker = b; blockerState = 'on'
-  } catch (e) { console.warn('ad blocker:', e.message); blockerState = blocker ? 'on' : 'error' }
+    blocker = b; blockerState = 'on'; blockerList = settings.adblockList
+  } catch (e) { console.warn('ad blocker:', e.message); blockerState = blocker ? 'on' : 'error'; if (blocker) settings.adblockList = blockerList } // a list that can't be loaded isn't shown as chosen
   push()
 }
 async function setupPrivacy() {
@@ -711,7 +713,7 @@ app.whenReady().then(async () => {
   })
   h('findClose', closeFind); h('comboOf', keys.combo)
   h('peekToTab', () => { if (!peek) return; const u = peek.view.webContents.getURL(); closePeek(); newTab(u) }); h('peekClose', closePeek)
-  h('littleToMain', moveLittle); h('littleClose', () => little?.win.close())
+  h('littleToMain', moveLittle)
   h('mediaToggle', () => byId(mediaTab)?.view?.webContents.executeJavaScript(MEDIA_TOGGLE, true).then(p => { byId(mediaTab).playing = p; push() }).catch(() => {}))
   h('mediaGo', () => mediaTab && activate(mediaTab))
   // library
@@ -731,13 +733,14 @@ app.whenReady().then(async () => {
   h('profile', () => profile)
   h('setProfile', p => { profile = { ...p, name: [p.first, p.last].filter(Boolean).join(' ') }; store.save('profile', profile) })
   h('pwSave', () => { if (pwPending) { savePw(pwPending); pwPending = null; push() } })
+  h('allowPw', origin => { settings.pwNever = settings.pwNever.filter(x => x !== origin); push() })
   h('pwNever', () => { if (pwPending) { settings.pwNever.push(pwPending.origin); pwPending = null; push() } })
   h('pwDismiss', () => { pwPending = null; push() })
   h('extensions', () => ext.list(extSessions()[0]))
   h('installExtension', installExtension)
   h('removeExtension', async id => { await ext.remove(id, extSessions()); push(); refreshExts() })
   // settings
-  h('setSetting', (k, v) => { if (['archiveHours', 'autoPip', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck'].includes(k) || (k === 'searchEngine' && bangs.ENGINES[v]) || (k === 'adblockList' && LISTS[v] && (settings[k] = v, loadBlocker(), false))) { settings[k] = v; push() } })
+  h('setSetting', (k, v) => { if (['archiveHours', 'autoPip', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck'].includes(k) || (k === 'searchEngine' && Object.hasOwn(bangs.ENGINES, v)) || (k === 'adblockList' && Object.hasOwn(LISTS, v) && (settings[k] = v, loadBlocker(), false))) { settings[k] = v; if (k === 'fingerprint') spaceSessions().forEach(applyUserAgent); push() } })
   h('addRoute', (host, sp) => { host = hostOf('https://' + host.trim().replace(/^https?:\/\//, '')); if (host && SPACES[sp] && !SPACES[sp].private) setRoute(host, sp) })
   h('addBang', (trigger, url) => { // a bang is "!trigger some words" -> the URL, where %s stands for the words
     trigger = String(trigger).trim().replace(/^!/, '').toLowerCase(); url = String(url).trim()
@@ -776,7 +779,7 @@ app.whenReady().then(async () => {
   h('defaultBrowser', () => {
     for (const p of ['http', 'https']) process.defaultApp ? app.setAsDefaultProtocolClient(p, process.execPath, [path.resolve(__dirname)]) : app.setAsDefaultProtocolClient(p)
     if (process.platform === 'win32') shell.openExternal('ms-settings:defaultapps')
-    return app.isDefaultProtocolClient('http')
+    return process.platform !== 'win32' && app.isDefaultProtocolClient('http')
   })
   ipcMain.handle('ext:has', (e, id) => senderOrigin(e) === 'https://chromewebstore.google.com' && ext.list(extSessions()[0]).some(x => x.id === id))
   ipcMain.handle('ext:install', async (e, url) => { // the Web Store page's own button (see tabpreload.js)

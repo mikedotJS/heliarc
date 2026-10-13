@@ -60,10 +60,10 @@ const snapshot = () => ({
 })
 const push = () => {
   if (!ui) return
-  const nav = cur()?.view?.webContents.navigationHistory
   const listed = id => { const t = byId(id); return !!t && (!SPACES[t.space].private || space === PRIVATE) } // what the UI is sent must exist in the tab list it receives
+  const c = listed(active) ? cur() : null, nav = c?.view?.webContents.navigationHistory
   const s = {
-    active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
+    active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), adsAllowed: adsAllowed(c?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
     sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.filter(d => !d.private || space === PRIVATE).slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: listed(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
@@ -303,19 +303,19 @@ function sleep(id) { // hibernate: free the page, keep the tab in the list
 }
 function go(input) {
   const t = cur(); if (!t) return
-  const r = routeFor(resolve(input))
+  const url = resolve(input), r = routeFor(url)
   if (SPACES[r] && r !== t.space && !SPACES[t.space].private && !t.fav && !t.pinned) { // a routed site opens in its own space (favorites and pinned tabs keep their page and navigate in place)
     if (t.url) return newTab(input)
     retarget(t, r); activate(t.id) // a blank tab is not left behind as an empty tab: it moves to that space
   }
-  t.error = null; t.url = resolve(input)
+  t.error = null; t.url = url
   const up = settings.httpsOnly && privacy.upgrade(t.url); if (up) t.upgraded = up; t.upN = 0
   t.view ? t.view.webContents.loadURL(up || t.url) : makeView(t)
   push()
 }
 function retarget(t, sp) { // move a tab to another space: pages must be rebuilt in that space's profile
   if (t.space === sp) return
-  t.space = sp
+  t.space = sp; t.folder = null // a folder belongs to one space
   if (t.view) { win.contentView.removeChildView(t.view); t.view.webContents.close(); makeView(t); t.view.setVisible(isShown(t.id)) }
 }
 function place(id, zone, fid, idx = 1e9) { // drag & drop: put a tab in a zone (fav | pinned | folder | list) at an index
@@ -482,17 +482,18 @@ function addBookmarks(list, from) { // one folder per bookmark folder; the tabs 
 }
 function addPasswords(list) {
   if (!safeStorage.isEncryptionAvailable()) return { error: 'This system can’t encrypt passwords, so Heliarc can’t store them.' }
-  const index = new Map(vault.toReversed().map(v => [vaultKey(v), v])), n = list.filter(p => savePw(p, index)).length; push(); return { text: `Imported ${n} new or updated passwords.` }
+  const index = vaultIndex(), n = list.filter(p => savePw(p, index)).length; push(); return { text: `Imported ${n} new or updated passwords.` }
 }
 const importError = e => ({ error: /EPERM|EACCES|operation not permitted/i.test(e.message) ? 'macOS blocked access. Give Heliarc Full Disk Access (System Settings → Privacy & Security), or use the file buttons.' : e.message })
 const attempt = f => { try { return f() } catch (e) { return importError(e) } }
 const vaultKey = p => JSON.stringify([p.origin, p.user])
-function savePw(p, index) { // -> true when something was added or changed; `index` (vaultKey -> entry, from an import) saves a linear search per row
-  const o = index ? index.get(vaultKey(p)) : vault.find(v => v.origin === p.origin && v.user === p.user)
+const vaultIndex = () => new Map(vault.toReversed().map(v => [vaultKey(v), v])) // vaultKey -> entry; reversed so the first of any duplicates wins
+function savePw(p, index = vaultIndex()) { // -> true when something was added or changed; an import passes one `index` for all its rows
+  const o = index.get(vaultKey(p))
   if (o && decrypt(o.pass) === p.pass) return false
   const enc = safeStorage.encryptString(p.pass).toString('base64')
   if (o) o.pass = enc
-  else { const v = { id: nextId++, origin: p.origin, user: p.user, pass: enc }; vault.push(v); index?.set(vaultKey(p), v) }
+  else { const v = { id: nextId++, origin: p.origin, user: p.user, pass: enc }; vault.push(v); index.set(vaultKey(p), v) }
   store.save('vault', vault); return true // throttled: a big import is written once, not once per row
 }
 

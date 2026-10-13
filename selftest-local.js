@@ -395,8 +395,9 @@ module.exports = async (a, ok) => {
     ok('a typed address to a routed site opens in that site’s space', a.tabs().length === nTabs + 1 && a.tabs().at(-1).space === 2 && here.url === base + '/', 'tabs ' + nTabs + '→' + a.tabs().length + ' space ' + a.tabs().at(-1).space)
     { a.switchSpace(0); const pin = await open('/', 0); a.pin(pin.id); const n = a.tabs().length; a.go('http://localhost:' + base.split(':')[2] + '/second'); await sleep(600)
       ok('a typed address in a pinned tab navigates in place, whatever its route', a.tabs().length === n && /localhost/.test(pin.url) && pin.space === 0, 'tabs ' + n + '→' + a.tabs().length + ' space ' + pin.space + ' ' + pin.url) }
-    { a.switchSpace(0); const blank = a.newTab(), n = a.tabs().length; a.go('http://localhost:' + base.split(':')[2] + '/second'); await sleep(600)
-      ok('a typed routed address on a blank tab moves that tab instead of leaving it empty', a.tabs().length === n && blank.space === 2 && /localhost/.test(blank.url) && S.space() === 2, 'tabs ' + n + '→' + a.tabs().length + ' space ' + blank.space + ' ' + blank.url); a.closeTab(blank.id) }
+    { a.switchSpace(0); const blank = a.newTab(), n = a.tabs().length, fo = S.newFolder(); S.place(blank.id, 'folder', fo); a.go('http://localhost:' + base.split(':')[2] + '/second'); await sleep(600)
+      ok('a typed routed address on a blank tab moves that tab instead of leaving it empty', a.tabs().length === n && blank.space === 2 && /localhost/.test(blank.url) && S.space() === 2, 'tabs ' + n + '→' + a.tabs().length + ' space ' + blank.space + ' ' + blank.url)
+      ok('and the tab leaves the folder of its old space', blank.folder === null, 'folder=' + blank.folder); S.delFolder(fo); a.closeTab(blank.id) }
     S.settings().routes = []; a.switchSpace(0)
     // peek
     const t = await open('/'); S.openPeek(base + '/second'); await until(async () => S.peek() && !S.peek().view.webContents.isLoading() && S.peek().view.webContents.getTitle() === 'Second page')

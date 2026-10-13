@@ -530,7 +530,11 @@ function setupSession(ses) {
   ses.on('select-usb-device', async (e, d, cb) => { e.preventDefault(); const i = await deviceBox('USB', d, d.deviceList.map(x => x.productName || 'Unknown device')); i < 0 ? cb() : cb(d.deviceList[i].deviceId) })
   ses.on('select-hid-device', async (e, d, cb) => { e.preventDefault(); const i = await deviceBox('HID', d, d.deviceList.map(x => x.name || 'Unknown device')); i < 0 ? cb() : cb(d.deviceList[i].deviceId) })
   ses.on('select-serial-port', async (e, ports, wc, cb) => { e.preventDefault(); const i = await deviceBox('serial', { frame: { url: wc.getURL() } }, ports.map(x => x.displayName || x.portName)); cb(i < 0 ? '' : ports[i].portId) })
-  ses.setPermissionCheckHandler((wc, permission, origin, d) => { if (SILENT.has(permission)) return true; const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}; return need.length > 0 && need.every(n => s[n] === true) })
+  ses.setPermissionCheckHandler((wc, permission, origin, d) => { // what a page reads with navigator.permissions.query: only yes or no, so camera and microphone not yet asked read as yes (Chrome's "ask"), else Meet says "blocked" and never asks
+    if (SILENT.has(permission)) return true
+    const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}
+    return need.length > 0 && need.every(n => permission === 'media' ? s[n] !== false : s[n] === true)
+  })
   ses.on('will-download', (e, item) => onDownload(e, item, ses === session.fromPartition(SPACES[PRIVATE].partition)))
   const api = new ElectronChromeExtensions({
     license: 'GPL-3.0', session: ses,
@@ -555,7 +559,7 @@ function setupSession(ses) {
 // ---- site permissions ----
 const PERMS = { camera: 'use your camera', microphone: 'use your microphone', geolocation: 'use your location', notifications: 'show notifications', 'clipboard-read': 'read your clipboard', midi: 'use your MIDI devices', midiSysex: 'fully control your MIDI devices', fileSystem: 'read and write the files or folders you picked' }
 // what Chrome grants without asking (a video's fullscreen button, copy buttons, keeping the screen awake, DRM players…); everything else not in PERMS is refused
-const SILENT = new Set(['hid', 'usb', 'serial', /* these three: the device picker is the question */ 'fullscreen', 'clipboard-sanitized-write', 'screen-wake-lock', 'pointerLock', 'sensors', 'mediaKeySystem', 'persistent-storage', 'background-sync'])
+const SILENT = new Set(['hid', 'usb', 'serial', /* these three: the device picker is the question */ 'fullscreen', 'clipboard-sanitized-write', 'screen-wake-lock', 'pointerLock', 'sensors', 'mediaKeySystem', 'persistent-storage', 'background-sync', 'speaker-selection'])
 const OPEN_BLOCKED = new Set(['file', 'javascript', 'data', 'vbscript', 'ms-msdt', 'search-ms']) // links that run code or open local files are never handed to another app
 const openKey = u => { const x = String(u || '').split(':')[0].toLowerCase(); return x && !OPEN_BLOCKED.has(x) ? 'open:' + x : null } // mailto:, spotify:, zoommtg:… one answer per site and scheme
 const say = n => PERMS[n] || `open ${n.slice(5)}: links in another app`

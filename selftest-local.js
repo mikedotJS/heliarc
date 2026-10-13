@@ -243,7 +243,10 @@ module.exports = async (a, ok) => {
     ok('copy buttons work without a question', await wcP.executeJavaScript("navigator.clipboard.writeText('x').then(() => 'ok', e => e.name)", true) === 'ok' && asked.length === asks)
     S.settings().sitePerms['127.0.0.1'] = { camera: true }
     ok('a camera allowed for the site shows as granted to the page', await wcP.executeJavaScript("navigator.permissions.query({ name: 'camera' }).then(p => p.state)") === 'granted')
+    S.settings().sitePerms['127.0.0.1'] = { camera: false }
+    ok('a camera refused for the site shows as denied', await wcP.executeJavaScript("navigator.permissions.query({ name: 'camera' }).then(p => p.state)") === 'denied')
     delete S.settings().sitePerms['127.0.0.1']
+    ok('a camera and microphone not asked yet are not reported as blocked (Meet would never ask)', await wcP.executeJavaScript("Promise.all(['camera', 'microphone'].map(n => navigator.permissions.query({ name: n }).then(p => p.state)))").then(r => r.join()) === 'granted,granted')
     dialog.showMessageBox = async (_, o) => { asked.push(o.message); return { response: 0, checkboxChecked: false } } // a mailto: link asks before opening the mail app (blocked here)
     await wcP.executeJavaScript("location.href = 'mailto:a@b.c'", true); await sleep(600)
     ok('a mailto: link asks before opening another app', /127.0.0.1 wants to open mailto: links in another app/.test(asked.at(-1)), asked.at(-1))

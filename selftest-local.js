@@ -319,10 +319,10 @@ module.exports = async (a, ok) => {
         for (const [label, mac, key, enc] of [['Mac', true, I.macKey('keychain secret'), encMac], ['Windows', false, cr.randomBytes(32), encWin]]) {
           const ld = db('Login Data ' + label, `create table logins(origin_url text, username_value text, password_value blob, blacklisted_by_user integer);
             insert into logins values ('https://site.example/login', 'mike', ${hex(enc('p@ss wörd', key))}, 0), ('https://other.example/', '', ${hex(enc('second', key))}, 0),
-            ('https://never.example/', 'x', ${hex(enc('never saved', key))}, 1), ('chrome://settings', 'y', ${hex(enc('internal', key))}, 0), ('https://new.example/', 'z', ${hex(Buffer.concat([Buffer.from('v20'), Buffer.alloc(40, 1)]))}, 0)`)
+            ('https://never.example/', 'x', ${hex(enc('never saved', key))}, 1), ('chrome://settings', 'y', ${hex(enc('internal', key))}, 0), ('https://new.example/', 'z', ${hex(Buffer.concat([Buffer.from('v20'), Buffer.alloc(40, 1)]))}, 0), ('android://app', 'a', ${hex(Buffer.from('v20xxxx'))}, 0), ('https://broken.example/', 'b', ${hex(Buffer.from('v10abc'))}, 0)`)
           const r = I.chromiumLogins(ld, key, mac)
           ok(label + ' browser passwords are decrypted (never-saved sites and internal pages left out)', r.list.length === 2 && r.list[0].origin === 'https://site.example' && r.list[0].user === 'mike' && r.list[0].pass === 'p@ss wörd' && r.list[1].pass === 'second', JSON.stringify(r.list))
-          ok(label + ': passwords only the browser itself can read are counted, not guessed', r.skipped === 2, 'skipped ' + r.skipped) } }
+          ok(label + ': passwords only the browser itself can read are counted, not guessed', r.skipped === 1 && r.failed === 1, 'skipped ' + r.skipped + ' failed ' + r.failed + ' (a non-web origin is ignored, a v10 row that does not decrypt is a failure, not "browser only")') } }
       const sh = I.history('safari', saf); ok('Safari history is read', sh.length === 1 && Math.abs(sh[0].at - t0) < 2000, JSON.stringify(sh))
       const cb = path.join(dir, 'Bookmarks'); fs.writeFileSync(cb, JSON.stringify({ roots: { bookmark_bar: { type: 'folder', children: [{ type: 'url', name: 'Top', url: 'https://t.example/' }, { type: 'folder', name: 'Work', children: [{ type: 'url', name: 'Deep', url: 'https://d.example/' }, { type: 'folder', name: 'Inner', children: [{ type: 'url', name: 'Deeper', url: 'https://dd.example/' }] }] }] } } }))
       const cbm = I.bookmarks('chrome', cb); ok('Chrome bookmarks keep their top folder', cbm.length === 3 && cbm.find(b => b.url === 'https://dd.example/').folder === 'Work' && cbm.find(b => b.url === 'https://t.example/').folder === '', JSON.stringify(cbm))
@@ -389,6 +389,8 @@ module.exports = async (a, ok) => {
     S.setRoute('localhost', 2); a.switchSpace(0); const here = await open('/'); const nTabs = a.tabs().length
     a.go('http://localhost:' + base.split(':')[2] + '/second'); await sleep(600)
     ok('a typed address to a routed site opens in that site’s space', a.tabs().length === nTabs + 1 && a.tabs().at(-1).space === 2 && here.url === base + '/', 'tabs ' + nTabs + '→' + a.tabs().length + ' space ' + a.tabs().at(-1).space)
+    { a.switchSpace(0); const pin = await open('/', 0); a.pin(pin.id); const n = a.tabs().length; a.go('http://localhost:' + base.split(':')[2] + '/second'); await sleep(600)
+      ok('a typed address in a pinned tab navigates in place, whatever its route', a.tabs().length === n && /localhost/.test(pin.url) && pin.space === 0, 'tabs ' + n + '→' + a.tabs().length + ' space ' + pin.space + ' ' + pin.url) }
     S.settings().routes = []; a.switchSpace(0)
     // peek
     const t = await open('/'); S.openPeek(base + '/second'); await until(async () => S.peek() && !S.peek().view.webContents.isLoading() && S.peek().view.webContents.getTitle() === 'Second page')

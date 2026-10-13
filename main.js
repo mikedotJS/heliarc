@@ -44,6 +44,7 @@ let active = null, space = 0, nextId = 1, blocked = 0, blockerState = 'loading',
 let cmdOpen = false, panelOpen = false, findOpen = false, findText = '', recording = false
 let fsTab = null // the tab whose page is in HTML fullscreen (YouTube player…): Electron puts the window in fullscreen, we make the page fill it
 let sidebar = true, floating = false, split = null, peek = null, mediaTab = null, pwPending = null, soon = null
+let pwAsking = false // the native password question of Peek / Little is open
 const dls = new Map(), configured = new Set()
 
 const byId = id => tabs.find(t => t.id === id)
@@ -60,11 +61,12 @@ const snapshot = () => ({
 const push = () => {
   if (!ui) return
   const nav = cur()?.view?.webContents.navigationHistory
+  const listed = id => { const t = byId(id); return !!t && (!SPACES[t.space].private || space === PRIVATE) } // what the UI is sent must exist in the tab list it receives
   const s = {
-    active, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
-    sidebar, split, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
+    active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(cur()?.url || ''), adsAllowed: adsAllowed(cur()?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
+    sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
-    media: byId(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
+    media: listed(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
     pw: pwPending && { tab: pwPending.tab, origin: pwPending.origin, user: pwPending.user, update: pwPending.update },
     tabs: tabs.filter(t => !SPACES[t.space].private || space === PRIVATE).map(t => ({ id: t.id, title: t.title, url: t.url, icon: t.icon, loading: t.loading, muted: t.muted, asleep: t.asleep, error: t.error, pinned: t.pinned, fav: t.fav, folder: t.folder, space: t.space, zoom: t.view?.webContents.getZoomFactor() ?? 1 })),
   }
@@ -281,7 +283,7 @@ function userClose(id) { // the page may refuse to close ("Leave site?"), so it 
 function closeTab(id) {
   const t = byId(id); if (!t) return
   removeTab(t)
-  if (SPACES[t.space].private && !tabs.some(x => x.space === t.space)) { downloads = downloads.filter(d => !d.private); wipe(session.fromPartition(SPACES[t.space].partition)); space === t.space ? switchSpace(0) : refresh(); return }
+  if (SPACES[t.space].private && !tabs.some(x => x.space === t.space)) { downloads.forEach(d => d.private && dls.get(d.id)?.cancel()); downloads = downloads.filter(d => !d.private); wipe(session.fromPartition(SPACES[t.space].partition)); space === t.space ? switchSpace(0) : refresh(); return }
   if (active !== id) { refresh(); return }
   const sp = t.fav ? space : t.space, same = tabs.filter(x => x.space === sp && !x.fav)
   if (same.length) activate((same.find(x => x.id > id) || same.at(-1)).id)
@@ -301,7 +303,7 @@ function sleep(id) { // hibernate: free the page, keep the tab in the list
 }
 function go(input) {
   const t = cur(); if (!t) return
-  const r = routeFor(resolve(input)); if (r !== null && r !== t.space && !SPACES[t.space].private) return newTab(input) // a routed site opens in its own space
+  const r = routeFor(resolve(input)); if (SPACES[r] && r !== t.space && !SPACES[t.space].private && !t.fav && !t.pinned) return newTab(input) // a routed site opens in its own space (favorites and pinned tabs keep their page and navigate in place)
   t.error = null; t.url = resolve(input)
   const up = settings.httpsOnly && privacy.upgrade(t.url); if (up) t.upgraded = up; t.upN = 0
   t.view ? t.view.webContents.loadURL(up || t.url) : makeView(t)
@@ -380,7 +382,9 @@ function peekSend() {
 function peekSample() { // the top bar takes the colour the page has at its top edge, so the two read as one piece
   clearTimeout(peek?.timer); if (!peek) return
   const p = peek; p.timer = setTimeout(async () => {
-    try { const [b, g, r, a] = (await p.view.webContents.capturePage({ x: 24, y: 1, width: 1, height: 1 })).toBitmap(); if (a && peek === p) { p.color = `rgb(${r},${g},${b})`; peekSend() } } catch {}
+    let color // no colour when the capture fails or the top edge is transparent: the bar goes back to the default
+    try { const [b, g, r, a] = (await p.view.webContents.capturePage({ x: 24, y: 1, width: 1, height: 1 })).toBitmap(); if (a) color = `rgb(${r},${g},${b})` } catch {}
+    if (peek === p) { p.color = color; peekSend() }
   }, 350)
 }
 function openPeek(url) {
@@ -515,7 +519,7 @@ function setupSession(ses) {
   ses.on('select-hid-device', async (e, d, cb) => { e.preventDefault(); const i = await deviceBox('HID', d, d.deviceList.map(x => x.name || 'Unknown device')); i < 0 ? cb() : cb(d.deviceList[i].deviceId) })
   ses.on('select-serial-port', async (e, ports, wc, cb) => { e.preventDefault(); const i = await deviceBox('serial', { frame: { url: wc.getURL() } }, ports.map(x => x.displayName || x.portName)); cb(i < 0 ? '' : ports[i].portId) })
   ses.setPermissionCheckHandler((wc, permission, origin, d) => { if (SILENT.has(permission)) return true; const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}; return need.length > 0 && need.every(n => s[n] === true) })
-  ses.on('will-download', (e, item, wc) => onDownload(e, item, wc.session === session.fromPartition(SPACES[PRIVATE].partition)))
+  ses.on('will-download', (e, item) => onDownload(e, item, ses === session.fromPartition(SPACES[PRIVATE].partition)))
   const api = new ElectronChromeExtensions({
     license: 'GPL-3.0', session: ses,
     createTab: async d => { const t = newTab(d.url, SPACES.findIndex(sp => session.fromPartition(sp.partition) === ses)); return [t.view.webContents, win] },
@@ -601,11 +605,12 @@ async function checkUpdate() {
 let blocker = null
 const LISTS = { ads: ['Ads only', 'fromPrebuiltAdsOnly'], adsTrackers: ['Ads and trackers', 'fromPrebuiltAdsAndTracking'], full: ['Ads, trackers and annoyances', 'fromPrebuiltFull'] }
 const adsAllowed = u => settings.adblockOff.includes(privacy.host(u))
-let blockerList = null // the list of the blocker that is running
+let blockerList = null, loading = 0 // the list of the blocker that is running; loads in flight
 async function loadBlocker() { // (re)loads the filter lists picked in Settings, then points every space's session at them
-  blockerState = 'loading'; push()
+  const want = settings.adblockList // the list asked for by THIS call: a later pick must not be mistaken for it
+  blockerState = 'loading'; loading++; push()
   try {
-    const b = await ElectronBlocker[LISTS[settings.adblockList]?.[1] || LISTS.adsTrackers[1]](fetch)
+    const b = await ElectronBlocker[LISTS[want]?.[1] || LISTS.adsTrackers[1]](fetch)
     b.on('request-blocked', () => { blocked++; pushSoon() })
     const cosmetic = '@ghostery/adblocker/' // its cosmetic-filter handlers are global: ours skip the sites where ads are allowed
     const unhandle = () => ['inject-cosmetic-filters', 'is-mutation-observer-enabled'].forEach(ch => ipcMain.removeHandler(cosmetic + ch))
@@ -616,8 +621,9 @@ async function loadBlocker() { // (re)loads the filter lists picked in Settings,
     unhandle()
     ipcMain.handle(cosmetic + 'inject-cosmetic-filters', (e, ...a) => adsAllowed(e.sender.getURL()) ? undefined : b.onInjectCosmeticFilters(e, ...a))
     ipcMain.handle(cosmetic + 'is-mutation-observer-enabled', e => adsAllowed(e.sender.getURL()) ? false : b.onIsMutationObserverEnabled(e))
-    blocker = b; blockerState = 'on'; blockerList = settings.adblockList
-  } catch (e) { console.warn('ad blocker:', e.message); blockerState = blocker ? 'on' : 'error'; if (blocker) settings.adblockList = blockerList } // a list that can't be loaded isn't shown as chosen
+    blocker = b; blockerState = 'on'; blockerList = want
+  } catch (e) { console.warn('ad blocker:', e.message); blockerState = blocker ? 'on' : 'error' }
+  if (!--loading && blocker) settings.adblockList = blockerList // once nothing is loading, Settings shows the list that really runs (a list that can't be loaded isn't shown as chosen)
   push()
 }
 async function setupPrivacy() {
@@ -697,7 +703,7 @@ app.whenReady().then(async () => {
   win.on('resize', layout)
   win.on('enter-full-screen', layout); win.on('leave-full-screen', layout) // the page follows the window
   win.on('closed', () => app.quit())
-  await Promise.race([setupPrivacy(), new Promise(r => setTimeout(r, 3000))])
+  const privacyReady = setupPrivacy().catch(e => console.warn('privacy setup:', e.message)) // runs while the handlers below register; awaited before the first page loads
 
   const h = (n, f) => ipcMain.handle(n, (_, ...a) => f(...a))
   h('new', () => openCmd('new')); h('edit', () => openCmd('edit')); h('closeCmd', closeCmd)
@@ -765,8 +771,8 @@ app.whenReady().then(async () => {
   h('importRun', async (id, what) => {
     if (what !== 'passwords') return attempt(() => what === 'history' ? addHistory(importers.history(id)) : addBookmarks(importers.bookmarks(id), importers.BROWSERS[id].name))
     try { // the browser's key may need the user's OK first (macOS keychain), so this waits
-      const { list, skipped } = await importers.browserPasswords(id), r = addPasswords(list)
-      return r.error ? r : { text: `${r.text}${skipped ? ` ${skipped} more can only be read by ${importers.BROWSERS[id].name} itself: export them as a CSV from its settings and import the file.` : ''}` }
+      const { list, skipped, failed } = await importers.browserPasswords(id), r = addPasswords(list)
+      return r.error ? r : { text: `${r.text}${skipped ? ` ${skipped} more can only be read by ${importers.BROWSERS[id].name} itself: export them as a CSV from its settings and import the file.` : ''}${failed ? ` ${failed} couldn’t be decrypted and were left out.` : ''}` }
     } catch (e) { return { error: /EPERM|EACCES|operation not permitted/i.test(e.message) ? 'macOS blocked access. Give Heliarc Full Disk Access (System Settings → Privacy & Security), or use the file buttons.' : e.message } }
   })
   h('importFile', async what => {
@@ -813,9 +819,11 @@ app.whenReady().then(async () => {
     if (!t || SPACES[t.space].private || !origin || !pass || !safeStorage.isEncryptionAvailable() || settings.pwNever.includes(origin)) return
     const old = vault.find(v => v.origin === origin && v.user === user)
     if (old && decrypt(old.pass) === pass) return
-    if (!tabs.includes(t)) { // Peek / Little have no sidebar bar: a native question instead
-      const i = await choose(`${old ? 'Update' : 'Save'} the password for ${user || 'this login'} on ${privacy.host(origin)}?`, [old ? 'Update' : 'Save', 'Never for this site'], { cancel: 'Not now', safe: true })
-      if (i === 0) savePw({ origin, user, pass }); else if (i === 1) { settings.pwNever.push(origin); push() }
+    if (!tabs.includes(t)) { // Peek / Little have no sidebar bar: a native question instead, one at a time
+      if (pwAsking) return
+      pwAsking = true
+      const i = await choose(`${old ? 'Update' : 'Save'} the password for ${user || 'this login'} on ${privacy.host(origin)}?`, [old ? 'Update' : 'Save', 'Never for this site'], { cancel: 'Not now', safe: true }).finally(() => { pwAsking = false })
+      if (i === 0) savePw({ origin, user, pass }); else if (i === 1 && !settings.pwNever.includes(origin)) { settings.pwNever.push(origin); push() }
       return
     }
     pwPending = { tab: t.id, origin, user, pass, update: !!old }; push()
@@ -826,6 +834,7 @@ app.whenReady().then(async () => {
 
   await ext.loadInstalled(extSessions()) // before any page loads, so content scripts reach restored tabs
   refreshExts()
+  let cap; await Promise.race([privacyReady, new Promise(r => { cap = setTimeout(r, 3000) })]); clearTimeout(cap) // the restored tab waits for the ad blocker, but never more than 3 s
   // restore the previous session; only the active tab is loaded, the others wake up when selected
   nextId = Math.max(1, ...(saved.tabs || []).map(t => t.id + 1), ...(saved.folders || []).map(f => f.id + 1), ...downloads.map(d => d.id + 1), ...vault.map(v => v.id + 1))
   folders = saved.folders || []; archive = saved.archive || []; sidebar = saved.sidebar !== false; space = SPACES[saved.space] ? saved.space : 0

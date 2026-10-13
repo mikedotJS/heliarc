@@ -765,7 +765,7 @@ app.whenReady().then(async () => {
   h('setProfile', p => { profile = { ...p, name: [p.first, p.last].filter(Boolean).join(' ') }; store.save('profile', profile) })
   h('pwSave', () => { if (pwPending) { savePw(pwPending); pwPending = null; push() } })
   h('allowPw', origin => { settings.pwNever = settings.pwNever.filter(x => x !== origin); push() })
-  h('pwNever', () => { if (pwPending) { settings.pwNever.push(pwPending.origin); pwPending = null; push() } })
+  h('pwNever', () => { if (pwPending) { if (!settings.pwNever.includes(pwPending.origin)) settings.pwNever.push(pwPending.origin); pwPending = null; push() } })
   h('pwDismiss', () => { pwPending = null; push() })
   h('extensions', () => ext.list(extSessions()[0]))
   h('installExtension', installExtension)

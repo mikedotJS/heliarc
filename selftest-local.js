@@ -406,7 +406,7 @@ module.exports = async (a, ok) => {
     S.openPeek(base + '/login'); await until(async () => S.peek() && S.peek().view.webContents.getTitle() === 'Login'); await sleep(500)
     { const pwc = S.peek().view.webContents, p = await js(pwc, "(() => { const b = document.querySelector('#u').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) } })()")
       pwc.focus(); pwc.sendInputEvent({ type: 'mouseMove', ...p }); pwc.sendInputEvent({ type: 'mouseDown', ...p, button: 'left', clickCount: 1 }); pwc.sendInputEvent({ type: 'mouseUp', ...p, button: 'left', clickCount: 1 }); await sleep(900)
-      ok('a saved password fills in peek too', S.vault().length === 0 || await js(pwc, "document.getElementById('u').value") === 'michael', await js(pwc, "document.getElementById('u').value")) }
+      ok('a saved password fills in peek too', S.vault().length > 0 && await js(pwc, "document.getElementById('u').value") === 'michael', await js(pwc, "document.getElementById('u').value")) }
     S.openPeek(base + '/second'); await until(async () => S.peek() && S.peek().view.webContents.getTitle() === 'Second page')
     await sleep(500); await snap(S.peekUi(), 'peek-ui'); await snap(S.peek().view, 'peek-page')
     ok('peek is centered over the page', (() => { const b = S.peek().view.getBounds(), c = S.content(); return b.x > c.x && b.y > c.y && b.x + b.width < c.x + c.w })())

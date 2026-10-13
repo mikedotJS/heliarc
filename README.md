@@ -17,7 +17,7 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 - Find in page, zoom, history, downloads (sidebar card + Library), print, developer tools (F12), spell check with suggestions
 - Chrome extensions from the Chrome Web Store (an "Add to Heliarc" button on the store pages, or Settings → Extensions), with toolbar buttons, popups, keyboard shortcuts and context-menu entries. Password managers such as Bitwarden and Proton Pass run. Not supported: `declarativeNetRequest` (the built-in blocker covers ad blocking)
 - Password manager (encrypted with the OS keychain: asks to save after a login, fills on focus) and address autofill
-- Import history and bookmarks from Chrome, Edge, Brave, Arc (history), Firefox and Safari, or from exported files; passwords come in from a CSV you export from your old browser (Settings → Import)
+- Import history, bookmarks and saved passwords from Chrome, Edge, Brave and Arc (on Mac, macOS asks you to allow access to the browser's key; on Windows, recent Chrome and Edge lock their passwords to themselves, so export a CSV from them), history and bookmarks from Firefox and Safari, or anything from exported files; Firefox and Safari passwords come in from a CSV you export (Settings → Import)
 - Swipe two fingers on a page for back / forward, or on the sidebar to change space. On Mac the app updates itself in the background and asks you to restart; on Windows a notice appears in the sidebar when a newer release is out
 
 **Not there yet**: Netflix/Spotify-style protected video (Widevine needs a different Electron build), passkeys.

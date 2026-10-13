@@ -312,6 +312,17 @@ module.exports = async (a, ok) => {
       ok('Firefox history is read', fh.length === 1 && Math.abs(fh[0].at - t0) < 2000, JSON.stringify(fh))
       ok('Firefox bookmarks keep their folder', fb.find(b => b.url === 'https://f.example/')?.folder === 'Reading' && fb.find(b => b.url === 'https://g.example/')?.folder === '', JSON.stringify(fb))
       const saf = db('History.db', `create table history_items(id integer primary key, url text); create table history_visits(id integer primary key, history_item integer, title text, visit_time real); insert into history_items values (1, 'https://s.example/'); insert into history_visits values (1, 1, 'Safari page', ${(t0 / 1000) - 978307200})`)
+      // saved passwords of the Chromium browsers: built the way Chrome writes them (Mac: AES-CBC, Windows: AES-GCM), read back with the same keys
+      { const cr = require('crypto'), hex = b => "x'" + Buffer.from(b).toString('hex') + "'"
+        const encMac = (txt, key) => { const c = cr.createCipheriv('aes-128-cbc', key, Buffer.alloc(16, 0x20)); return Buffer.concat([Buffer.from('v10'), c.update(txt, 'utf8'), c.final()]) }
+        const encWin = (txt, key) => { const n = cr.randomBytes(12), c = cr.createCipheriv('aes-256-gcm', key, n); return Buffer.concat([Buffer.from('v10'), n, c.update(txt, 'utf8'), c.final(), c.getAuthTag()]) }
+        for (const [label, mac, key, enc] of [['Mac', true, I.macKey('keychain secret'), encMac], ['Windows', false, cr.randomBytes(32), encWin]]) {
+          const ld = db('Login Data ' + label, `create table logins(origin_url text, username_value text, password_value blob, blacklisted_by_user integer);
+            insert into logins values ('https://site.example/login', 'mike', ${hex(enc('p@ss wörd', key))}, 0), ('https://other.example/', '', ${hex(enc('second', key))}, 0),
+            ('https://never.example/', 'x', ${hex(enc('never saved', key))}, 1), ('chrome://settings', 'y', ${hex(enc('internal', key))}, 0), ('https://new.example/', 'z', ${hex(Buffer.concat([Buffer.from('v20'), Buffer.alloc(40, 1)]))}, 0)`)
+          const r = I.chromiumLogins(ld, key, mac)
+          ok(label + ' browser passwords are decrypted (never-saved sites and internal pages left out)', r.list.length === 2 && r.list[0].origin === 'https://site.example' && r.list[0].user === 'mike' && r.list[0].pass === 'p@ss wörd' && r.list[1].pass === 'second', JSON.stringify(r.list))
+          ok(label + ': passwords only the browser itself can read are counted, not guessed', r.skipped === 2, 'skipped ' + r.skipped) } }
       const sh = I.history('safari', saf); ok('Safari history is read', sh.length === 1 && Math.abs(sh[0].at - t0) < 2000, JSON.stringify(sh))
       const cb = path.join(dir, 'Bookmarks'); fs.writeFileSync(cb, JSON.stringify({ roots: { bookmark_bar: { type: 'folder', children: [{ type: 'url', name: 'Top', url: 'https://t.example/' }, { type: 'folder', name: 'Work', children: [{ type: 'url', name: 'Deep', url: 'https://d.example/' }, { type: 'folder', name: 'Inner', children: [{ type: 'url', name: 'Deeper', url: 'https://dd.example/' }] }] }] } } }))
       const cbm = I.bookmarks('chrome', cb); ok('Chrome bookmarks keep their top folder', cbm.length === 3 && cbm.find(b => b.url === 'https://dd.example/').folder === 'Work' && cbm.find(b => b.url === 'https://t.example/').folder === '', JSON.stringify(cbm))

@@ -761,8 +761,14 @@ app.whenReady().then(async () => {
   h('delBang', trigger => { settings.bangs = settings.bangs.filter(x => x.trigger !== trigger); push() })
   h('toggleSiteAds', () => { const t = cur(), h = t && privacy.host(t.url); if (!h) return; settings.adblockOff = adsAllowed(t.url) ? settings.adblockOff.filter(x => x !== h) : [...settings.adblockOff, h]; t.view?.webContents.reload(); push() })
   h('setSitePerm', (host, perm, value) => { const s = settings.sitePerms[host]; if (!s || !(PERMS[perm] || perm.startsWith('open:'))) return; value === null ? delete s[perm] : (s[perm] = !!value); if (!Object.keys(s).length) delete settings.sitePerms[host]; push() })
-  h('importDetect', () => importers.detect().map(({ id, name, history, bookmarks }) => ({ id, name, history: !!history, bookmarks: !!bookmarks })))
-  h('importRun', (id, what) => attempt(() => what === 'history' ? addHistory(importers.history(id)) : addBookmarks(importers.bookmarks(id), importers.BROWSERS[id].name)))
+  h('importDetect', () => importers.detect().map(({ id, name, history, bookmarks, passwords }) => ({ id, name, history: !!history, bookmarks: !!bookmarks, passwords: !!passwords })))
+  h('importRun', async (id, what) => {
+    if (what !== 'passwords') return attempt(() => what === 'history' ? addHistory(importers.history(id)) : addBookmarks(importers.bookmarks(id), importers.BROWSERS[id].name))
+    try { // the browser's key may need the user's OK first (macOS keychain), so this waits
+      const { list, skipped } = await importers.browserPasswords(id), r = addPasswords(list)
+      return r.error ? r : { text: `${r.text}${skipped ? ` ${skipped} more can only be read by ${importers.BROWSERS[id].name} itself: export them as a CSV from its settings and import the file.` : ''}` }
+    } catch (e) { return { error: /EPERM|EACCES|operation not permitted/i.test(e.message) ? 'macOS blocked access. Give Heliarc Full Disk Access (System Settings → Privacy & Security), or use the file buttons.' : e.message } }
+  })
   h('importFile', async what => {
     const filters = { bookmarks: [{ name: 'Bookmarks', extensions: ['html', 'htm', 'json', 'sqlite'] }], passwords: [{ name: 'Passwords (CSV)', extensions: ['csv'] }], safari: [{ name: 'Safari history', extensions: ['db'] }] }[what]
     const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters }); if (r.canceled) return { canceled: true }

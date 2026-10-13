@@ -11,8 +11,8 @@ const ENGINES = {
   kagi: ['Kagi', 'https://kagi.com/search?q=%s'], qwant: ['Qwant', 'https://www.qwant.com/?q=%s'],
 }
 
-// opts.engine picks the search engine, opts.bangs are the user's own "!trigger" shortcuts (they win over the built-in ones)
-function resolve(input, { engine = 'brave', bangs = [] } = {}) {
+// opts.searchEngine picks the search engine, opts.bangs are the user's own "!trigger" shortcuts (they win over the built-in ones)
+function resolve(input, { searchEngine = 'brave', bangs = [] } = {}) {
   const t = input.trim()
   if (!t) return 'about:blank'
   const m = t.match(/^!(\w+)\s+(.+)$/)
@@ -20,6 +20,6 @@ function resolve(input, { engine = 'brave', bangs = [] } = {}) {
   if (url) return url.replace('%s', encodeURIComponent(m[2]))
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t
   if (/^(localhost|[\w-]+(\.[\w-]+)+)(:\d+)?(\/\S*)?$/i.test(t)) return 'https://' + t
-  return (ENGINES[engine] || ENGINES.brave)[1].replace('%s', encodeURIComponent(t))
+  return (ENGINES[searchEngine] || ENGINES.brave)[1].replace('%s', encodeURIComponent(t))
 }
 module.exports = { resolve, ENGINES, BANGS }

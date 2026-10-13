@@ -202,7 +202,10 @@ module.exports = async (a, ok) => {
     a.closeTab(emb.id); a.closeTab(emb2.id)
     // search engine and custom bangs
     const bg = require('./bangs'), mine = [{ trigger: 'npm', url: 'https://www.npmjs.com/search?q=%s' }]
-    ok('the search engine can be changed', bg.resolve('cats', { engine: 'ddg' }) === 'https://duckduckgo.com/?q=cats' && bg.resolve('cats').startsWith('https://search.brave.com/'))
+    ok('the search engine can be changed', bg.resolve('cats', { searchEngine: 'ddg' }) === 'https://duckduckgo.com/?q=cats' && bg.resolve('cats').startsWith('https://search.brave.com/'))
+    await js(ui(), "api.call('setSetting', 'searchEngine', 'google')"); await sleep(300)
+    ok('the engine chosen in the settings is the one used for a search', a.resolve('cats') === 'https://www.google.com/search?q=cats', a.resolve('cats'))
+    await js(ui(), "api.call('setSetting', 'searchEngine', 'brave')"); await sleep(300)
     ok('your own bangs work and win over built-in ones', bg.resolve('!npm left pad', { bangs: mine }) === 'https://www.npmjs.com/search?q=left%20pad' && bg.resolve('!g x', { bangs: [{ trigger: 'g', url: 'https://example.com/?q=%s' }] }) === 'https://example.com/?q=x')
     ok('built-in bangs still work', bg.resolve('!w cats') === 'https://en.wikipedia.org/w/index.php?search=cats')
     // ads can be allowed on one site

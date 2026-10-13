@@ -23,7 +23,7 @@ jobs:
       MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - name: Import the Developer ID certificate (Mac, only when the Apple secrets are set)

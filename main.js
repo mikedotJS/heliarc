@@ -39,7 +39,7 @@ const PIP_OFF = `document.pictureInPictureElement && document.exitPictureInPictu
 const MEDIA_TOGGLE = `(() => { const m = [...document.querySelectorAll('video,audio')]; const on = m.filter(x => !x.paused); if (on.length) { on.forEach(x => x.pause()); return false } (m.find(x => x.currentTime > 0) || m[0])?.play(); return true })()`
 
 let win, ui, cmd, panel, find, peekUi, edge, little
-let tabs = [], folders = [], archive = [], history = [], downloads = [], vault = [], profile = {}, settings = { ...DEFAULTS }
+let tabs = [], folders = [], archive = [], history = [], downloads = [], vault = [], profile = {}, settings = structuredClone(DEFAULTS)
 let active = null, space = 0, nextId = 1, blocked = 0, blockerState = 'loading', copied = false // copied: the address pill says "Link copied" for a moment after Mod+Shift+C
 let cmdOpen = false, panelOpen = false, findOpen = false, findText = '', recording = false
 let fsTab = null // the tab whose page is in HTML fullscreen (YouTube player…): Electron puts the window in fullscreen, we make the page fill it
@@ -65,7 +65,7 @@ const push = () => {
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: byId(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
     pw: pwPending && { tab: pwPending.tab, origin: pwPending.origin, user: pwPending.user, update: pwPending.update },
-    tabs: tabs.map(t => ({ id: t.id, title: t.title, url: t.url, icon: t.icon, loading: t.loading, muted: t.muted, asleep: t.asleep, error: t.error, pinned: t.pinned, fav: t.fav, folder: t.folder, space: t.space, zoom: t.view?.webContents.getZoomFactor() ?? 1 })),
+    tabs: tabs.filter(t => !SPACES[t.space].private || space === PRIVATE).map(t => ({ id: t.id, title: t.title, url: t.url, icon: t.icon, loading: t.loading, muted: t.muted, asleep: t.asleep, error: t.error, pinned: t.pinned, fav: t.fav, folder: t.folder, space: t.space, zoom: t.view?.webContents.getZoomFactor() ?? 1 })),
   }
   for (const v of [ui, cmd, panel]) if (!v.webContents.isDestroyed()) v.webContents.send('state', s)
   store.save('session', snapshot())
@@ -278,7 +278,7 @@ function userClose(id) { // the page may refuse to close ("Leave site?"), so it 
 function closeTab(id) {
   const t = byId(id); if (!t) return
   removeTab(t)
-  if (SPACES[t.space].private && !tabs.some(x => x.space === t.space)) { wipe(session.fromPartition(SPACES[t.space].partition)); space === t.space ? switchSpace(0) : refresh(); return }
+  if (SPACES[t.space].private && !tabs.some(x => x.space === t.space)) { downloads = downloads.filter(d => !d.private); wipe(session.fromPartition(SPACES[t.space].partition)); space === t.space ? switchSpace(0) : refresh(); return }
   if (active !== id) { refresh(); return }
   const sp = t.fav ? space : t.space, same = tabs.filter(x => x.space === sp && !x.fav)
   if (same.length) activate((same.find(x => x.id > id) || same.at(-1)).id)
@@ -318,6 +318,7 @@ function place(id, zone, fid, idx = 1e9) { // drag & drop: put a tab in a zone (
   push()
 }
 function toFavOrBack(t, zone, fid, idx) { // leaving favorites (shared by every space) adopts the space being viewed
+  if (zone === 'fav' && SPACES[t.space].private) return // the Private space must not leak into the other spaces
   if (t.fav && zone !== 'fav') retarget(t, space)
   place(t.id, zone, fid, idx)
 }
@@ -424,17 +425,18 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
 const moveLittle = () => { if (!little) return; const u = little.view.webContents.getURL(); little.win.close(); newTab(u); win.show(); win.focus() }
 
 // ---- downloads ----
-function onDownload(_, item) {
+const saveDownloads = () => store.save('downloads', downloads.filter(d => !d.private).slice(0, 200)) // the Private space keeps nothing on disk
+function onDownload(_, item, priv) {
   const dir = app.getPath('downloads'), name = path.basename(item.getFilename()) || 'download', ext = path.extname(name), base = path.basename(name, ext)
   let p = path.join(dir, name), n = 1
   while (fs.existsSync(p)) p = path.join(dir, `${base} (${n++})${ext}`)
   item.setSavePath(p)
-  const d = { id: nextId++, name: path.basename(p), path: p, url: item.getURL(), mime: item.getMimeType(), state: 'progressing', received: 0, total: item.getTotalBytes(), at: Date.now() }
+  const d = { id: nextId++, name: path.basename(p), path: p, url: item.getURL(), mime: item.getMimeType(), state: 'progressing', received: 0, total: item.getTotalBytes(), at: Date.now(), private: priv }
   downloads.unshift(d); dls.set(d.id, item)
   item.on('updated', (_, st) => { d.received = item.getReceivedBytes(); d.total = item.getTotalBytes(); d.state = item.isPaused() ? 'paused' : st === 'interrupted' ? 'interrupted' : 'progressing'; pushSoon() })
   item.once('done', (_, st) => {
     d.state = st; d.received = item.getReceivedBytes(); d.at = Date.now(); dls.delete(d.id)
-    store.save('downloads', downloads.slice(0, 200)); push(); setTimeout(push, 8000)
+    saveDownloads(); push(); setTimeout(push, 8000)
   })
   push()
 }
@@ -502,7 +504,7 @@ function setupSession(ses) {
   ses.on('select-hid-device', async (e, d, cb) => { e.preventDefault(); const i = await deviceBox('HID', d, d.deviceList.map(x => x.name || 'Unknown device')); i < 0 ? cb() : cb(d.deviceList[i].deviceId) })
   ses.on('select-serial-port', async (e, ports, wc, cb) => { e.preventDefault(); const i = await deviceBox('serial', { frame: { url: wc.getURL() } }, ports.map(x => x.displayName || x.portName)); cb(i < 0 ? '' : ports[i].portId) })
   ses.setPermissionCheckHandler((wc, permission, origin, d) => { if (SILENT.has(permission)) return true; const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}; return need.length > 0 && need.every(n => s[n] === true) })
-  ses.on('will-download', onDownload)
+  ses.on('will-download', (e, item, wc) => onDownload(e, item, wc.session === session.fromPartition(SPACES[PRIVATE].partition)))
   const api = new ElectronChromeExtensions({
     license: 'GPL-3.0', session: ses,
     createTab: async d => { const t = newTab(d.url, SPACES.findIndex(sp => session.fromPartition(sp.partition) === ses)); return [t.view.webContents, win] },
@@ -617,7 +619,7 @@ function tabMenu(id) {
   const h = hostOf(t.url), here = folders.filter(f => f.space === t.space)
   Menu.buildFromTemplate([
     { label: t.pinned ? 'Unpin tab' : 'Pin tab', click: () => toFavOrBack(t, t.pinned ? 'list' : 'pinned') },
-    { label: t.fav ? 'Remove from favorites' : 'Add to favorites', click: () => toFavOrBack(t, t.fav ? 'list' : 'fav') },
+    ...(SPACES[t.space].private ? [] : [{ label: t.fav ? 'Remove from favorites' : 'Add to favorites', click: () => toFavOrBack(t, t.fav ? 'list' : 'fav') }]),
     { label: 'Move to folder', enabled: !t.fav, submenu: [...here.map(f => ({ label: f.name, click: () => place(id, 'folder', f.id) })), { label: 'New folder', click: () => place(id, 'folder', newFolder()) }] },
     { label: 'Open in split view', enabled: id !== active, click: () => openSplit(id) },
     { type: 'separator' },
@@ -658,14 +660,14 @@ let cleaned = false
 app.on('before-quit', e => { // "clear everything when I quit": cookies, logins, caches, history, download list
   if (installing || !settings.clearOnQuit || cleaned) return store.flushAll()
   e.preventDefault(); cleaned = true
-  Promise.all(spaceSessions().map(wipe)).then(() => { history = []; downloads = []; store.save('history', history); store.flushAll(); app.quit() })
+  Promise.all(spaceSessions().map(wipe)).then(() => { history = []; downloads = []; store.save('history', history); store.save('downloads', downloads); store.flushAll(); app.quit() })
 })
 
 app.whenReady().then(async () => {
   if (!gotLock) return // another instance is running: it handles this launch
   if (process.platform === 'darwin') app.dock?.setIcon(ICON)
   const saved = store.load('session', {})
-  settings = { ...DEFAULTS, ...saved.settings }; history = store.load('history', []); vault = store.load('vault', []); profile = store.load('profile', {})
+  settings = { ...structuredClone(DEFAULTS), ...saved.settings }; history = store.load('history', []); vault = store.load('vault', []); profile = store.load('profile', {})
   downloads = store.load('downloads', []).map(d => d.state === 'progressing' || d.state === 'paused' ? { ...d, state: 'interrupted' } : d)
   win = new BaseWindow({ width: 1280, height: 820, title: 'Heliarc', icon: ICON, backgroundColor: '#2a2a33', ...(process.platform === 'darwin' && { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 16 } }) })
   const prefs = { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true }
@@ -718,8 +720,8 @@ app.whenReady().then(async () => {
   h('openFile', id => { const d = downloads.find(x => x.id === id); return d && shell.openPath(d.path) })
   h('showFile', id => { const d = downloads.find(x => x.id === id); d && shell.showItemInFolder(d.path) })
   h('cancelDownload', id => { dls.get(id)?.cancel() })
-  h('delDownload', id => { downloads = downloads.filter(d => d.id !== id); store.save('downloads', downloads); push() })
-  h('clearDownloads', () => { downloads = downloads.filter(d => d.state === 'progressing'); store.save('downloads', downloads); push() })
+  h('delDownload', id => { downloads = downloads.filter(d => d.id !== id); saveDownloads(); push() })
+  h('clearDownloads', () => { downloads = downloads.filter(d => d.state === 'progressing'); saveDownloads(); push() })
   // history, passwords, profile
   h('history', q => history.filter(x => !q || (x.title + ' ' + x.url).toLowerCase().includes(q.toLowerCase())).slice(0, 300))
   h('delHistory', at => { history = history.filter(x => x.at !== at); store.save('history', history) })

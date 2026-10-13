@@ -278,9 +278,16 @@ module.exports = async (a, ok) => {
     ok('the private space stores its cookies in memory only', (await pses.cookies.get({ name: 'who' })).length === 1 && !require('electron').session.fromPartition('private').storagePath)
     ok('private tabs are not saved with the session', S.snapshot().tabs.every(t => t.space !== PV))
     ok('private pages never reach the history', S.history().length === histBefore && !S.history().some(h => h.url.endsWith('/private-page')))
+    pt2.view.webContents.downloadURL(base + '/file.bin'); await until(async () => S.downloads().some(d => d.private && d.state === 'completed'), 10000)
+    require('./lib/store').flushAll(); const onDisk = () => { try { return JSON.parse(fs.readFileSync(path.join(require('electron').app.getPath('userData'), 'downloads.json'), 'utf8')) } catch { return [] } }
+    ok('a download made in the private space is listed but never written to disk', S.downloads().some(d => d.private) && !onDisk().some(d => d.private), JSON.stringify(onDisk().map(d => d.name)))
+    await js(ui(), "api.call('move', " + pt2.id + ", 'fav')"); await sleep(300)
+    ok('a private tab cannot be made a favorite', !pt2.fav)
+    a.switchSpace(0); await sleep(400)
+    ok('the command bar and sidebar are not told about private tabs while another space is open', !(await js(ui(), 'state.tabs.some(t => t.space === ' + PV + ')')))
     a.closeTab(pt.id); await sleep(300); ok('closing one private tab keeps the session', (await pses.cookies.get({ name: 'who' })).length === 1)
     a.closeTab(pt2.id); await sleep(800)
-    ok('closing the last private tab wipes everything and goes home', (await pses.cookies.get({ name: 'who' })).length === 0 && S.space() === 0)
+    ok('closing the last private tab wipes everything and goes home', (await pses.cookies.get({ name: 'who' })).length === 0 && S.space() === 0 && !S.downloads().some(d => d.private))
     a.switchSpace(0)
     // importing from other browsers: build the same files they write, read them back
     { const I = require('./lib/importers'), { DatabaseSync } = require('node:sqlite'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heliarc-imp-')), db = (n, sql) => { const f = path.join(dir, n), d = new DatabaseSync(f); d.exec(sql); d.close(); return f }

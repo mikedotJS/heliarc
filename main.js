@@ -328,7 +328,7 @@ function place(id, zone, fid, idx = 1e9) { // drag & drop: put a tab in a zone (
   push()
 }
 function toFavOrBack(t, zone, fid, idx) { // leaving favorites (shared by every space) adopts the space being viewed
-  if (zone === 'fav' && SPACES[t.space].private) return // the Private space must not leak into the other spaces
+  if (zone === 'fav' ? SPACES[t.space].private : t.fav && SPACES[space].private) return push() // refused (the sidebar redraws): a Private tab must not leak into the other spaces, and a shared favorite must not lose its session by moving into the Private one
   if (t.fav && zone !== 'fav') retarget(t, space)
   place(t.id, zone, fid, idx)
 }
@@ -453,7 +453,9 @@ function onDownload(_, item, priv) {
   downloads.unshift(d); dls.set(d.id, item)
   item.on('updated', (_, st) => { d.received = item.getReceivedBytes(); d.total = item.getTotalBytes(); d.state = item.isPaused() ? 'paused' : st === 'interrupted' ? 'interrupted' : 'progressing'; pushSoon() })
   item.once('done', (_, st) => {
-    d.state = st; d.received = item.getReceivedBytes(); d.at = Date.now(); dls.delete(d.id)
+    dls.delete(d.id)
+    if (!downloads.includes(d)) { if (d.private && st !== 'completed') fs.rm(p, { force: true }, () => {}); return } // already removed from the list (the last Private tab closed): nothing to update, and a cancelled Private download leaves no partial file
+    d.state = st; d.received = item.getReceivedBytes(); d.at = Date.now()
     saveDownloads(); push(); setTimeout(push, 8000)
   })
   push()
@@ -480,16 +482,18 @@ function addBookmarks(list, from) { // one folder per bookmark folder; the tabs 
 }
 function addPasswords(list) {
   if (!safeStorage.isEncryptionAvailable()) return { error: 'This system can’t encrypt passwords, so Heliarc can’t store them.' }
-  const n = list.filter(savePw).length; push(); return { text: `Imported ${n} new or updated passwords.` }
+  const index = new Map(vault.toReversed().map(v => [vaultKey(v), v])), n = list.filter(p => savePw(p, index)).length; push(); return { text: `Imported ${n} new or updated passwords.` }
 }
 const importError = e => ({ error: /EPERM|EACCES|operation not permitted/i.test(e.message) ? 'macOS blocked access. Give Heliarc Full Disk Access (System Settings → Privacy & Security), or use the file buttons.' : e.message })
 const attempt = f => { try { return f() } catch (e) { return importError(e) } }
-function savePw(p) { // -> true when something was added or changed
-  const o = vault.find(v => v.origin === p.origin && v.user === p.user)
+const vaultKey = p => JSON.stringify([p.origin, p.user])
+function savePw(p, index) { // -> true when something was added or changed; `index` (vaultKey -> entry, from an import) saves a linear search per row
+  const o = index ? index.get(vaultKey(p)) : vault.find(v => v.origin === p.origin && v.user === p.user)
   if (o && decrypt(o.pass) === p.pass) return false
   const enc = safeStorage.encryptString(p.pass).toString('base64')
-  o ? o.pass = enc : vault.push({ id: nextId++, origin: p.origin, user: p.user, pass: enc })
-  store.save('vault', vault); return true
+  if (o) o.pass = enc
+  else { const v = { id: nextId++, origin: p.origin, user: p.user, pass: enc }; vault.push(v); index?.set(vaultKey(p), v) }
+  store.save('vault', vault); return true // throttled: a big import is written once, not once per row
 }
 
 // ---- spaces / privacy ----
@@ -618,7 +622,7 @@ async function loadBlocker() { // (re)loads the filter lists picked in Settings,
   blockerState = 'loading'; loading++; push()
   try {
     const b = await ElectronBlocker[LISTS[want]?.[1] || LISTS.adsTrackers[1]](fetch)
-    if (seq < blockerSeq) { loading--; return push() } // a newer pick already finished first: this older load must not replace it
+    if (seq < blockerSeq) return // a newer pick already finished first: this older load must not replace it
     blockerSeq = seq
     b.on('request-blocked', () => { blocked++; pushSoon() })
     const cosmetic = '@ghostery/adblocker/' // its cosmetic-filter handlers are global: ours skip the sites where ads are allowed
@@ -631,9 +635,10 @@ async function loadBlocker() { // (re)loads the filter lists picked in Settings,
     ipcMain.handle(cosmetic + 'inject-cosmetic-filters', (e, ...a) => adsAllowed(e.sender.getURL()) ? undefined : b.onInjectCosmeticFilters(e, ...a))
     ipcMain.handle(cosmetic + 'is-mutation-observer-enabled', e => adsAllowed(e.sender.getURL()) ? false : b.onIsMutationObserverEnabled(e))
     blocker = b; blockerState = 'on'; blockerList = want
-  } catch (e) { console.warn('ad blocker:', e.message); blockerState = blocker ? 'on' : 'error' }
-  if (!--loading && blocker) settings.adblockList = blockerList // once nothing is loading, Settings shows the list that really runs (a list that can't be loaded isn't shown as chosen)
-  push()
+  } catch (e) { console.warn('ad blocker:', e.message); blockerState = blocker ? 'on' : 'error' } finally {
+    if (!--loading && blocker) settings.adblockList = blockerList // once nothing is loading (whichever way this load ended), Settings shows the list that really runs (a list that can't be loaded isn't shown as chosen)
+    push()
+  }
 }
 async function setupPrivacy() {
   spaceSessions().forEach(setupSession)
@@ -765,7 +770,14 @@ app.whenReady().then(async () => {
   h('installExtension', installExtension)
   h('removeExtension', async id => { await ext.remove(id, extSessions()); push(); refreshExts() })
   // settings
-  h('setSetting', (k, v) => { if (['archiveHours', 'autoPip', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck'].includes(k) || (k === 'searchEngine' && Object.hasOwn(bangs.ENGINES, v)) || (k === 'adblockList' && Object.hasOwn(LISTS, v) && (settings[k] = v, loadBlocker(), false))) { settings[k] = v; if (k === 'fingerprint') spaceSessions().forEach(applyUserAgent); push() } })
+  h('setSetting', (k, v) => {
+    if (k === 'adblockList') { if (Object.hasOwn(LISTS, v)) { settings[k] = v; loadBlocker() } return } // loadBlocker pushes by itself
+    const plain = ['archiveHours', 'autoPip', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck'].includes(k)
+    if (!plain && !(k === 'searchEngine' && Object.hasOwn(bangs.ENGINES, v))) return
+    settings[k] = v
+    if (k === 'fingerprint') spaceSessions().forEach(applyUserAgent)
+    push()
+  })
   h('addRoute', (host, sp) => { host = hostOf('https://' + host.trim().replace(/^https?:\/\//, '')); if (host && SPACES[sp] && !SPACES[sp].private) setRoute(host, sp) })
   h('addBang', (trigger, url) => { // a bang is "!trigger some words" -> the URL, where %s stands for the words
     trigger = String(trigger).trim().replace(/^!/, '').toLowerCase(); url = String(url).trim()

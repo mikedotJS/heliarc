@@ -331,6 +331,9 @@ module.exports = async (a, ok) => {
       ok('exported bookmarks files (HTML) are read', JSON.stringify(I.bookmarks('file', hb).map(b => b.folder)) === '["","Dev"]')
       const pw = I.passwords('name,url,username,password,note\nGitHub,https://github.com/login,me@x.com,pw1,\nBad,nope,u,p,\n'), pw2 = I.passwords('Title,URL,Username,Password,Notes,OTPAuth\nApple,https://appleid.apple.com/,a@b.c,"p,w",,')
       ok('passwords CSV from Chrome and Safari are read', pw.length === 1 && pw[0].origin === 'https://github.com' && pw2.length === 1 && pw2[0].pass === 'p,w', JSON.stringify([pw, pw2]))
+      { const v0 = S.vault().length, row = (user, pass) => ({ origin: 'https://bulk.example', user, pass }), b1 = S.addPasswords([row('a', '1'), row('a', '1'), row('b', '2')]), b2 = S.addPasswords([row('a', '3'), row('b', '2')])
+        ok('an imported passwords list adds new rows once, updates changed ones, and skips identical ones', /Imported 2 /.test(b1.text) && /Imported 1 /.test(b2.text) && S.vault().length === v0 + 2, b1.text + ' / ' + b2.text)
+        for (let i = S.vault().length - 1; i >= 0; i--) if (S.vault()[i].origin === 'https://bulk.example') S.vault().splice(i, 1) }
       const before = S.history().length; const r1 = S.addHistory([...ch, ...fh]); const r2 = S.addHistory(ch)
       ok('imported history is merged without duplicates', S.history().length === before + 2 && /Imported 0/.test(r2.text), r1.text + ' / ' + r2.text)
       const nf = S.folders().length, nt = a.tabs().length; S.addBookmarks(cbm, 'Chrome')

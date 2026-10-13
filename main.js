@@ -50,6 +50,7 @@ const byId = id => tabs.find(t => t.id === id)
 const cur = () => byId(active)
 const isShown = id => id === active || !!split?.includes(id)
 const tabOf = wc => tabs.find(t => t.view?.webContents === wc)
+const pageOf = wc => tabOf(wc) || (peek?.view.webContents === wc ? peek : little?.view.webContents === wc ? little : null) // a tab, or the Peek / Little window (they have a space too)
 const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } }
 const zoneOf = t => t.fav ? 'fav' : t.folder ? 'f' + t.folder : t.pinned ? 'pinned' : 'list'
 const snapshot = () => ({
@@ -100,10 +101,12 @@ function leaveFullscreen(tab) {
   if (fsTab !== tab) return
   fsTab = null; tab.view?.setBorderRadius(12); layout()
 }
+const pagePrefs = partition => ({ partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD, additionalArguments: settings.fingerprint ? ['--heliarc-fp'] : [] }) // the same for tabs, Peek and the Little window
+const hardenWc = wc => { if (settings.webrtcProtect) wc.setWebRTCIPHandlingPolicy('default_public_interface_only') } // WebRTC doesn't reveal the local network address
 function makeView(tab) {
-  const view = new WebContentsView({ webPreferences: { partition: SPACES[tab.space].partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD, additionalArguments: settings.fingerprint ? ['--heliarc-fp'] : [] } })
+  const view = new WebContentsView({ webPreferences: pagePrefs(SPACES[tab.space].partition) })
   const wc = view.webContents
-  if (settings.webrtcProtect) wc.setWebRTCIPHandlingPolicy('default_public_interface_only') // WebRTC doesn't reveal the local network address
+  hardenWc(wc)
   view.setBorderRadius(12)
   tab.view = view; tab.asleep = false
   wc.setWindowOpenHandler(({ url, disposition, features }) => { disposition === 'new-window' && !features ? openPeek(url) : newTab(url); return { action: 'deny' } }) // Shift+click = Peek
@@ -298,6 +301,7 @@ function sleep(id) { // hibernate: free the page, keep the tab in the list
 }
 function go(input) {
   const t = cur(); if (!t) return
+  const r = routeFor(resolve(input)); if (r !== null && r !== t.space && !SPACES[t.space].private) return newTab(input) // a routed site opens in its own space
   t.error = null; t.url = resolve(input)
   const up = settings.httpsOnly && privacy.upgrade(t.url); if (up) t.upgraded = up; t.upN = 0
   t.view ? t.view.webContents.loadURL(up || t.url) : makeView(t)
@@ -381,10 +385,10 @@ function peekSample() { // the top bar takes the colour the page has at its top 
 }
 function openPeek(url) {
   closePeek()
-  const view = new WebContentsView({ webPreferences: { partition: SPACES[cur()?.space ?? space].partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD } })
+  const sp = cur()?.space ?? space, view = new WebContentsView({ webPreferences: pagePrefs(SPACES[sp].partition) })
   const wc = view.webContents
-  view.setBorderRadius(12)
-  peek = { view }
+  hardenWc(wc); view.setBorderRadius(12)
+  peek = { view, space: sp }
   wc.setWindowOpenHandler(({ url }) => { wc.loadURL(url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, peekSend)
   for (const e of ['did-stop-loading', 'did-navigate-in-page', 'dom-ready']) wc.on(e, peekSample)
@@ -406,14 +410,20 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   const area = screen.getDisplayMatching(win.getBounds()).workArea, width = Math.min(1100, Math.max(760, Math.round(area.width * .55))), height = Math.min(900, Math.max(560, Math.round(area.height * .78)))
   const lw = new BaseWindow({ width, height, x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2), minWidth: 480, minHeight: 360, title: 'Heliarc', icon: ICON, backgroundColor: '#2a2a33',
     ...(process.platform === 'darwin' && { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 16 } }) })
-  const bar = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } })
-  const view = new WebContentsView({ webPreferences: { partition: SPACES[0].partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD } })
+  const sp = routeFor(resolve(url)) ?? 0, bar = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } })
+  const view = new WebContentsView({ webPreferences: pagePrefs(SPACES[sp].partition) })
   const wc = view.webContents
-  view.setBorderRadius(12)
-  little = { win: lw, view, bar }
+  hardenWc(wc); view.setBorderRadius(12)
+  little = { win: lw, view, bar, space: sp }
+  const LITTLE = { closeTab: () => lw.close(), reload: () => wc.reload(), zoomIn: () => wc.setZoomLevel(wc.getZoomLevel() + .5), zoomOut: () => wc.setZoomLevel(wc.getZoomLevel() - .5), zoomReset: () => wc.setZoomLevel(0), copyLink: () => clipboard.writeText(wc.getURL()), devtools: () => wc.isDevToolsOpened() ? wc.closeDevTools() : wc.openDevTools({ mode: 'detach' }), print: () => wc.print() }
+  wc.on('before-input-event', (e, i) => { // the shortcuts that act on the page itself
+    if (i.type !== 'keyDown' || recording) return
+    const c = keys.combo(i), a = c && keys.actionFor(keys.resolve(settings.shortcuts), c)
+    if (LITTLE[a]) { e.preventDefault(); LITTLE[a]() }
+  })
   lw.contentView.addChildView(bar); lw.contentView.addChildView(view) // the frame sits behind the page
   const fit = () => { const { width, height } = lw.getContentBounds(); bar.setBounds({ x: 0, y: 0, width, height }); view.setBounds({ x: GAP, y: LITTLEBAR, width: width - GAP * 2, height: height - LITTLEBAR - GAP }) }
-  const send = () => !bar.webContents.isDestroyed() && bar.webContents.send('little', { title: wc.getTitle(), url: wc.getURL(), loading: wc.isLoading(), c1: SPACES[0].c1, c2: SPACES[0].c2 })
+  const send = () => !bar.webContents.isDestroyed() && bar.webContents.send('little', { title: wc.getTitle(), url: wc.getURL(), loading: wc.isLoading(), c1: SPACES[sp].c1, c2: SPACES[sp].c2 })
   fit(); lw.on('resize', fit)
   wc.setWindowOpenHandler(({ url }) => { wc.loadURL(url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, send)
@@ -687,7 +697,7 @@ app.whenReady().then(async () => {
   win.on('resize', layout)
   win.on('enter-full-screen', layout); win.on('leave-full-screen', layout) // the page follows the window
   win.on('closed', () => app.quit())
-  setupPrivacy()
+  await Promise.race([setupPrivacy(), new Promise(r => setTimeout(r, 3000))])
 
   const h = (n, f) => ipcMain.handle(n, (_, ...a) => f(...a))
   h('new', () => openCmd('new')); h('edit', () => openCmd('edit')); h('closeCmd', closeCmd)
@@ -792,16 +802,21 @@ app.whenReady().then(async () => {
     wc.on('did-navigate', slideIn); wc.on('did-navigate-in-page', slideIn); setTimeout(() => { wc.off('did-navigate', slideIn); wc.off('did-navigate-in-page', slideIn) }, 5000)
     dir === 'back' ? h.goBack() : h.goForward(); return true
   })
-  ipcMain.on('pw:captured', (e, { user, pass }) => {
-    const t = tabOf(e.sender), origin = senderOrigin(e)
+  ipcMain.on('pw:captured', async (e, { user, pass }) => {
+    const t = pageOf(e.sender), origin = senderOrigin(e)
     if (!t || SPACES[t.space].private || !origin || !pass || !safeStorage.isEncryptionAvailable() || settings.pwNever.includes(origin)) return
     const old = vault.find(v => v.origin === origin && v.user === user)
     if (old && decrypt(old.pass) === pass) return
+    if (!tabs.includes(t)) { // Peek / Little have no sidebar bar: a native question instead
+      const i = await choose(`${old ? 'Update' : 'Save'} the password for ${user || 'this login'} on ${privacy.host(origin)}?`, [old ? 'Update' : 'Save', 'Never for this site'], { cancel: 'Not now', safe: true })
+      if (i === 0) savePw({ origin, user, pass }); else if (i === 1) { settings.pwNever.push(origin); push() }
+      return
+    }
     pwPending = { tab: t.id, origin, user, pass, update: !!old }; push()
     const mine = pwPending; setTimeout(() => { if (pwPending === mine) { pwPending = null; push() } }, 90e3)
   })
-  ipcMain.handle('pw:get', e => { const o = senderOrigin(e); return o && tabOf(e.sender) ? vault.filter(v => v.origin === o).map(v => ({ user: v.user, pass: decrypt(v.pass) })) : [] })
-  ipcMain.handle('profile:get', e => tabOf(e.sender) ? profile : null)
+  ipcMain.handle('pw:get', e => { const o = senderOrigin(e); return o && pageOf(e.sender) ? vault.filter(v => v.origin === o).map(v => ({ user: v.user, pass: decrypt(v.pass) })) : [] })
+  ipcMain.handle('profile:get', e => pageOf(e.sender) ? profile : null)
 
   await ext.loadInstalled(extSessions()) // before any page loads, so content scripts reach restored tabs
   refreshExts()

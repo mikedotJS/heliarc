@@ -375,9 +375,19 @@ module.exports = async (a, ok) => {
     a.switchSpace(0)
     S.setRoute('127.0.0.1', 2); const r = a.newTab(base + '/second'); await sleep(300)
     ok('links to a routed site open in its space', r.space === 2 && S.space() === 2, 'space=' + r.space); S.settings().routes = []; a.switchSpace(0)
+    S.setRoute('localhost', 2); a.switchSpace(0); const here = await open('/'); const nTabs = a.tabs().length
+    a.go('http://localhost:' + base.split(':')[2] + '/second'); await sleep(600)
+    ok('a typed address to a routed site opens in that site’s space', a.tabs().length === nTabs + 1 && a.tabs().at(-1).space === 2 && here.url === base + '/', 'tabs ' + nTabs + '→' + a.tabs().length + ' space ' + a.tabs().at(-1).space)
+    S.settings().routes = []; a.switchSpace(0)
     // peek
     const t = await open('/'); S.openPeek(base + '/second'); await until(async () => S.peek() && !S.peek().view.webContents.isLoading() && S.peek().view.webContents.getTitle() === 'Second page')
     ok('peek opens a floating page', !!S.peek() && S.peek().view.webContents.getTitle() === 'Second page')
+    ok('peek is hardened like a tab (WebRTC, fingerprint)', S.peek().view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only' && await js(S.peek().view.webContents, 'navigator.hardwareConcurrency === 4'))
+    S.openPeek(base + '/login'); await until(async () => S.peek() && S.peek().view.webContents.getTitle() === 'Login'); await sleep(500)
+    { const pwc = S.peek().view.webContents, p = await js(pwc, "(() => { const b = document.querySelector('#u').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) } })()")
+      pwc.focus(); pwc.sendInputEvent({ type: 'mouseMove', ...p }); pwc.sendInputEvent({ type: 'mouseDown', ...p, button: 'left', clickCount: 1 }); pwc.sendInputEvent({ type: 'mouseUp', ...p, button: 'left', clickCount: 1 }); await sleep(900)
+      ok('a saved password fills in peek too', S.vault().length === 0 || await js(pwc, "document.getElementById('u').value") === 'michael', await js(pwc, "document.getElementById('u').value")) }
+    S.openPeek(base + '/second'); await until(async () => S.peek() && S.peek().view.webContents.getTitle() === 'Second page')
     await sleep(500); await snap(S.peekUi(), 'peek-ui'); await snap(S.peek().view, 'peek-page')
     ok('peek is centered over the page', (() => { const b = S.peek().view.getBounds(), c = S.content(); return b.x > c.x && b.y > c.y && b.x + b.width < c.x + c.w })())
     S.openPeek(base + '/darktop'); await sleep(1500)
@@ -395,11 +405,18 @@ module.exports = async (a, ok) => {
     // little window
     S.openExternal(base + '/second'); await until(async () => S.little() && S.little().view.webContents.getTitle() === 'Second page')
     ok('link from another app opens in the little window', !!S.little() && S.little().view.webContents.getURL() === base + '/second')
+    ok('the little window is hardened like a tab (WebRTC, fingerprint)', S.little().view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only' && await js(S.little().view.webContents, 'navigator.hardwareConcurrency === 4'))
     await sleep(500); await snap(S.little().bar, 'little-bar')
     const nn = a.tabs().length, lv = S.little().view.webContents, lb = S.little().bar.webContents
     await js(lb, `document.querySelector('#mv').click()`); await sleep(800)
     ok('little window moves the page to the main window', S.little() === null && a.tabs().length === nn + 1 && a.cur().url === base + '/second')
     ok('closed little window frees its pages', lv.isDestroyed() && lb.isDestroyed())
+    { const MOD = process.platform === 'darwin' ? 'meta' : 'control'
+      S.openExternal(base + '/second'); await until(async () => S.little() && S.little().view.webContents.getTitle() === 'Second page'); const lw = S.little().view.webContents
+      lw.setZoomLevel(1); lw.focus(); lw.sendInputEvent({ type: 'keyDown', keyCode: '0', modifiers: [MOD] }); await sleep(400)
+      ok('shortcuts work in the little window (actual size)', lw.getZoomLevel() === 0, String(lw.getZoomLevel()))
+      lw.sendInputEvent({ type: 'keyDown', keyCode: 'W', modifiers: [MOD] }); await sleep(700)
+      ok('and so does close', S.little() === null) }
     S.settings().littleExternal = false; S.openExternal(base + '/'); await sleep(500); ok('little window can be turned off', S.little() === null && a.cur().url === base + '/'); S.settings().littleExternal = true
   })
 

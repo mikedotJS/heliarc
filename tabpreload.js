@@ -99,7 +99,7 @@ if (window === top) {
 }
 
 // fingerprint protection: every visitor reports the same common hardware, and the page can't tell it's a plain Chrome
-if (process.argv.includes('--heliarc-fp')) {
+if (process.argv.includes('--heliarc-fp') && ipcRenderer.sendSync('fp:site')) {
   require('electron').contextBridge.executeInMainWorld({ func: () => {
     for (const [k, v] of [['hardwareConcurrency', 4], ['deviceMemory', 8]]) try { Object.defineProperty(Navigator.prototype, k, { get: () => v, configurable: true }) } catch {}
     // Electron leaves window.chrome empty, Chrome doesn't

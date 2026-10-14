@@ -43,7 +43,7 @@ const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } cat
 const size = b => b > 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB'
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 const ago = at => { const m = Math.round((at - Date.now()) / 6e4); return Math.abs(m) < 60 ? rtf.format(m, 'minute') : Math.abs(m) < 1440 ? rtf.format(Math.round(m / 60), 'hour') : rtf.format(Math.round(m / 1440), 'day') }
-const SECTIONS = [['downloads', 'Downloads', 'download'], ['media', 'Media', 'image'], ['archive', 'Archive', 'archive'], ['history', 'History', 'history'], ['passwords', 'Passwords', 'key-round'], ['extensions', 'Extensions', 'puzzle'], ['settings', 'Settings', 'settings']]
+const SECTIONS = [['downloads', 'Downloads', 'download'], ['media', 'Media', 'image'], ['archive', 'Archive', 'archive'], ['history', 'History', 'history'], ['passwords', 'Passwords', 'key-round'], ['extensions', 'Extensions', 'puzzle'], ['protections', 'Site protections', 'shield-check'], ['settings', 'Settings', 'settings']]
 const MEDIA = /^(image|video|audio)\//, MEDIAEXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|mp4|webm|mov|mkv|mp3|wav|ogg|m4a|flac)$/i
 let state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, detected = []
 const fileUrl = p => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '').split('/').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:')
@@ -95,10 +95,26 @@ function render() {
       <div class="line"><input class="ds-field" id="extin" placeholder="Chrome Web Store link or extension ID" style="flex:1" spellcheck="false" ${installing ? 'disabled' : ''}><button class="ds-btn sm" data-a="installExt" ${installing ? 'disabled' : ''}>${installing ? 'Installing…' : 'Install'}</button></div>
       <div class="msg ${note?.cls || ''}" style="padding:0 10px 8px">${esc(note?.text || '')}</div>` +
       (stateMsg() ?? (data.length ? data.map(x => x.failed ? `<div class="row"><span class="ph err">${icon('triangle-alert', 12)}</span><div class="mt"><b>${esc(x.name)}</b><small>Couldn’t start: ${esc(x.error)}</small></div><span class="acts"><button data-a="retryExt" data-eid="${esc(x.id)}" title="Try again">${icon('rotate-cw', 15)}</button><button data-a="removeExt" data-eid="${esc(x.id)}" title="Remove">${icon('trash-2', 15)}</button></span></div>` : `<div class="row"><span class="ph">${icon('puzzle', 12)}</span><div class="mt"><b>${esc(x.name)}</b><small>Version ${esc(x.version)} · ${esc(x.id)}</small></div><span class="acts"><button data-a="removeExt" data-eid="${esc(x.id)}" title="Remove">${icon('trash-2', 15)}</button></span></div>`).join('') : '<div class="empty">No extensions installed.</div>'))
+  } else if (section === 'protections') {
+    body = protections(S)
   } else body = settings(S)
   if (section === 'downloads' && note?.dl) body = `<div class="msg bad" style="padding:0 10px 8px">${esc(note.dl)}</div>` + body
   $('#head').innerHTML = head; $('#body').innerHTML = body
   if (section === 'history') { const i = $('#q'); i.oninput = () => { q = i.value; clearTimeout(i.t); i.t = setTimeout(load, 150) }; if (document.activeElement !== i && q) { i.focus(); i.setSelectionRange(q.length, q.length) } }
+}
+// what the user can turn off for one site: [kind, the setting listing those sites, the global switch, name, what it does]
+const PROT = [
+  ['ads', 'adblockOff', null, 'Ad and tracker blocker', 'Blocks ads and trackers on the page'],
+  ['cookies', 'cookiesOk', 'blockThirdPartyCookies', 'Third-party cookies', 'Stops embedded content from following you from site to site. Some sign-ins need them'],
+  ['fingerprint', 'fingerprintOff', 'fingerprint', 'Same hardware as everyone', 'Hides your real processor and memory from the site. Turn off if a page misbehaves'],
+  ['webrtc', 'webrtcOff', 'webrtcProtect', 'Hide my local network address', 'In calls and screen sharing. Turn off if a call won’t connect'],
+]
+function protections(S) {
+  const st = S.settings, h = S.adHost, global = p => p[2] && !st[p[2]]
+  const here = h ? PROT.map(p => `<div class="line"><label>${p[3]}<small>${global(p) ? 'Turned off for every site in Settings' : p[4]}</small></label><input type="checkbox" class="ds-switch" data-a="prot" data-kind="${p[0]}" data-host="${esc(h)}" ${st[p[1]].includes(h) ? '' : 'checked'} ${global(p) ? 'disabled' : ''}></div>`).join('') : '<div class="empty">Open a website to see its protections.</div>'
+  const hosts = [...new Set(PROT.flatMap(p => st[p[1]]))].sort()
+  return `<section><h3>${h ? esc(h) : 'This site'}</h3><div class="msg">On means protected. Changing one reloads the page.</div>${here}</section>
+    <section><h3>Sites with something turned off</h3>${hosts.length ? hosts.map(x => `<div class="line"><label>${esc(x)}<small>Off: ${PROT.filter(p => st[p[1]].includes(x)).map(p => p[3].toLowerCase()).join(', ')}</small></label><button class="ds-btn sm" data-a="protReset" data-host="${esc(x)}">Turn all back on</button></div>`).join('') : '<div class="empty">None. Every protection is on everywhere.</div>'}</section>`
 }
 function settings(S) {
   const st = S.settings, p = data || {}
@@ -113,7 +129,7 @@ function settings(S) {
     <div class="line"><label>Updates</label><button class="ds-btn sm" data-a="checkUpdate">Check now</button></div><div class="msg ${note?.update?.error ? 'bad' : note?.update ? 'ok' : ''}">${esc(note?.update?.error || note?.update?.text || '')}</div>
     <div class="line"><label>Default browser</label><button class="ds-btn sm" data-a="defaultBrowser">Make Heliarc the default</button></div><div class="msg ${note?.cls || ''}">${esc(note?.text || '')}</div></section>
   <section><h3>Privacy</h3>
-    ${toggle('blockThirdPartyCookies', 'Block third-party cookies', 'Embedded content can no longer follow you from site to site')}
+    ${toggle('blockThirdPartyCookies', 'Block third-party cookies', 'Embedded content can no longer follow you from site to site. Some sign-ins need them: turn them off for one site from the shield at the bottom of the sidebar')}
     ${toggle('httpsOnly', 'Always use HTTPS', 'http:// addresses are upgraded; a site without HTTPS still opens, in plain http, for that tab')}
     ${toggle('webrtcProtect', 'Hide your local address from WebRTC', 'Applies to tabs opened from now on')}
     ${toggle('fingerprint', 'Limit browser fingerprinting', 'Sites see a plain Chrome with common hardware. The browser identity changes right away; the hardware values apply to tabs opened from now on')}
@@ -157,6 +173,7 @@ const ACT = {
   delHistory: async el => { await api.call('delHistory', +el.dataset.at); load() }, delPassword: async el => { await api.call('delPassword', did(el)); load() },
   importRun: async el => { note = { import: { text: 'Importing…' } }; render(); note = { import: await api.call('importRun', el.dataset.id, el.dataset.what) }; render() },
   importFile: async el => { const r = await api.call('importFile', el.dataset.what); note = r.canceled ? null : { import: r }; render() },
+  prot: el => api.call('toggleSite', el.dataset.kind, el.dataset.host), protReset: el => api.call('resetSite', el.dataset.host),
   allowPw: async el => { await api.call('allowPw', el.dataset.o) },
   checkUpdate: async () => { note = { update: { text: 'Checking…' } }; render(); note = { update: await api.call('checkUpdate') }; render() },
   spaceIcon: el => api.call('editSpace', +el.dataset.sp, { icon: el.dataset.icon }),

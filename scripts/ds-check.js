@@ -26,6 +26,7 @@ if (process.argv.includes('--inventory')) {
   process.exit(0)
 }
 for (const f of MIGRATED) for (const x of found(f)) problems.push(`${f}: ${x} is written by hand, use a token`)
+for (const f of MIGRATED.filter(x => x.endsWith('.html') && !read(x).includes('href="common.css"'))) problems.push(`${f}: does not load common.css, so none of its tokens exist`)
 for (const f of MIGRATED.filter(x => x.endsWith('.html'))) for (const sc of read(f).matchAll(/<script>([\s\S]*?)<\/script>/g)) // colours written inside a screen's script too
   for (const x of sc[1].match(/(['"`])#[0-9a-f]{3,8}\1|\brgba?\([^)]*\)/gi) || []) problems.push(`${f}: ${x} is written by hand in a script, use a token`)
 if (problems.length) { console.error(problems.join('\n')); process.exit(1) }

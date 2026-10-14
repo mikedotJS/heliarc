@@ -13,6 +13,8 @@ const PAGES = {
   '/darktop': '<title>Dark top</title><body style="margin:0;background:#112233;color:#fff"><p>night</p>',
   '/profile': '<title>Profile</title><form><input id=em autocomplete=email><input id=fn autocomplete=given-name><input id=ci autocomplete=address-level2></form>',
   '/video': VIDEO,
+  '/popup-opener': '<title>Popup opener</title><script>window.got = null; addEventListener("message", e => got = e.data)</script>',
+  '/popup-child': '<title>Popup</title><script>opener ? opener.postMessage(JSON.stringify({ hi: 1, node: typeof require + typeof process }), "*") : document.title = "no opener"; setTimeout(() => close(), 300)</script>',
 }
 const shots = path.join(os.tmpdir(), 'heliarc-shots')
 
@@ -200,6 +202,20 @@ module.exports = async (a, ok) => {
     S.settings().blockThirdPartyCookies = false; const emb2 = await open('/embed3p'); await sleep(800) // control: with the setting off, the same embed does store its cookie
     ok('(control) the cookie is stored when the setting is off', (await ses0.cookies.get({ name: 'tp', domain: 'localhost' })).length === 1)
     S.settings().blockThirdPartyCookies = true; await ses0.cookies.remove('http://localhost:' + base.split(':')[2], 'tp').catch(() => {})
+    // third-party cookies can be allowed on one site and stay blocked on the others
+    S.settings().cookiesOk = ['example.org']; const emb3 = await open('/embed3p'); await sleep(800)
+    ok('allowing another site changes nothing here', (await ses0.cookies.get({ name: 'tp', domain: 'localhost' })).length === 0, 'cookies stored: ' + (await ses0.cookies.get({ name: 'tp', domain: 'localhost' })).length)
+    S.settings().cookiesOk = []; await js(ui(), "api.call('toggleSite', 'cookies')"); await sleep(1500)
+    ok('third-party cookies can be turned off for this site, and the sidebar says so', S.settings().cookiesOk.join() === '127.0.0.1' && (await ses0.cookies.get({ name: 'tp', domain: 'localhost' })).length === 1 && /1 protection off on 127\.0\.0\.1/.test(await js(ui(), "document.querySelector('#shield').innerText")), JSON.stringify(S.settings().cookiesOk))
+    await js(panel(), "api.call('toggleSite', 'cookies', '127.0.0.1')"); await ses0.cookies.remove('http://localhost:' + base.split(':')[2], 'tp').catch(() => {})
+    ok('and blocked again from Settings', S.settings().cookiesOk.length === 0); a.closeTab(emb3.id)
+    // a sign-in popup (window.open with a size) stays linked to the page that opened it; a plain link still opens a tab
+    const po = await open('/popup-opener'), n0 = a.tabs().length
+    await js(po.view.webContents, "void window.open('/popup-child', 'signin', 'width=420,height=560')")
+    ok('a sign-in popup reports back to the page that opened it', await until(async () => await js(po.view.webContents, 'window.got') !== null) && JSON.parse(await js(po.view.webContents, 'window.got')).hi === 1, String(await js(po.view.webContents, 'window.got')))
+    ok('as a window of its own, not a tab, and sandboxed like a page', a.tabs().length === n0 && JSON.parse(await js(po.view.webContents, 'window.got')).node === 'undefinedundefined', n0 + ' / ' + a.tabs().length)
+    const known = new Set(a.tabs().map(x => x.id)); await js(po.view.webContents, "void window.open('/second', '_blank')"); await sleep(800)
+    ok('a plain link or window.open without a size still opens a tab', a.tabs().length === n0 + 1, String(a.tabs().length)); for (const t of a.tabs().filter(x => !known.has(x.id))) a.closeTab(t.id); a.closeTab(po.id)
     a.closeTab(emb.id); a.closeTab(emb2.id)
     // search engine and custom bangs
     const bg = require('./bangs'), mine = [{ trigger: 'npm', url: 'https://www.npmjs.com/search?q=%s' }]
@@ -221,6 +237,12 @@ module.exports = async (a, ok) => {
     ok('a site the user said "never" to for passwords can be allowed again', !S.settings().pwNever.includes('https://never.example'))
     ok('the bang list has the built-in ones, and your own first and without duplicates', (l => l[0].trigger === 'g' && l[0].url === 'https://example.com/?q=%s' && l.filter(x => x.trigger === 'g').length === 1 && l.find(x => x.trigger === 'yt').name === 'YouTube' && l.find(x => x.trigger === 'npm'))(bg.list([{ trigger: 'g', url: 'https://example.com/?q=%s' }])))
     ok('the new built-in bangs work', bg.resolve('!so left pad') === 'https://stackoverflow.com/search?q=left%20pad' && bg.resolve('!gm paris') === 'https://www.google.com/maps/search/paris')
+    // a file on this computer opens as a page: by its path in the address bar, and from the system (Open with…)
+    const page = path.join(os.tmpdir(), 'heliarc test page.html'); fs.writeFileSync(page, '<title>Opened from disk</title><p>local file</p>')
+    ok('a path to a file on this computer opens it instead of searching', bg.resolve(page) === require('url').pathToFileURL(page).href && bg.resolve('"' + page + '"') === bg.resolve(page) && bg.resolve(os.tmpdir() + '/no such file.html').startsWith('https://search.'), bg.resolve(page))
+    ok('and the system can hand over web page files only', bg.localFile(page, true) === bg.resolve(page) && bg.localFile(process.execPath, true) === null && bg.localFile('page.html', true) === null)
+    const fileTab = a.newTab(page); await sleep(1500); await until(async () => fileTab.title === 'Opened from disk')
+    ok('the page shows', fileTab.title === 'Opened from disk', fileTab.title); a.closeTab(fileTab.id); fs.rmSync(page, { force: true })
     a.openCmd('new'); await sleep(900)
     const typed = async v => js(a.cmd().webContents, `(async () => { const i = document.getElementById('in'); i.value = ${JSON.stringify(v)}; i.oninput(); await new Promise(r => setTimeout(r, 300)); return [...document.querySelectorAll('.row')].map(r => r.textContent) })()`)
     const listed = await typed('!yt'), going = await typed('!yt lofi')
@@ -263,10 +285,24 @@ module.exports = async (a, ok) => {
     ok('built-in bangs still work', bg.resolve('!w cats') === 'https://en.wikipedia.org/w/index.php?search=cats')
     // ads can be allowed on one site
     const sitePage = await open('/'); a.activate(sitePage.id); await sleep(300)
-    await js(ui(), "api.call('toggleSiteAds')"); await sleep(400)
+    await js(ui(), "api.call('toggleSite', 'ads')"); await sleep(400)
     ok('ads can be allowed on the current site', S.settings().adblockOff.includes('127.0.0.1'), JSON.stringify(S.settings().adblockOff))
-    await js(ui(), "api.call('toggleSiteAds')"); await sleep(400)
+    await js(ui(), "api.call('toggleSite', 'ads')"); await sleep(400)
     ok('and blocked again', !S.settings().adblockOff.includes('127.0.0.1'))
+    // the Site protections window: this site's switches and every site with something turned off
+    const hw = () => js(sitePage.view.webContents, 'navigator.hardwareConcurrency')
+    ok('the hardware is masked by default', await hw() === 4, String(await hw()))
+    await js(ui(), "api.call('openPanel', 'protections')"); await until(async () => js(panel(), "document.querySelectorAll('[data-a=prot]').length === 4"))
+    ok('the window lists the four protections of the current site, all on', await js(panel(), "[...document.querySelectorAll('[data-a=prot]')].every(i => i.checked) && /127\\.0\\.0\\.1/.test(document.body.innerText)"))
+    await js(panel(), "document.querySelector('[data-kind=fingerprint]').click()"); await sleep(1500)
+    ok('turning one off applies to that site only', S.settings().fingerprintOff.join() === '127.0.0.1' && await hw() === require('os').cpus().length && S.settings().adblockOff.length === 0, String(await hw()))
+    await js(panel(), "document.querySelector('[data-kind=webrtc]').click()"); await sleep(1500)
+    ok('WebRTC follows the site it is on', sitePage.view.webContents.getWebRTCIPHandlingPolicy() === 'default', sitePage.view.webContents.getWebRTCIPHandlingPolicy())
+    ok('the sidebar counts what is off here', /2 protections off on 127\.0\.0\.1/.test(await js(ui(), "document.querySelector('#shield').innerText")), await js(ui(), "document.querySelector('#shield').innerText"))
+    ok('and the site is listed with what is off', await until(async () => js(panel(), "/Off: same hardware as everyone, hide my local network address/.test(document.body.innerText)")))
+    await js(panel(), "document.querySelector('[data-a=protReset]').click()"); await sleep(1500)
+    ok('turning everything back on resets the site', S.settings().fingerprintOff.length === 0 && S.settings().webrtcOff.length === 0 && await hw() === 4 && sitePage.view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only')
+    S.closePanel(); await sleep(300)
     a.closeTab(sitePage.id)
     // site permissions: ask once, remember, and let the user change their mind
     const { dialog } = require('electron'), realBox = dialog.showMessageBox; let asked = []
@@ -387,6 +423,8 @@ module.exports = async (a, ok) => {
     }
     const dsTab = a.newTab(require('url').pathToFileURL(path.join(__dirname, 'ui', 'design-system.html')).href); await sleep(1500)
     const dsWc = dsTab.view.webContents, pageBg = () => dsWc.executeJavaScript("getComputedStyle(document.body).backgroundColor")
+    const ntWc = a.newTab(''); await sleep(1500); await until(async () => /New tab/.test(ntWc.title) || ntWc.view)
+    ok('the new tab page is styled by the design system (dark background, not the browser default)', await until(async () => js(ntWc.view.webContents, "getComputedStyle(document.body).backgroundColor === 'rgb(22, 22, 26)'")), await js(ntWc.view.webContents, 'getComputedStyle(document.body).backgroundColor')); a.closeTab(ntWc.id)
     ok('the showcase page shows every colour token and every component', await dsWc.executeJavaScript("[document.querySelectorAll('#colours .sw').length, document.querySelectorAll('.ds-btn').length >= 8, !!document.querySelector('.ds-field.is-error'), !!document.querySelector('.ds-check input:checked'), !!document.querySelector('.ds-modal')].join()") === '12,true,true,true,true')
     await dsWc.executeJavaScript("document.documentElement.dataset.theme = 'light'"); const light = await pageBg()
     await dsWc.executeJavaScript("document.documentElement.dataset.theme = 'dark'"); const dark = await pageBg()

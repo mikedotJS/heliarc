@@ -34,7 +34,7 @@ const SPACES = [ // one browser profile (cookies, logins) per space
 ]
 const PRIVATE = SPACES.findIndex(s => s.private)
 const ZOOMS = [.25, .33, .5, .67, .75, .8, .9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
-const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true }
+const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true }
 // Picture-in-picture for the biggest playing, unmuted video (needs a user gesture, which executeJavaScript can claim)
 const PIP_ON = `(async () => { const v = [...document.querySelectorAll('video')].filter(v => !v.paused && !v.ended && !v.muted && v.readyState > 2 && v.videoWidth && !v.disablePictureInPicture).sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0]; if (!v || document.pictureInPictureElement) return false; await v.requestPictureInPicture(); return true })()`
 const PIP_OFF = `document.pictureInPictureElement && document.exitPictureInPicture()`
@@ -67,7 +67,7 @@ const push = () => {
   const listed = id => { const t = byId(id); return !!t && (!SPACES[t.space].private || space === PRIVATE) } // what the UI is sent must exist in the tab list it receives
   const c = listed(active) ? cur() : null, nav = c?.view?.webContents.navigationHistory
   const s = {
-    active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), adsAllowed: adsAllowed(c?.url || ''), canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
+    active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), siteOff: Object.values(SITE_OFF).filter(f => settings[f].includes(privacy.host(c?.url || ''))).length, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
     sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.filter(d => !d.private || space === PRIVATE).slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: listed(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
@@ -115,7 +115,18 @@ const lockScreen = wc => { // Heliarc's own screens (the ones with the bridge to
   wc.on('will-navigate', (e, u) => { if (!u.startsWith(require('url').pathToFileURL(path.join(__dirname, 'ui')).href)) e.preventDefault() })
 }
 const pagePrefs = partition => ({ partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD, additionalArguments: settings.fingerprint ? ['--heliarc-fp'] : [] }) // the same for tabs, Peek and the Little window
-const hardenWc = wc => { if (settings.webrtcProtect) wc.setWebRTCIPHandlingPolicy('default_public_interface_only') } // WebRTC doesn't reveal the local network address
+// window.open(url, name, 'width=420,height=560'): a sign-in or payment window. It must stay linked to the page that opened it (it reports back with postMessage / window.opener),
+// so it is a real window, not a tab. Only the tab in front can open one, and only a sized popup: plain links keep opening tabs (Shift+click = Peek)
+const POPUP = /\b(width|height|popup)\b/i
+const popupHandler = tab => ({ url, disposition, features }) => {
+  if (disposition === 'new-window' && POPUP.test(features) && tab.id === active) return { action: 'allow', overrideBrowserWindowOptions: { title: 'Heliarc', icon: ICON, autoHideMenuBar: true } }
+  disposition === 'new-window' && !features ? openPeek(url) : newTab(url); return { action: 'deny' }
+}
+// WebRTC doesn't reveal the local network address, except on the sites where the user turned that off (checked again at each navigation)
+const webrtcPolicy = wc => settings.webrtcProtect && !settings.webrtcOff.includes(privacy.host(wc.getURL())) ? 'default_public_interface_only' : 'default'
+const hardenWc = wc => { wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc)); wc.on('did-navigate', () => wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc))) }
+// the protections the user can turn off for one site: name -> the setting listing the sites where it is off
+const SITE_OFF = { ads: 'adblockOff', cookies: 'cookiesOk', fingerprint: 'fingerprintOff', webrtc: 'webrtcOff' }
 // which system screen a failed load gets: Chromium's net error codes
 const sysKind = code => !net.isOnline() || code === -106 ? 'offline' : code === -105 ? 'notfound' : code === -102 || code === -101 ? 'refused' : code === -7 || code === -118 ? 'timeout' : code <= -200 && code > -300 ? 'cert' : 'load'
 function showSystem(tab, kind, { url, detail, msg }) {
@@ -138,7 +149,8 @@ function makeView(tab) {
   hardenWc(wc)
   view.setBorderRadius(12)
   tab.view = view; tab.asleep = false
-  wc.setWindowOpenHandler(({ url, disposition, features }) => { disposition === 'new-window' && !features ? openPeek(url) : newTab(url); return { action: 'deny' } }) // Shift+click = Peek
+  wc.setWindowOpenHandler(popupHandler(tab))
+  wc.on('did-create-window', w => { hardenWc(w.webContents); w.webContents.setWindowOpenHandler(popupHandler(tab)) }) // a popup gets the same protections, and its own popups too
   wc.on('page-title-updated', (_, t) => { tab.title = t; if (history[0]?.url === wc.getURL()) { history[0].title = t; store.save('history', history) } push() })
   wc.on('page-favicon-updated', (_, icons) => { tab.icon = icons[0]; push() })
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; push() })
@@ -715,7 +727,7 @@ const mute = id => { const t = byId(id); if (t) { t.muted = !t.muted; t.view?.we
 function setRoute(host, sp) { settings.routes = [...settings.routes.filter(r => r.host !== host), { host, space: sp }]; push() }
 
 // ---- app lifecycle ----
-const urlArg = argv => argv.find(a => /^https?:\/\//i.test(a))
+const urlArg = argv => { for (const a of argv) { const u = /^https?:\/\//i.test(a) ? a : bangs.localFile(a, true); if (u) return u } } // a web address, or a web page file (Open with… / default browser)
 let ready
 const whenReady = new Promise(r => { ready = r })
 app.setName('Heliarc')
@@ -724,6 +736,7 @@ const gotLock = TEST || app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
 app.on('second-instance', (_, argv) => whenReady.then(() => { const u = urlArg(argv); u ? openExternal(u) : (win.show(), win.focus()) }))
 app.on('open-url', (e, u) => { e.preventDefault(); whenReady.then(() => openExternal(u)) })
+app.on('open-file', (e, f) => { e.preventDefault(); whenReady.then(() => openExternal(require('url').pathToFileURL(f).href)) }) // macOS: a file opened with Heliarc, or dropped on its icon
 let cleaned = false
 app.on('before-quit', e => { // "clear everything when I quit": cookies, logins, caches, history, download list
   if (installing || !settings.clearOnQuit || cleaned) return store.flushAll()
@@ -836,7 +849,6 @@ app.whenReady().then(async () => {
     settings.bangs = [...settings.bangs.filter(x => x.trigger !== trigger), { trigger, url }]; push(); return { ok: true }
   })
   h('delBang', trigger => { settings.bangs = settings.bangs.filter(x => x.trigger !== trigger); push() })
-  h('toggleSiteAds', () => { const t = cur(), h = t && privacy.host(t.url); if (!h) return; settings.adblockOff = adsAllowed(t.url) ? settings.adblockOff.filter(x => x !== h) : [...settings.adblockOff, h]; t.view?.webContents.reload(); push() })
   h('setSitePerm', (host, perm, value) => { const s = settings.sitePerms[host]; if (!s || !(PERMS[perm] || perm.startsWith('open:'))) return; value === null ? delete s[perm] : (s[perm] = !!value); if (!Object.keys(s).length) delete settings.sitePerms[host]; push() })
   h('importDetect', () => importers.detect().map(({ id, name, history, bookmarks, passwords }) => ({ id, name, history: !!history, bookmarks: !!bookmarks, passwords: !!passwords })))
   h('importRun', async (id, what) => {
@@ -859,6 +871,12 @@ app.whenReady().then(async () => {
     if (autoUpdate && !updater) { updater = { state: 'downloading' }; push(); if (await autoUpdate.check()) return }
     if (update.url?.startsWith('https://github.com/mikedotJS/heliarc/')) shell.openExternal(update.url) // only our own release page, whatever the feed says
   })
+  const siteChanged = host => { for (const x of tabs) if (x.view && privacy.host(x.url) === host) x.view.webContents.reload(); push() } // a page reloads so the change applies to it
+  h('toggleSite', (kind, host) => { // turn one protection off (or back on) for a site: the current one, or the one named in Settings
+    const f = SITE_OFF[kind], t = cur(), h = host || (t && privacy.host(t.url)); if (!f || !h) return
+    settings[f] = settings[f].includes(h) ? settings[f].filter(x => x !== h) : [...settings[f], h]; siteChanged(h)
+  })
+  h('resetSite', host => { for (const f of Object.values(SITE_OFF)) settings[f] = settings[f].filter(x => x !== host); siteChanged(host) })
   h('delRoute', host => { settings.routes = settings.routes.filter(r => r.host !== host); push() })
   h('setShortcut', (action, c) => {
     if (!keys.ACTIONS[action]) return { error: 'Unknown action' }
@@ -907,6 +925,7 @@ app.whenReady().then(async () => {
     const mine = pwPending; setTimeout(() => { if (pwPending === mine) { pwPending = null; push() } }, 90e3)
   })
   ipcMain.handle('pw:get', e => { const o = senderOrigin(e); return o && pageOf(e.sender) ? vault.filter(v => v.origin === o).map(v => ({ user: v.user, pass: decrypt(v.pass) })) : [] })
+  ipcMain.on('fp:site', e => { e.returnValue = !settings.fingerprintOff.includes(privacy.host(e.sender.getURL())) }) // the page preload asks whether to mask the hardware on this site
   ipcMain.handle('profile:get', e => pageOf(e.sender) ? profile : null)
 
   await ext.loadInstalled(extSessions()) // before any page loads, so content scripts reach restored tabs

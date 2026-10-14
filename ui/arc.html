@@ -53,7 +53,7 @@
   #foot .sp { flex: 1 } #foot button { padding: 4px 7px; font-size: var(--fs-lg); opacity: .6; color: var(--on-color) } #foot button.on { opacity: 1; background: var(--glass-2) } #foot button:hover { opacity: 1 }
   #drag { position: fixed; top: 0; left: 0; right: 0; height: var(--top, 0); -webkit-app-region: drag } #nav .sp { align-self: stretch; -webkit-app-region: drag } /* the Mac window has no title bar: drag it by the strip behind the traffic lights */
   #exts { display: flex; flex-wrap: wrap; gap: 4px } #exts:not(:defined) { display: none } #exts::part(action) { width: 30px; height: 30px; border-radius: var(--r-md); background-color: var(--glass-0) } #exts::part(action):hover { background-color: var(--glass-1) } /* background-color only: the shorthand would wipe the extension icon (outer styles beat the element's inline background-image) */
-  #shield { cursor: default; font-size: var(--fs-xs); opacity: .85; padding: 0 2px; display: flex; align-items: center; gap: 5px } .ic { flex: none; display: block } button .ic { margin: auto } #pill { gap: 8px } .ph.err { background: var(--err-bg) } .ph { color: var(--on-color) } .spin { border-color: var(--glass-3); border-top-color: var(--on-color) }
+  #shield { cursor: pointer; font-size: var(--fs-xs); opacity: .85; padding: 0 2px; display: flex; align-items: center; gap: 5px } .ic { flex: none; display: block } button .ic { margin: auto } #pill { gap: 8px } .ph.err { background: var(--err-bg) } .ph { color: var(--on-color) } .spin { border-color: var(--glass-3); border-top-color: var(--on-color) }
 </style>
 <div id="drag"></div>
 <div id="side">
@@ -111,7 +111,7 @@ $('#side').addEventListener('wheel', e => {
   if (Math.abs(swipe) > 60 && to >= 0 && to < state.spaces.length) { swipeLock = now + 600; swipe = 0; api.call('space', to) }
 }, { passive: true })
 $('#upd').onclick = e => { const b = e.target.closest('[data-u]'); b && api.call(b.dataset.u === 'install' ? 'installUpdate' : 'openRelease') }
-$('#shield').onclick = () => state?.blockerState === 'on' && state.adHost && api.call('toggleSiteAds')
+$('#shield').onclick = () => api.call('openPanel', 'protections')
 $('#pwbar').onclick = e => { const a = e.target.dataset.pw; if (a) api.call(a) }
 $('#mini').onclick = e => { const m = e.target.closest('[data-m]')?.dataset.m; api.call(m === 'toggle' ? 'mediaToggle' : m === 'mute' ? 'mute' : 'mediaGo', state.media?.id) }
 $('#dl').onclick = e => { const b = e.target.closest('[data-dl]'); b ? api.call(b.dataset.dl === 'retry' ? 'retryDownload' : 'delDownload', +b.dataset.id) : api.call('openPanel', 'downloads') }
@@ -174,8 +174,8 @@ function render() {
     : s.update ? card('', 'download', 'Heliarc ' + v + ' is available', 'You have ' + s.version, '<button data-u="open">Get it</button>') : ''
   $('#dl').innerHTML = d?.state === 'interrupted' ? card('', 'triangle-alert', d.name, 'Download failed: the connection was lost or the site refused it', `<button data-dl="retry" data-id="${d.id}">Retry</button><button data-dl="drop" data-id="${d.id}" title="Dismiss">${icon('x', 14)}</button>`) : d ? card('', d.state === 'completed' ? 'check' : 'download', d.name, d.state === 'completed' ? 'Download complete' : `${d.total ? Math.round(d.received / d.total * 100) + '%' : 'Downloading…'}${busy > 1 ? ` · ${busy} downloads` : ''}`, '', d.state === 'completed' ? null : d.total ? d.received / d.total * 100 : 5) : ''
   $('#shield').innerHTML = s.blockerState === 'loading' ? 'Loading ad blocker…' : s.blockerState === 'error' ? `${icon('shield-alert', 13)} Ad blocker offline (lists unreachable)` : `${icon('shield-check', 13)} ${s.blocked} ads & trackers blocked`
-  $('#shield').classList.toggle('off', !!s.adsAllowed); $('#shield').title = s.blockerState !== 'on' || !s.adHost ? '' : s.adsAllowed ? 'Click to block ads on ' + s.adHost : 'Click to allow ads on ' + s.adHost
-  if (s.blockerState === 'on' && s.adsAllowed) $('#shield').innerHTML = `${icon('shield-off', 13)} Ads allowed on ${esc(s.adHost)}`
+  $('#shield').classList.toggle('off', !!s.siteOff); $('#shield').title = 'Protections on this site: click to manage them'
+  if (s.siteOff && s.adHost) $('#shield').innerHTML = `${icon('shield-off', 13)} ${s.siteOff} protection${s.siteOff > 1 ? 's' : ''} off on ${esc(s.adHost)}`
   $('#foot').innerHTML = s.spaces.map((x, i) => `<button class="${i === s.space ? 'on' : ''}" data-sp="${i}" title="${esc(x.name)}">${icon(x.icon, 16)}</button>`).join('') + '<span class="sp"></span>' +
     `<button data-p="downloads" title="Library (${fmt(s.keys.library)})">${icon('archive', 16)}</button><button data-p="history" title="History (${fmt(s.keys.history)})">${icon('history', 16)}</button><button data-p="settings" title="Settings (${fmt(s.keys.settings)})">${icon('settings', 16)}</button>`
   mount()

@@ -1,3 +1,4 @@
+const fs = require('fs'), os = require('os'), path = require('path'), { pathToFileURL } = require('url')
 // Bangs: "!w cats" -> direct site search (same idea as Helium's native bangs).
 const BANGS = { // trigger: [name, search address, the site's brand colour]
   g: ['Google', 'https://www.google.com/search?q=%s', '#4285f4'], w: ['Wikipedia', 'https://en.wikipedia.org/w/index.php?search=%s', '#3a3a3a'],
@@ -21,6 +22,14 @@ const ENGINES = {
   kagi: ['Kagi', 'https://kagi.com/search?q=%s'], qwant: ['Qwant', 'https://www.qwant.com/?q=%s'],
 }
 
+// the page for a file on this computer: an existing file given by its full path ("/Users/me/a.html", "C:\\a.html", "~/a.html", quotes allowed); pagesOnly = web pages only
+const PAGE = /\.(x?html?)$/i
+function localFile(input, pagesOnly = false) {
+  const p = input.trim().replace(/^(["'])(.*)\1$/, '$2').replace(/^~(?=[\\/]|$)/, os.homedir())
+  if (!path.isAbsolute(p) || (pagesOnly && !PAGE.test(p))) return null
+  try { return fs.statSync(p).isFile() ? pathToFileURL(p).href : null } catch { return null }
+}
+
 // opts.searchEngine picks the search engine, opts.bangs are the user's own "!trigger" shortcuts (they win over the built-in ones)
 function resolve(input, { searchEngine = 'brave', bangs = [] } = {}) {
   const t = input.trim()
@@ -30,10 +39,11 @@ function resolve(input, { searchEngine = 'brave', bangs = [] } = {}) {
   const url = m && (bangs.find(x => x.trigger === k)?.url || (Object.hasOwn(BANGS, k) && BANGS[k][1]))
   if (url) return url.replace('%s', encodeURIComponent(m[2]))
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t
+  const file = localFile(t); if (file) return file
   if (/^(localhost|[\w-]+(\.[\w-]+)+)(:\d+)?(\/\S*)?$/i.test(t)) return 'https://' + t
   return (ENGINES[searchEngine] || ENGINES.brave)[1].replace('%s', encodeURIComponent(t))
 }
 // every bang the user can type, theirs first: [{ trigger, name, url, color }] (own bangs get a colour of their own from the site's name)
 const hue = host => [...host].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
 const list = (mine = []) => [...mine.map(x => { const host = new URL(x.url).hostname; return { ...x, name: x.name || host, color: `hsl(${hue(host)} 55% 42%)` } }), ...Object.entries(BANGS).filter(([t]) => !mine.some(x => x.trigger === t)).map(([trigger, [name, url, color]]) => ({ trigger, name, url, color }))]
-module.exports = { resolve, list, ENGINES, BANGS }
+module.exports = { resolve, list, localFile, ENGINES, BANGS }

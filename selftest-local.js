@@ -70,6 +70,8 @@ module.exports = async (a, ok) => {
     wc.downloadURL(base + '/pic.png'); await until(async () => S.downloads().length === 3 && S.downloads()[0].state === 'completed')
     ok('same name is not overwritten', S.downloads()[0].name === 'pic (1).png', S.downloads()[0].name)
     await sleep(300); ok('sidebar shows the finished download', await uiN('#dl .card') === 1)
+    S.push(); await sleep(400)
+    ok('updating the download card does not replay its entrance animation', await js(ui(), "(() => { const c = document.querySelector('#dl .card'); return c.classList.contains('still') && getComputedStyle(c).animationName === 'none' })()"))
     for (const sec of ['downloads', 'media', 'archive', 'history', 'passwords', 'settings']) {
       S.openPanel(sec); await sleep(700)
       const bad = await js(panel(), `!!document.querySelector('.err') || !document.querySelector('#body').innerHTML.trim()`)
@@ -214,8 +216,12 @@ module.exports = async (a, ok) => {
     await js(po.view.webContents, "void window.open('/popup-child', 'signin', 'width=420,height=560')")
     ok('a sign-in popup reports back to the page that opened it', await until(async () => await js(po.view.webContents, 'window.got') !== null) && JSON.parse(await js(po.view.webContents, 'window.got')).hi === 1, String(await js(po.view.webContents, 'window.got')))
     ok('as a window of its own, not a tab, and sandboxed like a page', a.tabs().length === n0 && JSON.parse(await js(po.view.webContents, 'window.got')).node === 'undefinedundefined', n0 + ' / ' + a.tabs().length)
-    const known = new Set(a.tabs().map(x => x.id)); await js(po.view.webContents, "void window.open('/second', '_blank')"); await sleep(800)
-    ok('a plain link or window.open without a size still opens a tab', a.tabs().length === n0 + 1, String(a.tabs().length)); for (const t of a.tabs().filter(x => !known.has(x.id))) a.closeTab(t.id); a.closeTab(po.id)
+    const known = new Set(a.tabs().map(x => x.id));     const linked = await js(po.view.webContents, "(() => { const w = window.open('/second', 'linked'); return [!!w, w && w.name, w && w.opener === window] })()")
+    ok('a tab opened by a page keeps its link to it (opener and name)', JSON.stringify(linked) === '[true,"linked",true]', JSON.stringify(linked))
+    await sleep(800)
+    ok('a plain link or window.open without a size still opens a tab', a.tabs().length === n0 + 1, String(a.tabs().length)); for (const t of a.tabs().filter(x => !known.has(x.id))) a.closeTab(t.id)
+    await js(po.view.webContents, "void window.open('/second', '_blank')"); await sleep(800)
+    ok('a link that stays on the same site navigates the tab instead of opening another', a.tabs().length === n0 && /second/.test(po.view.webContents.getURL()), a.tabs().length + ' ' + po.view.webContents.getURL()); a.closeTab(po.id)
     a.closeTab(emb.id); a.closeTab(emb2.id)
     // search engine and custom bangs
     const bg = require('./bangs'), mine = [{ trigger: 'npm', url: 'https://www.npmjs.com/search?q=%s' }]

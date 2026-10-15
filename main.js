@@ -118,9 +118,14 @@ const pagePrefs = partition => ({ partition, sandbox: true, contextIsolation: tr
 // window.open(url, name, 'width=420,height=560'): a sign-in or payment window. It must stay linked to the page that opened it (it reports back with postMessage / window.opener),
 // so it is a real window, not a tab. Only the tab in front can open one, and only a sized popup: plain links keep opening tabs (Shift+click = Peek)
 const POPUP = /\b(width|height|popup)\b/i
-const popupHandler = tab => ({ url, disposition, features }) => {
+const popupHandler = tab => ({ url, disposition, features, frameName }) => {
   if (disposition === 'new-window' && POPUP.test(features) && tab.id === active) return { action: 'allow', overrideBrowserWindowOptions: { title: 'Heliarc', icon: ICON, autoHideMenuBar: true } }
-  disposition === 'new-window' && !features ? openPeek(url) : newTab(url); return { action: 'deny' }
+  if (disposition === 'new-window' && !features) { openPeek(url); return { action: 'deny' } }
+  if (disposition === 'foreground-tab' && (!frameName || frameName === '_blank') && /^https?:/i.test(url) && privacy.site(url) === privacy.site(tab.view.webContents.getURL())) { tab.view.webContents.loadURL(url); return { action: 'deny' } } // a link that stays on the same site (target=_blank) navigates this tab; Cmd+click still opens a new one
+  const to = routeFor(resolve(url))
+  if (to != null && to !== tab.space) { newTab(url); return { action: 'deny' } } // sent to another space: it can't stay linked
+  // a tab made from the page's own request keeps window.opener, window.name and postMessage working (Teams safe links, payments, sign-ins)
+  return { action: 'allow', createWindow: options => newTab('', tab.space, options).view.webContents }
 }
 // WebRTC doesn't reveal the local network address, except on the sites where the user turned that off (checked again at each navigation)
 const webrtcPolicy = wc => settings.webrtcProtect && !settings.webrtcOff.includes(privacy.host(wc.getURL())) ? 'default_public_interface_only' : 'default'
@@ -143,8 +148,8 @@ function watchSystem(wc, owner) { // Peek and the Little window get the same scr
   wc.on('render-process-gone', (_, d) => { if (d.reason !== 'clean-exit') showSystem(owner, 'crash', { url: wc.getURL(), detail: d.reason }) })
   wc.on('did-navigate', (_, u) => { if (!u.startsWith(SYSTEM)) owner.sys = null })
 }
-function makeView(tab) {
-  const view = new WebContentsView({ webPreferences: pagePrefs(SPACES[tab.space].partition) })
+function makeView(tab, opened) { // opened: the window options Electron made for a tab the page asked for itself (window.open): that page then loads it, and keeps its link to it
+  const view = new WebContentsView(opened ? { webContents: opened.webContents, webPreferences: opened.webPreferences } : { webPreferences: pagePrefs(SPACES[tab.space].partition) })
   const wc = view.webContents
   hardenWc(wc)
   view.setBorderRadius(12)
@@ -187,6 +192,7 @@ function makeView(tab) {
   win.contentView.addChildView(view)
   crxOf(tab)?.addTab(wc, win)
   stack()
+  if (opened) return layout()
   const first = settings.httpsOnly && privacy.upgrade(tab.url); if (first) tab.upgraded = first
   wc.loadURL(first || tab.url || NEWTAB + '#' + encodeURIComponent(keys.resolve(settings.shortcuts).editAddress))
   layout()
@@ -286,10 +292,10 @@ function routeFor(url) { // auto-routing: links to a routed site open in that si
   const h = hostOf(url); if (!h) return null
   return settings.routes.find(r => h === r.host || h.endsWith('.' + r.host))?.space ?? null
 }
-function newTab(input, sp) {
+function newTab(input, sp, opened) {
   const url = input ? resolve(input) : ''
   const tab = { id: nextId++, title: 'New tab', url, icon: null, loading: false, muted: false, asleep: false, error: null, pinned: false, fav: false, folder: null, space: sp ?? routeFor(url) ?? space, last: Date.now() }
-  tabs.push(tab); makeView(tab); activate(tab.id)
+  tabs.push(tab); makeView(tab, opened); activate(tab.id)
   return tab
 }
 function activate(id) {
@@ -672,6 +678,8 @@ async function loadBlocker() { // (re)loads the filter lists picked in Settings,
     if (seq < blockerSeq) return // a newer pick already finished first: this older load must not replace it
     blockerSeq = seq
     b.on('request-blocked', () => { blocked++; pushSoon() })
+    const cosmetics = b.getCosmeticsFilters.bind(b) // ChatGPT's own filters stub out its telemetry calls, and the page then answers "Content failed to load": keep its ad hiding, drop the injected scripts
+    b.getCosmeticsFilters = p => /(^|\.)(chatgpt|openai)\.com$/.test(p.hostname) ? { ...cosmetics(p), scripts: [] } : cosmetics(p)
     const cosmetic = '@ghostery/adblocker/' // its cosmetic-filter handlers are global: ours skip the sites where ads are allowed
     const unhandle = () => ['inject-cosmetic-filters', 'is-mutation-observer-enabled'].forEach(ch => ipcMain.removeHandler(cosmetic + ch))
     for (const ses of configured) { // enabling installs the cosmetic-filter preload; we then take the web request listeners back (one per event) and run the blocker from them

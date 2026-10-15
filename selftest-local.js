@@ -220,6 +220,8 @@ module.exports = async (a, ok) => {
     ok('a tab opened by a page keeps its link to it (opener and name)', JSON.stringify(linked) === '[true,"linked",true]', JSON.stringify(linked))
     await sleep(800)
     ok('a plain link or window.open without a size still opens a tab', a.tabs().length === n0 + 1, String(a.tabs().length)); for (const t of a.tabs().filter(x => !known.has(x.id))) a.closeTab(t.id)
+    await js(po.view.webContents, "void window.open('/popup-child', 'closer')"); await sleep(1200)
+    ok('a tab that closes itself leaves no dead tab behind, and the app keeps running', a.tabs().length === n0 && (() => { try { S.push(); return true } catch { return false } })(), String(a.tabs().length))
     await js(po.view.webContents, "void window.open('/second', '_blank')"); await sleep(800)
     ok('a link that stays on the same site navigates the tab instead of opening another', a.tabs().length === n0 && /second/.test(po.view.webContents.getURL()), a.tabs().length + ' ' + po.view.webContents.getURL()); a.closeTab(po.id)
     a.closeTab(emb.id); a.closeTab(emb2.id)

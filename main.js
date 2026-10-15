@@ -118,7 +118,9 @@ const pagePrefs = partition => ({ partition, sandbox: true, contextIsolation: tr
 // window.open(url, name, 'width=420,height=560'): a sign-in or payment window. It must stay linked to the page that opened it (it reports back with postMessage / window.opener),
 // so it is a real window, not a tab. Only the tab in front can open one, and only a sized popup: plain links keep opening tabs (Shift+click = Peek)
 const POPUP = /\b(width|height|popup)\b/i
-const popupHandler = tab => ({ url, disposition, features, frameName }) => {
+let quitting = false // every page is destroyed when the app exits: no tab bookkeeping then
+app.once('before-quit', () => { quitting = true }); process.once('exit', () => { quitting = true })
+const popupHandler = tab =>({ url, disposition, features, frameName }) => {
   if (disposition === 'new-window' && POPUP.test(features) && tab.id === active) return { action: 'allow', overrideBrowserWindowOptions: { title: 'Heliarc', icon: ICON, autoHideMenuBar: true } }
   if (disposition === 'new-window' && !features) { openPeek(url); return { action: 'deny' } }
   if (disposition === 'foreground-tab' && (!frameName || frameName === '_blank') && /^https?:/i.test(url) && privacy.site(url) === privacy.site(tab.view.webContents.getURL())) { tab.view.webContents.loadURL(url); return { action: 'deny' } } // a link that stays on the same site (target=_blank) navigates this tab; Cmd+click still opens a new one
@@ -155,7 +157,7 @@ function makeView(tab, opened) { // opened: the window options Electron made for
   view.setBorderRadius(12)
   tab.view = view; tab.asleep = false
   wc.setWindowOpenHandler(popupHandler(tab))
-  wc.once('destroyed', () => { if (tab.view === view && byId(tab.id)) closeTab(tab.id) }) // the page closed itself (window.close): its tab goes with it, not left dead in the list
+  wc.once('destroyed', () => { if (!quitting && tab.view === view && byId(tab.id)) closeTab(tab.id) }) // the page closed itself (window.close): its tab goes with it, not left dead in the list
   wc.on('did-create-window', w => { hardenWc(w.webContents); w.webContents.setWindowOpenHandler(popupHandler(tab)) }) // a popup gets the same protections, and its own popups too
   wc.on('page-title-updated', (_, t) => { tab.title = t; if (history[0]?.url === wc.getURL()) { history[0].title = t; store.save('history', history) } push() })
   wc.on('page-favicon-updated', (_, icons) => { tab.icon = icons[0]; push() })

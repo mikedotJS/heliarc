@@ -65,7 +65,7 @@ const snapshot = () => ({
 const push = () => {
   if (!ui) return
   const listed = id => { const t = byId(id); return !!t && (!SPACES[t.space].private || space === PRIVATE) } // what the UI is sent must exist in the tab list it receives
-  const c = listed(active) ? cur() : null, nav = c?.view?.webContents.navigationHistory
+  const c = listed(active) ? cur() : null, nav = c?.view?.webContents?.navigationHistory
   const s = {
     active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), siteOff: Object.values(SITE_OFF).filter(f => settings[f].includes(privacy.host(c?.url || ''))).length, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
     sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.filter(d => !d.private || space === PRIVATE).slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),

@@ -412,10 +412,10 @@ function autoPip(t) {
 function exitPip(t) { if (t?.pip && t.view) { t.pip = false; t.view.webContents.executeJavaScript(PIP_OFF, true).catch(() => {}) } }
 
 // ---- sidebar ----
-function toggleSidebar() { sidebar = !sidebar; floating = false; ui.setVisible(sidebar); edge.setVisible(!sidebar); layout(); stack(); push() }
+function toggleSidebar() { sidebar = !sidebar; floating = false; edge.setVisible(!sidebar); layout(); stack(); push() }
 function reveal(on) { // hovering the left edge slides the collapsed sidebar over the page
   if (sidebar || floating === on) return
-  floating = on; ui.setVisible(on); edge.setVisible(!on); layout(); stack()
+  floating = on; edge.setVisible(!on); layout(); stack()
 }
 
 // ---- peek ----
@@ -946,7 +946,7 @@ app.whenReady().then(async () => {
   nextId = Math.max(1, ...(saved.tabs || []).map(t => t.id + 1), ...(saved.folders || []).map(f => f.id + 1), ...downloads.map(d => d.id + 1), ...vault.map(v => v.id + 1))
   folders = saved.folders || []; archive = saved.archive || []; sidebar = saved.sidebar !== false; space = SPACES[saved.space] ? saved.space : 0
   tabs = (saved.tabs || []).filter(t => SPACES[t.space]).map(t => ({ title: 'New tab', url: '', icon: null, muted: false, pinned: false, fav: false, folder: null, last: Date.now(), ...t, view: null, loading: false, asleep: true, error: null }))
-  ui.setVisible(sidebar); edge.setVisible(!sidebar)
+  edge.setVisible(!sidebar)
   tabs.length ? activate(byId(saved.active)?.id ?? tabs[0].id) : newTab()
   layout(); stack(); sweep(); setInterval(sweep, 5 * 60e3).unref()
   if (!TEST && app.isPackaged) { const autoCheck = () => settings.autoUpdateCheck && checkUpdate(); setTimeout(autoCheck, 20e3).unref(); setInterval(autoCheck, 6 * 3600e3).unref() }

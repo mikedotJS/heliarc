@@ -72,7 +72,7 @@ const push = () => {
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: listed(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
     pw: pwPending && { tab: pwPending.tab, origin: pwPending.origin, user: pwPending.user, update: pwPending.update },
-    tabs: tabs.filter(t => !SPACES[t.space].private || space === PRIVATE).map(t => ({ id: t.id, title: t.title, url: t.url, icon: t.icon, loading: t.loading, muted: t.muted, asleep: t.asleep, error: t.error, pinned: t.pinned, fav: t.fav, folder: t.folder, space: t.space, zoom: t.view?.webContents.getZoomFactor() ?? 1 })),
+    tabs: tabs.filter(t => !SPACES[t.space].private || space === PRIVATE).map(t => ({ id: t.id, title: t.title, url: t.url, icon: t.icon, loading: t.loading, muted: t.muted, asleep: t.asleep, error: t.error, pinned: t.pinned, fav: t.fav, folder: t.folder, space: t.space, zoom: t.view?.webContents?.isDestroyed() === false ? t.view.webContents.getZoomFactor() : 1 })),
   }
   for (const v of [ui, cmd, panel]) if (!v.webContents.isDestroyed()) v.webContents.send('state', s)
   store.save('session', snapshot())

@@ -9,7 +9,7 @@ trap 'rm -rf "$TMP"' EXIT
 echo "Downloading Heliarc for $ARCH…"
 curl -fL --progress-bar -o "$TMP/heliarc.zip" "https://github.com/mikedotJS/heliarc/releases/latest/download/Heliarc-mac-$ARCH.zip"
 ditto -x -k "$TMP/heliarc.zip" "$TMP"
-osascript -e 'tell application "Heliarc" to quit' >/dev/null 2>&1 || true
+pgrep -xq Heliarc && osascript -e 'tell application "Heliarc" to quit' >/dev/null 2>&1 || true
 rm -rf /Applications/Heliarc.app
 ditto "$TMP/Heliarc.app" /Applications/Heliarc.app
 echo "Installed. Opening Heliarc…"

@@ -47,7 +47,7 @@ const ago = at => { const m = Math.round((at - Date.now()) / 6e4); return Math.a
 const SECTIONS = [['downloads', 'Downloads', 'download'], ['media', 'Media', 'image'], ['archive', 'Archive', 'archive'], ['history', 'History', 'history'], ['passwords', 'Passwords', 'key-round'], ['extensions', 'Extensions', 'puzzle'], ['protections', 'Site protections', 'shield-check'], ['settings', 'Settings', 'settings']]
 const MEDIA = /^(image|video|audio)\//, MEDIAEXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|mp4|webm|mov|mkv|mp3|wav|ogg|m4a|flac)$/i
 const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0' } // what is typed in the add forms survives a redraw
-let state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, working = null, detected = [] // working: the import or update check in progress, its buttons wait for the answer
+let qt, shown = {}, state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, working = null, detected = [] // working: the import or update check in progress, its buttons wait for the answer
 const fileUrl = p => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '').split('/').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:')
 
 async function load() { // sections that need data from the main process: loading -> ready | error
@@ -60,16 +60,13 @@ async function load() { // sections that need data from the main process: loadin
   if (mine === token) paint()
 }
 function open(sec) { section = sec; q = ''; note = null; want = null; recordingFor && stopRec(); document.activeElement?.closest('#nav') || document.activeElement?.blur(); load() } // a field left open would hold the redraw back
-function nav() {
-  $('#nav').innerHTML = '<h1>Library</h1>' + SECTIONS.map(([k, l, i]) => (k === 'history' ? '<h1 style="padding-top:14px">Browser</h1>' : '') + `<button data-s="${k}" class="${k === section ? 'on' : ''}">${icon(i, 16)}${l}</button>`).join('') + '<span class="sp"></span>' + `<button data-s="close">${icon('x', 16)}Close</button>`
-}
+const navHtml = () => '<h1>Library</h1>' + SECTIONS.map(([k, l, i]) => (k === 'history' ? '<h1 style="padding-top:14px">Browser</h1>' : '') + `<button data-s="${k}" class="${k === section ? 'on' : ''}">${icon(i, 16)}${l}</button>`).join('') + '<span class="sp"></span>' + `<button data-s="close">${icon('x', 16)}Close</button>`
 $('#nav').onclick = e => { const b = e.target.closest('button'); if (!b) return; b.dataset.s === 'close' ? close() : open(b.dataset.s) }
 const stateMsg = () => status === 'loading' ? '<div class="load"><span class="spin" style="display:inline-block"></span></div>' : status === 'error' ? '<div class="err">Could not load this section. <button class="ds-btn sm" data-a="retry">Retry</button></div>' : null
 
 function render() {
   if (!state) return
-  stale = false; const a = document.activeElement; if (a?.closest('#nav, #head, #body')) want = spot(a) || null
-  nav()
+  stale = false
   const S = state, title = SECTIONS.find(x => x[0] === section)[1]
   let head = `<h2>${title}</h2>`, body = ''
   if (section === 'downloads' || section === 'media') {
@@ -102,10 +99,15 @@ function render() {
     body = protections(S)
   } else body = settings(S)
   if ((section === 'downloads' || section === 'media') && note?.dl) body = `<div class="msg bad" style="padding:0 10px 8px">${esc(note.dl)}</div>` + body
-  $('#head').innerHTML = head; $('#body').innerHTML = body
-  if (section === 'history') { const i = $('#q'); i.oninput = () => { q = i.value; clearTimeout(i.t); i.t = setTimeout(load, 150) } }
+  const next = { nav: navHtml(), head, body }, changed = Object.keys(next).filter(k => next[k] !== shown[k])
+  if (!changed.length) return // nothing visible changed: the DOM stays as it is, so the focus is not moved and a screen reader says nothing
+  const a = document.activeElement; if (a?.closest('#nav, #head, #body')) want = spot(a) || null
+  for (const k of changed) $('#' + k).innerHTML = shown[k] = next[k]
   back()
 }
+const search = i => { q = i.value; clearTimeout(qt); qt = setTimeout(load, 150) } // an IME composition is not a search yet: it is searched when it ends
+$('#head').oninput = e => e.target.id === 'q' && (e.isComposing ? clearTimeout(qt) : search(e.target))
+$('#head').addEventListener('compositionend', e => e.target.id === 'q' && search(e.target))
 // everything is rebuilt by render(): note the control that has the focus (its data-* attributes, its row, its rank among the same action) and give the focus back to it, or to the one that takes its place
 const spot = a => {
   const own = a.id ? '#' + a.id : [...a.attributes].filter(x => x.name.startsWith('data-')).map(x => `[${x.name}="${CSS.escape(x.value)}"]`).join(''), row = a.closest('[data-id]'), kind = a.dataset.a && `[data-a="${a.dataset.a}"]`
@@ -216,7 +218,7 @@ const ACT = {
     const r = await api.call('addRoute', h, +$('#rspace').value); note = r?.error ? { route: r.error } : null; if (!r?.error) draft.rhost = ''; render()
   },
   defaultBrowser: async () => { const ok = await api.call('defaultBrowser'); note = { text: ok ? 'Heliarc is now the default browser.' : 'Choose Heliarc in the system settings window that just opened.', cls: ok ? 'ok' : '' }; render() },
-  saveProfile: async () => { const p = {}; document.querySelectorAll('[data-pf]').forEach(i => p[i.dataset.pf] = i.value.trim()); await api.call('setProfile', p); data = p; note = { profile: 'Saved ✓' }; render(); setTimeout(() => { note = null; section === 'settings' && paint() }, 2500) },
+  saveProfile: async () => { const p = {}; document.querySelectorAll('[data-pf]').forEach(i => p[i.dataset.pf] = i.value.trim()); await api.call('setProfile', p); data = p; const mine = note = { profile: 'Saved ✓' }; render(); setTimeout(() => { if (note === mine) { note = null; section === 'settings' && paint() } }, 2500) },
   record: el => recordingFor === el.dataset.action ? stopRec() : startRec(el.dataset.action),
   resetKey: async el => { await api.call('setShortcut', el.dataset.action, null); note = null },
 }
@@ -240,7 +242,7 @@ $('#body').onchange = async e => {
 function startRec(a) { recordingFor = a; note = null; api.call('recording', true); render() }
 function stopRec() { recordingFor = null; api.call('recording', false); render() }
 addEventListener('keydown', async e => {
-  idle = false
+  idle = false; if (e.key === ' ' && !e.repeat && e.target.matches('button, input[type=checkbox]')) pressed = true // a button or a switch acts when Space is let go
   if (recordingFor) {
     if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return
     e.preventDefault(); e.stopPropagation()
@@ -262,8 +264,9 @@ const settle = () => stale && setTimeout(() => stale && !pressed && paint(), 60)
 addEventListener('pointerdown', e => { idle = false; want = null; if (e.button === 0 && !e.target.closest('select, input:not([type=checkbox]):not([type=color])')) pressed = true }, true)
 const release = () => { pressed = false; settle() }
 for (const ev of ['pointerup', 'pointercancel']) addEventListener(ev, release, true)
+addEventListener('keyup', e => e.key === ' ' && release(), true)
 addEventListener('blur', release) // not in capture: it would hear every field losing focus, and let go of a button that is still down
 addEventListener('focusout', settle) // a field was left (by the keyboard too)
 api.onState(s => { state = s; section !== 'history' && paint() })
-api.on('panel', o => { clearTimeout(closing); document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); open(o.section) })
+api.on('panel', o => { pressed = false; clearTimeout(closing); document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); open(o.section) })
 </script>

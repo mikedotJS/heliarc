@@ -18,7 +18,7 @@
   .row .k { margin-left: auto; font-size: var(--fs-xs); color: var(--dim); flex: none }
   #hint { padding: 8px 18px; font-size: var(--fs-xs); color: var(--dim); border-top: 1px solid var(--line) }
 </style>
-<div id="box"><div id="bar"><span id="tag" hidden></span><input id="in" placeholder="Search or enter address…" spellcheck="false" autocomplete="off"></div><div id="res"></div>
+<div id="box"><div id="bar"><span id="tag" hidden></span><input id="in" role="combobox" aria-controls="res" aria-expanded="true" aria-autocomplete="list" placeholder="Search or enter address…" spellcheck="false" autocomplete="off"></div><div id="res" role="listbox"></div>
 <div id="hint">Enter to go · ↑↓ to pick · Esc to close · Bangs: type ! to see them</div></div>
 <script>
 const $ = s => document.querySelector(s), esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
@@ -54,7 +54,8 @@ function render() {
   if (!tag) hist.filter(h => !open.has(h.url)).slice(0, 5).forEach(h => rows.push({ kind: 'hist', label: h.title || h.url, sub: h.url, run: () => api.call(mode === 'edit' ? 'go' : 'open', h.url), key: 'History' }))
   if (!rows.length) rows.push({ kind: 'none', label: 'Type to search the web or open a site', run: () => {} })
   sel = Math.min(sel, rows.length - 1)
-  $('#res').innerHTML = rows.map((r, i) => `<div class="row ${i === sel ? 'sel' : ''}" data-i="${i}" style="--i:${i}">${icon(r.kind === 'tab' ? 'layers' : r.kind === 'go' || r.kind === 'bang' ? 'search' : r.kind === 'hist' ? 'history' : 'globe', 16)} ${r.chip || ''}<b>${esc(r.label)}</b> <small>${esc(r.sub || '')}</small><span class="k">${r.key || ''}</span></div>`).join('')
+  $('#res').innerHTML = rows.map((r, i) => `<div class="row ${i === sel ? 'sel' : ''}" id="r${i}" role="option" aria-selected="${i === sel}" data-i="${i}" style="--i:${i}">${icon(r.kind === 'tab' ? 'layers' : r.kind === 'go' || r.kind === 'bang' ? 'search' : r.kind === 'hist' ? 'history' : 'globe', 16)} ${r.chip || ''}<b>${esc(r.label)}</b> <small>${esc(r.sub || '')}</small><span class="k">${r.key || ''}</span></div>`).join('')
+  $('#in').setAttribute('aria-activedescendant', 'r' + sel)
 }
 $('#in').oninput = async e => {
   const el = $('#in'), m = !tag && $('#in').value.match(/^!(\w+)\s+/), b = m && bangs.find(x => x.trigger === m[1].toLowerCase())

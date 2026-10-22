@@ -45,5 +45,5 @@ function resolve(input, { searchEngine = 'brave', bangs = [] } = {}) {
 }
 // every bang the user can type, theirs first: [{ trigger, name, url, color }] (own bangs get a colour of their own from the site's name)
 const hue = host => [...host].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
-const list = (mine = []) => [...mine.map(x => { const host = new URL(x.url).hostname; return { ...x, name: x.name || host, color: `hsl(${hue(host)} 55% 42%)` } }), ...Object.entries(BANGS).filter(([t]) => !mine.some(x => x.trigger === t)).map(([trigger, [name, url, color]]) => ({ trigger, name, url, color }))]
+const list = (mine = []) => [...mine.map(x => { const host = new URL(x.url.replace('%s', 'x')).hostname; return { ...x, name: x.name || host, color: `hsl(${hue(host)} 55% 42%)` } }), ...Object.entries(BANGS).filter(([t]) => !mine.some(x => x.trigger === t)).map(([trigger, [name, url, color]]) => ({ trigger, name, url, color }))]
 module.exports = { resolve, list, localFile, ENGINES, BANGS }

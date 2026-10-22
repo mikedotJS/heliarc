@@ -173,7 +173,7 @@ function makeView(tab, opened) { // opened: the window options Electron made for
   wc.on('page-favicon-updated', (_, icons) => { tab.icon = icons[0]; push() })
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; push() })
   wc.on('did-stop-loading', () => { tab.loading = false; push() })
-  wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; wc.setZoomFactor(tab.manual ? tab.zf : 1); if (u.startsWith(SYSTEM)) { tab.url = tab.sys?.url || ''; tab.error = tab.sys?.msg || null } else { tab.sys = null; tab.url = u.startsWith(UI) ? '' : u; visit(tab, u) } push() })
+  wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (isShown(tab.id)) wc.setZoomFactor(tab.manual ? tab.zf : 1); if (u.startsWith(SYSTEM)) { tab.url = tab.sys?.url || ''; tab.error = tab.sys?.msg || null } else { tab.sys = null; tab.url = u.startsWith(UI) ? '' : u; visit(tab, u) } push() })
   wc.on('did-finish-load', () => { tab.upN = 0; setTimeout(() => fitSoon(tab), 500) })
   wc.on('did-navigate-in-page', (_, u, isMainFrame) => { if (isMainFrame) { tab.url = u; push() } })
   const up = toHttps(wc, tab); wc.on('will-navigate', up); wc.on('will-redirect', (e, u) => e.isMainFrame && up(e, u))

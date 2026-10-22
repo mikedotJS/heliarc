@@ -487,6 +487,7 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   const wc = view.webContents
   hardenWc(wc); view.setBorderRadius(12)
   little = { win: lw, view, bar, space: sp }; watchSystem(wc, little)
+  wc.once('destroyed', () => { if (!lw.isDestroyed()) lw.close() }) // the page closed itself (window.close): the window goes with it
   const LITTLE = { closeTab: () => lw.close(), reload: () => wc.reload(), zoomIn: () => wc.setZoomLevel(wc.getZoomLevel() + .5), zoomOut: () => wc.setZoomLevel(wc.getZoomLevel() - .5), zoomReset: () => wc.setZoomLevel(0), copyLink: () => clipboard.writeText(wc.getURL()), devtools: () => wc.isDevToolsOpened() ? wc.closeDevTools() : wc.openDevTools({ mode: 'detach' }), print: () => wc.print() }
   wc.on('before-input-event', (e, i) => { // the shortcuts that act on the page itself
     if (i.type !== 'keyDown' || recording) return
@@ -502,7 +503,7 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
   bar.webContents.loadFile('ui/little.html'); bar.webContents.on('did-finish-load', send)
   loadWeb(wc, little, resolve(url))
-  lw.on('closed', () => { if (little?.win === lw) little = null; for (const v of [view, bar]) if (!v.webContents.isDestroyed()) v.webContents.close() })
+  lw.on('closed', () => { if (little?.win === lw) little = null; for (const w of [wc, bar.webContents]) if (!w.isDestroyed()) w.close() })
 }
 const moveLittle = () => { if (!little) return; const u = realUrl(little.view.webContents, little), sp = little.space; little.win.close(); newTab(u, sp); win.show(); win.focus() }
 
@@ -612,8 +613,9 @@ function setupSession(ses) {
       const v = new WebContentsView({ webPreferences: { partition: sp.partition, sandbox: true, contextIsolation: true } })
       w.contentView.addChildView(v)
       const fit = () => { const { width, height } = w.getContentBounds(); v.setBounds({ x: 0, y: 0, width, height }) }
-      fit(); w.on('resize', fit); if (url) v.webContents.loadURL(url)
-      w.on('closed', () => { if (!v.webContents.isDestroyed()) v.webContents.close() })
+      const wc = v.webContents; fit(); w.on('resize', fit); if (url) wc.loadURL(url)
+      wc.once('destroyed', () => { if (!w.isDestroyed()) w.close() }) // the page closed itself (window.close): the window goes with it
+      w.on('closed', () => { if (!wc.isDestroyed()) wc.close() })
       return w
     },
   })

@@ -58,7 +58,7 @@ async function load() { // sections that need data from the main process: loadin
   } catch (e) { if (mine === token) status = 'error' }
   if (mine === token) paint()
 }
-function open(sec) { section = sec; q = ''; note = null; recordingFor && stopRec(); load() }
+function open(sec) { section = sec; q = ''; note = null; recordingFor && stopRec(); document.activeElement?.blur(); load() }
 function nav() {
   $('#nav').innerHTML = '<h1>Library</h1>' + SECTIONS.map(([k, l, i]) => (k === 'history' ? '<h1 style="padding-top:14px">Browser</h1>' : '') + `<button data-s="${k}" class="${k === section ? 'on' : ''}">${icon(i, 16)}${l}</button>`).join('') + '<span class="sp"></span>' + `<button data-s="close">${icon('x', 16)}Close</button>`
 }

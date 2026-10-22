@@ -24,6 +24,7 @@ const TITLEBAR = 36 // room for the Mac window buttons when the sidebar (which n
 const SIDEBAR = 262, GAP = 8, EDGE = 6, PEEKBAR = 44, LITTLEBAR = 44
 const ICON = path.join(__dirname, 'assets', process.platform === 'darwin' ? 'icon-mac.png' : 'icon.png') // the Mac icon already carries its own rounded-square shape
 const SYSTEM = require('url').pathToFileURL(path.join(__dirname, 'ui', 'system.html')).href // the screen for a page that can't load, an offline browser, a crashed tab, an invalid certificate
+const UI = require('url').pathToFileURL(path.join(__dirname, 'ui')).href + '/' // Heliarc's own screens; other file: pages are the user's
 const NEWTAB = 'file://' + path.join(__dirname, 'ui', 'newtab.html').replace(/\\/g, '/')
 const TABPRELOAD = path.join(__dirname, 'tabpreload.js')
 const SPACES = [ // one browser profile (cookies, logins) per space
@@ -164,11 +165,11 @@ function makeView(tab, opened) { // opened: the window options Electron made for
   wc.setWindowOpenHandler(popupHandler(tab, wc))
   wc.once('destroyed', () => { if (!quitting && tab.view === view && byId(tab.id)) closeTab(tab.id) }) // the page closed itself (window.close): its tab goes with it, not left dead in the list
   wc.on('did-create-window', w => { hardenWc(w.webContents); w.webContents.setWindowOpenHandler(popupHandler(tab, w.webContents)) }) // a popup gets the same protections, and its own popups too
-  wc.on('page-title-updated', (_, t) => { tab.title = t; if (history[0]?.url === wc.getURL()) { history[0].title = t; store.save('history', history) } push() })
+  wc.on('page-title-updated', (_, t) => { tab.title = t; if (history[0]?.url === wc.getURL() && !SPACES[tab.space].private) { history[0].title = t; store.save('history', history) } push() })
   wc.on('page-favicon-updated', (_, icons) => { tab.icon = icons[0]; push() })
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; push() })
   wc.on('did-stop-loading', () => { tab.loading = false; push() })
-  wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (!tab.manual) wc.setZoomFactor(1); if (u.startsWith(SYSTEM)) { tab.url = tab.sys?.url || ''; tab.error = tab.sys?.msg || null } else { tab.sys = null; tab.url = u.startsWith('file:') ? '' : u; visit(tab, u) } push() })
+  wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (!tab.manual) wc.setZoomFactor(1); if (u.startsWith(SYSTEM)) { tab.url = tab.sys?.url || ''; tab.error = tab.sys?.msg || null } else { tab.sys = null; tab.url = u.startsWith(UI) ? '' : u; visit(tab, u) } push() })
   wc.on('did-finish-load', () => { tab.upN = 0; setTimeout(() => fitSoon(tab), 500) })
   wc.on('did-navigate-in-page', (_, u, isMainFrame) => { if (isMainFrame) { tab.url = u; push() } })
   const up = toHttps(wc, tab); wc.on('will-navigate', up); wc.on('will-redirect', (e, u) => e.isMainFrame && up(e, u))

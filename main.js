@@ -199,6 +199,8 @@ function makeView(tab, opened) { // opened: the window options Electron made for
     btAsking = true; const list = btList; const i = await choose(`${hostOf(tab.url)} wants to connect to a Bluetooth device`, list.map(x => x.deviceName || 'Unknown device'), { detail: 'Choose a device.' }); btAsking = false
     bt(i < 0 ? '' : list[i].deviceId)
   }
+  wc.once('destroyed', () => clearTimeout(btT))
+  wc.on('did-start-navigation', d => { if (d.isMainFrame && !d.isSameDocument) clearTimeout(btT) })
   wc.on('select-bluetooth-device', (e, list, cb) => { e.preventDefault(); bt = cb; btList = list; clearTimeout(btT); if (!btAsking && list.length) btT = setTimeout(btAsk, 1500) })
   wc.on('enter-html-full-screen', () => { fsTab = tab; view.setBorderRadius(0); layout() }) // the page fills the whole window, above the sidebar
   wc.on('leave-html-full-screen', () => leaveFullscreen(tab))

@@ -169,7 +169,7 @@ function settings(S) {
 const did = el => +el.closest('[data-id]').dataset.id
 const ACT = {
   retry: load, clearDownloads: () => api.call('clearDownloads'), clearArchive: () => api.call('clearArchive'), clearHistory: async () => { await api.call('clearHistory'); load() },
-  openFile: async el => { const r = await api.call('openFile', did(el)); if (r || note?.dl) { note = r ? { dl: `Couldn’t open this file: ${r}` } : null; render() } }, // the main process answers with the system's error text, or nothing when it worked showFile: el => api.call('showFile', did(el)), cancelDownload: el => api.call('cancelDownload', did(el)), retryDownload: async el => { const r = await api.call('retryDownload', did(el)); if (r?.error) { note = { dl: r.error }; render() } },
+  openFile: async el => { const r = await api.call('openFile', did(el)); if (r || note?.dl) { note = r ? { dl: `Couldn’t open this file: ${r}` } : null; render() } }, showFile: el => api.call('showFile', did(el)), cancelDownload: el => api.call('cancelDownload', did(el)), retryDownload: async el => { const r = await api.call('retryDownload', did(el)); if (r?.error) { note = { dl: r.error }; render() } }, // the main process answers with the system's error text, or nothing when it worked
   retryExt: async el => { note = { text: 'Trying again…' }; render(); const r = await api.call('retryExtension', el.dataset.eid); note = r.ok ? { text: 'Started.', cls: 'ok' } : { text: 'Still can’t start. You can remove it and install it again.', cls: 'bad' }; load() }, delDownload: el => api.call('delDownload', did(el)),
   restoreArchive: async el => { await api.call('restoreArchive', +el.dataset.i); close() },
   openUrl: async el => { await api.call('open', el.dataset.url); close() },

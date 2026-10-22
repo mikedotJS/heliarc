@@ -133,7 +133,8 @@ const popupHandler = (tab, wc) => ({ url, disposition, features, frameName, post
 }
 // WebRTC doesn't reveal the local network address, except on the sites where the user turned that off (checked again at each navigation)
 const webrtcPolicy = wc => settings.webrtcProtect && !settings.webrtcOff.includes(privacy.host(wc.getURL())) ? 'default_public_interface_only' : 'default'
-const hardenWc = wc => { wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc)); wc.on('did-navigate', () => wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc))) }
+const navTo = new WeakMap() // page -> the address its main frame is loading (wc.getURL() still shows the old page then)
+const hardenWc = wc => { wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc)); wc.on('did-navigate', () => wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc))); for (const e of ['did-start-navigation', 'did-redirect-navigation']) wc.on(e, d => d.isMainFrame && navTo.set(wc, d.url)) }
 // the protections the user can turn off for one site: name -> the setting listing the sites where it is off
 const SITE_OFF = { ads: 'adblockOff', cookies: 'cookiesOk', fingerprint: 'fingerprintOff', webrtc: 'webrtcOff' }
 // which system screen a failed load gets: Chromium's net error codes
@@ -651,9 +652,11 @@ function askLogin(info) {
     w.on('resize', fit); w.on('closed', () => { finish(null); v.webContents.isDestroyed() || v.webContents.close() })
   })
 }
-app.on('login', (e, wc, d, info, cb) => {
+app.on('login', (e, wc, d, info, cb) => { // a sign-in window opens for the page itself or the address it is heading to, not for an image or frame of another site (its realm is the site's to write)
   e.preventDefault()
-  authQueue = authQueue.then(() => askLogin({ host: info.host, realm: info.realm, proxy: info.isProxy })).then(r => r ? cb(r.user, r.pass) : cb())
+  const mine = wc && [wc.getURL(), navTo.get(wc)].some(u => u && privacy.site(u) === privacy.site(d.url))
+  if (!info.isProxy && !mine) return cb()
+  authQueue = authQueue.then(() => !info.isProxy && wc.isDestroyed() ? null : askLogin({ host: info.host, realm: info.realm, proxy: info.isProxy })).then(r => r ? cb(r.user, r.pass) : cb()) // waiting sign-ins of a tab closed meanwhile are dropped
 })
 const trustedCerts = new Set(), askedCerts = new Map() // hosts the user chose to open anyway, for this session
 app.on('certificate-error', (e, wc, url, error, cert, cb) => {

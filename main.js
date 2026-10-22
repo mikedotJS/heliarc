@@ -457,7 +457,8 @@ function openPeek(url) {
   const sp = cur()?.space ?? space, view = new WebContentsView({ webPreferences: pagePrefs(SPACES[sp].partition) })
   const wc = view.webContents
   hardenWc(wc); view.setBorderRadius(12)
-  peek = { view, space: sp }; watchSystem(wc, peek)
+  peek = { view, wc, space: sp }; watchSystem(wc, peek)
+  wc.once('destroyed', () => { if (!quitting && peek?.view === view) closePeek() }) // the page closed itself (window.close): Peek goes with it, not left empty
   wc.setWindowOpenHandler(({ url }) => { loadWeb(wc, peek, url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, peekSend)
   for (const e of ['did-stop-loading', 'did-navigate-in-page', 'dom-ready']) wc.on(e, peekSample)
@@ -468,7 +469,7 @@ function openPeek(url) {
 }
 function closePeek() {
   if (!peek) return
-  win.contentView.removeChildView(peek.view); peek.view.webContents.close(); peek = null
+  win.contentView.removeChildView(peek.view); if (!peek.wc.isDestroyed()) peek.wc.close(); peek = null
   peekUi.setVisible(false); peekUi.webContents.send('peek', null); cur()?.view?.webContents.focus()
 }
 

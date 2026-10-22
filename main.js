@@ -44,6 +44,7 @@ const MEDIA_TOGGLE = `(() => { const m = [...document.querySelectorAll('video,au
 let win, ui, cmd, panel, find, peekUi, edge, little
 let tabs = [], folders = [], archive = [], history = [], downloads = [], vault = [], profile = {}, settings = structuredClone(DEFAULTS)
 let active = null, space = 0, nextId = 1, blocked = 0, blockerState = 'loading', copied = false // copied: the address pill says "Link copied" for a moment after Mod+Shift+C
+let restored = false // the session is saved only once the previous one is back, or an early push() would overwrite it with an empty one
 let cmdOpen = false, panelOpen = false, findOpen = false, findText = '', recording = false
 let fsTab = null // the tab whose page is in HTML fullscreen (YouTube player…): Electron puts the window in fullscreen, we make the page fill it
 let sidebar = true, floating = false, split = null, peek = null, mediaTab = null, pwPending = null, soon = null
@@ -76,7 +77,7 @@ const push = () => {
     tabs: tabs.filter(t => !SPACES[t.space].private || space === PRIVATE).map(t => ({ id: t.id, title: t.title, url: t.url, icon: t.icon, loading: t.loading, muted: t.muted, asleep: t.asleep, error: t.error, pinned: t.pinned, fav: t.fav, folder: t.folder, space: t.space, zoom: t.view?.webContents?.isDestroyed() === false ? t.view.webContents.getZoomFactor() : 1 })),
   }
   for (const v of [ui, cmd, panel]) if (!v.webContents.isDestroyed()) v.webContents.send('state', s)
-  store.save('session', snapshot())
+  restored && store.save('session', snapshot())
 }
 const pushSoon = () => { soon ??= setTimeout(() => { soon = null; push() }, 250) }
 
@@ -952,7 +953,7 @@ app.whenReady().then(async () => {
   nextId = Math.max(1, ...(saved.tabs || []).map(t => t.id + 1), ...(saved.folders || []).map(f => f.id + 1), ...downloads.map(d => d.id + 1), ...vault.map(v => v.id + 1))
   folders = saved.folders || []; archive = saved.archive || []; sidebar = saved.sidebar !== false; space = SPACES[saved.space] ? saved.space : 0
   tabs = (saved.tabs || []).filter(t => SPACES[t.space]).map(t => ({ title: 'New tab', url: '', icon: null, muted: false, pinned: false, fav: false, folder: null, last: Date.now(), ...t, view: null, loading: false, asleep: true, error: null }))
-  edge.setVisible(!sidebar)
+  edge.setVisible(!sidebar); restored = true
   tabs.length ? activate(byId(saved.active)?.id ?? tabs[0].id) : newTab()
   layout(); stack(); sweep(); setInterval(sweep, 5 * 60e3).unref()
   if (!TEST && app.isPackaged) { const autoCheck = () => settings.autoUpdateCheck && checkUpdate(); setTimeout(autoCheck, 20e3).unref(); setInterval(autoCheck, 6 * 3600e3).unref() }

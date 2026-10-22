@@ -57,14 +57,17 @@ function render() {
   $('#res').innerHTML = rows.map((r, i) => `<div class="row ${i === sel ? 'sel' : ''}" id="r${i}" role="option" aria-selected="${i === sel}" data-i="${i}" style="--i:${i}">${icon(r.kind === 'tab' ? 'layers' : r.kind === 'go' || r.kind === 'bang' ? 'search' : r.kind === 'hist' ? 'history' : 'globe', 16)} ${r.chip || ''}<b>${esc(r.label)}</b> <small>${esc(r.sub || '')}</small><span class="k">${r.key || ''}</span></div>`).join('')
   $('#in').setAttribute('aria-activedescendant', 'r' + sel)
 }
-$('#in').oninput = async e => {
+const onInput = async e => { // an IME composition is searched and completed when it ends, not while it is written
   const el = $('#in'), m = !tag && $('#in').value.match(/^!(\w+)\s+/), b = m && bangs.find(x => x.trigger === m[1].toLowerCase())
   if (b) { setTag(b); $('#in').value = $('#in').value.slice(m[0].length) }
   const adding = !e?.inputType?.startsWith('delete') && el.selectionStart === el.value.length // typing at the end of the bar, not deleting
   completion = null; sel = 0; render(); const q = typed(); hist = q && !tag ? await api.call('history', q) : []
   if (q === typed()) { completion = adding && el.value === q ? complete(q) : null; render(); if (completion) { el.value = q + completion.slice(q.length); el.setSelectionRange(q.length, el.value.length) } } // the offered rest of the address is selected: typing goes on over it, Backspace drops it
 }
+$('#in').oninput = e => e.isComposing || onInput(e)
+$('#in').addEventListener('compositionend', onInput)
 $('#in').onkeydown = e => {
+  if (e.isComposing || e.keyCode === 229) return // the keys of an IME composition (Enter validates it) are not commands
   if (e.key === 'Escape') close()
   else if (e.key === 'Backspace' && tag && !$('#in').selectionStart && !$('#in').selectionEnd) { const t = tag; setTag(null); $('#in').value = '!' + t.trigger + ($('#in').value ? ' ' : '') + $('#in').value; $('#in').setSelectionRange(t.trigger.length + 1, t.trigger.length + 1); sel = 0; render(); e.preventDefault() } // Backspace at the start turns the tag back into text
   else if (e.key === 'ArrowDown') { sel = (sel + 1) % rows.length; render(); e.preventDefault() }

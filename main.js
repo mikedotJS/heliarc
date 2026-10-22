@@ -62,7 +62,7 @@ const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, '') } c
 const zoneOf = t => t.fav ? 'fav' : t.folder ? 'f' + t.folder : t.pinned ? 'pinned' : 'list'
 const snapshot = () => ({
   tabs: tabs.filter(t => !SPACES[t.space].private).map(({ id, title, url, icon, pinned, fav, folder, space, muted, last }) => ({ id, title, url, icon, pinned, fav, folder, space, muted, last })),
-  folders, active: SPACES[byId(active)?.space]?.private ? null : active, space: SPACES[space].private ? 0 : space, sidebar, archive, settings,
+  folders: folders.filter(f => !SPACES[f.space]?.private), active: SPACES[byId(active)?.space]?.private ? null : active, space: SPACES[space].private ? 0 : space, sidebar, archive, settings,
 })
 const push = () => {
   if (!ui) return
@@ -570,6 +570,7 @@ const crxOf = tab => crx.get(session.fromPartition(SPACES[tab.space].partition))
 const applyUserAgent = ses => ses.setUserAgent(settings.fingerprint ? app.userAgentFallback.replace(/ (Electron|Heliarc)\/\S+/g, '') : app.userAgentFallback) // on: sites see a plain Chrome, not an Electron app
 function setupSession(ses) {
   if (configured.has(ses)) return; configured.add(ses)
+  const priv = ses === session.fromPartition(SPACES[PRIVATE].partition)
   privacy.filterRequests(ses, () => settings, () => blocker) // Global Privacy Control, Do Not Track, third-party cookies, ad blocker
   applyUserAgent(ses)
   ses.setPermissionRequestHandler(async (wc, permission, cb, d) => { // camera, microphone, location, notifications, clipboard: ask once per site, then remember
@@ -577,7 +578,7 @@ function setupSession(ses) {
     const need = permsOf(permission, d), host = privacy.host(d.requestingUrl || wc.getURL()), saved = settings.sitePerms[host] || {}
     if (!need.length || !host) return cb(false)
     if (need.some(n => saved[n] === false)) return cb(false)
-    cb(need.every(n => saved[n] === true) || await askPermission(host, need))
+    cb(need.every(n => saved[n] === true) || await askPermission(host, need, priv))
   })
   ses.setDisplayMediaRequestHandler(async (req, cb) => { // screen sharing (Meet, Zoom…): the macOS picker, or a list of screens and windows elsewhere
     const sources = (await desktopCapturer.getSources({ types: ['screen', 'window'] })).slice(0, 8), i = await choose(`${privacy.host(req.securityOrigin)} wants to share your screen`, sources.map(x => x.name), { detail: 'Choose what to share.' })
@@ -592,7 +593,7 @@ function setupSession(ses) {
     const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}
     return need.length > 0 && need.every(n => permission === 'media' ? s[n] !== false : s[n] === true)
   })
-  ses.on('will-download', (e, item) => onDownload(e, item, ses === session.fromPartition(SPACES[PRIVATE].partition)))
+  ses.on('will-download', (e, item) => onDownload(e, item, priv))
   const api = new ElectronChromeExtensions({
     license: 'GPL-3.0', session: ses,
     createTab: async d => { const t = newTab(d.url, SPACES.findIndex(sp => session.fromPartition(sp.partition) === ses)); return [t.view.webContents, win] },
@@ -627,11 +628,11 @@ async function choose(message, names, { detail, cancel = 'Cancel', safe = false 
   return response < list.length ? response : -1
 }
 const asking = new Map() // one question at a time per site and permission
-function askPermission(host, need) {
-  const key = host + need.join()
+function askPermission(host, need, priv) { // priv: Private keeps nothing, so no "Remember for this site"
+  const key = host + need.join() + priv
   if (!asking.has(key)) asking.set(key, dialog.showMessageBox(win, {
     message: `${host} wants to ${need.map(say).join(' and ')}`,
-    buttons: ['Block', 'Allow'], defaultId: 0, cancelId: 0, checkboxLabel: 'Remember for this site', checkboxChecked: true,
+    buttons: ['Block', 'Allow'], defaultId: 0, cancelId: 0, ...(!priv && { checkboxLabel: 'Remember for this site', checkboxChecked: true }),
   }).then(({ response, checkboxChecked }) => {
     if (checkboxChecked) { const s = settings.sitePerms[host] ??= {}; need.forEach(n => { s[n] = response === 1 }); push() }
     return response === 1

@@ -420,14 +420,16 @@ module.exports = async (a, ok) => {
     for (const d of S.downloads().filter(x => x.name.startsWith('flaky'))) { await js(ui(), `api.call('delDownload', ${d.id})`); fs.rmSync(d.path, { force: true }) }
     flaky.close(); a.closeTab(dlHost.id)
     // design system: tokens, components and the guard that keeps hard-coded values out of migrated screens
-    const dsRun = require('child_process').spawnSync(process.execPath, ['scripts/ds-check.js'], { cwd: __dirname, encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } })
-    ok('the design-system guard passes (token contrast, no hand-written colours or sizes in migrated screens)', dsRun.status === 0, dsRun.stderr + dsRun.stdout)
-    { // the guard really fails when a screen writes a colour, a font size or a radius by hand
-      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'heliarc-ds-')); for (const f of fs.readdirSync(path.join(__dirname, 'ui')).filter(x => /\.(html|css)$/.test(x))) fs.copyFileSync(path.join(__dirname, 'ui', f), path.join(tmp, f))
-      fs.appendFileSync(path.join(tmp, 'hung.html'), '<style>b { color: #ff0000; font-size: 13px; border-radius: 7px }</style>')
-      const bad = require('child_process').spawnSync(process.execPath, ['scripts/ds-check.js'], { cwd: __dirname, encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', DS_UI: tmp } })
-      ok('and it fails when a migrated screen writes a colour, a font size or a radius by hand', bad.status === 1 && /#ff0000/.test(bad.stderr) && /font-size: 13px/.test(bad.stderr) && /border-radius: 7px/.test(bad.stderr), bad.stderr)
-      fs.rmSync(tmp, { recursive: true, force: true })
+    if (!require('electron').app.isPackaged) { // the guard needs Node on the source files: a packaged app has neither (RunAsNode fuse off, ui inside app.asar), npm run ds:check runs it in CI
+      const dsRun = require('child_process').spawnSync(process.execPath, ['scripts/ds-check.js'], { cwd: __dirname, encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } })
+      ok('the design-system guard passes (token contrast, no hand-written colours or sizes in migrated screens)', dsRun.status === 0, dsRun.stderr + dsRun.stdout)
+      { // the guard really fails when a screen writes a colour, a font size or a radius by hand
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'heliarc-ds-')); for (const f of fs.readdirSync(path.join(__dirname, 'ui')).filter(x => /\.(html|css)$/.test(x))) fs.copyFileSync(path.join(__dirname, 'ui', f), path.join(tmp, f))
+        fs.appendFileSync(path.join(tmp, 'hung.html'), '<style>b { color: #ff0000; font-size: 13px; border-radius: 7px }</style>')
+        const bad = require('child_process').spawnSync(process.execPath, ['scripts/ds-check.js'], { cwd: __dirname, encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', DS_UI: tmp } })
+        ok('and it fails when a migrated screen writes a colour, a font size or a radius by hand', bad.status === 1 && /#ff0000/.test(bad.stderr) && /font-size: 13px/.test(bad.stderr) && /border-radius: 7px/.test(bad.stderr), bad.stderr)
+        fs.rmSync(tmp, { recursive: true, force: true })
+      }
     }
     const dsTab = a.newTab(require('url').pathToFileURL(path.join(__dirname, 'ui', 'design-system.html')).href); await sleep(1500)
     const dsWc = dsTab.view.webContents, pageBg = () => dsWc.executeJavaScript("getComputedStyle(document.body).backgroundColor")

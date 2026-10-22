@@ -5,6 +5,13 @@ on:
   schedule: [{ cron: '0 6 * * 1' }] # every Monday: new advisories show up without any code change
 permissions: { contents: read }
 jobs:
+  design-system:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm run ds:check # the packaged app can't run this guard in its own self test
   deps:
     runs-on: ubuntu-latest
     steps:

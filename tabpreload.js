@@ -53,8 +53,9 @@ let intent = { el: null, at: 0 }, creds, profile
 async function fill(el) {
   if (!(el instanceof HTMLInputElement) || el.value || !visible(el)) return
   const token = (el.autocomplete || '').split(' ').pop()
-  if (el.type === 'password' || el === userField(scope(el), passField(scope(el)))) {
-    const root = scope(el), pass = passField(root); if (!pass) return
+  const root = scope(el), pass = passField(root)
+  if (el.type === 'password' || (pass && el === userField(root, pass))) { // without a password field there is no login to fill: a lone email or phone field is an address field
+    if (!pass) return
     creds ??= await ipcRenderer.invoke('pw:get'); if (!creds?.length) return
     const user = userField(root, pass), c = creds.find(x => x.user === user?.value) || creds[0]
     if (user && !user.value) setValue(user, c.user)

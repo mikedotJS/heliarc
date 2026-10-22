@@ -45,6 +45,7 @@ const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 const ago = at => { const m = Math.round((at - Date.now()) / 6e4); return Math.abs(m) < 60 ? rtf.format(m, 'minute') : Math.abs(m) < 1440 ? rtf.format(Math.round(m / 60), 'hour') : rtf.format(Math.round(m / 1440), 'day') }
 const SECTIONS = [['downloads', 'Downloads', 'download'], ['media', 'Media', 'image'], ['archive', 'Archive', 'archive'], ['history', 'History', 'history'], ['passwords', 'Passwords', 'key-round'], ['extensions', 'Extensions', 'puzzle'], ['protections', 'Site protections', 'shield-check'], ['settings', 'Settings', 'settings']]
 const MEDIA = /^(image|video|audio)\//, MEDIAEXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|mp4|webm|mov|mkv|mp3|wav|ogg|m4a|flac)$/i
+const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0' } // what is typed in the add forms survives a redraw
 let state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, detected = []
 const fileUrl = p => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '').split('/').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:')
 
@@ -92,15 +93,16 @@ function render() {
     body = (S.canSavePw ? '' : '<div class="err" style="padding:12px">This system can’t encrypt passwords, so Heliarc doesn’t save them.</div>') + (stateMsg() ?? (data.length ? data.map(p => `<div class="row"><span class="ph">${icon('key-round', 12)}</span><div class="mt"><b>${esc(host(p.origin))}</b><small>${esc(p.user || '(no username)')}</small></div><span class="acts"><button data-a="delPassword" data-id="${p.id}" title="Delete">${icon('trash-2', 15)}</button></span></div>`).join('') : '<div class="empty">No saved passwords. Heliarc offers to save a login after you sign in to a site.</div>'))
   } else if (section === 'extensions') {
     body = `<div class="msg" style="padding:0 10px 8px">Install extensions from the Chrome Web Store. They work in every space (not in the Private one); their buttons and popups are in the sidebar toolbar.</div>
-      <div class="line"><input class="ds-field" id="extin" placeholder="Chrome Web Store link or extension ID" style="flex:1" spellcheck="false" ${installing ? 'disabled' : ''}><button class="ds-btn sm" data-a="installExt" ${installing ? 'disabled' : ''}>${installing ? 'Installing…' : 'Install'}</button></div>
+      <div class="line"><input class="ds-field" id="extin" placeholder="Chrome Web Store link or extension ID" value="${esc(draft.extin)}" style="flex:1" spellcheck="false" ${installing ? 'disabled' : ''}><button class="ds-btn sm" data-a="installExt" ${installing ? 'disabled' : ''}>${installing ? 'Installing…' : 'Install'}</button></div>
       <div class="msg ${note?.cls || ''}" style="padding:0 10px 8px">${esc(note?.text || '')}</div>` +
       (stateMsg() ?? (data.length ? data.map(x => x.failed ? `<div class="row"><span class="ph err">${icon('triangle-alert', 12)}</span><div class="mt"><b>${esc(x.name)}</b><small>Couldn’t start: ${esc(x.error)}</small></div><span class="acts"><button data-a="retryExt" data-eid="${esc(x.id)}" title="Try again">${icon('rotate-cw', 15)}</button><button data-a="removeExt" data-eid="${esc(x.id)}" title="Remove">${icon('trash-2', 15)}</button></span></div>` : `<div class="row"><span class="ph">${icon('puzzle', 12)}</span><div class="mt"><b>${esc(x.name)}</b><small>Version ${esc(x.version)} · ${esc(x.id)}</small></div><span class="acts"><button data-a="removeExt" data-eid="${esc(x.id)}" title="Remove">${icon('trash-2', 15)}</button></span></div>`).join('') : '<div class="empty">No extensions installed.</div>'))
   } else if (section === 'protections') {
     body = protections(S)
   } else body = settings(S)
-  if (section === 'downloads' && note?.dl) body = `<div class="msg bad" style="padding:0 10px 8px">${esc(note.dl)}</div>` + body
+  if ((section === 'downloads' || section === 'media') && note?.dl) body = `<div class="msg bad" style="padding:0 10px 8px">${esc(note.dl)}</div>` + body
+  const old = $('#q'), had = old && document.activeElement === old, caret = old && [old.selectionStart, old.selectionEnd] // the search field is rebuilt: give it back its focus and caret
   $('#head').innerHTML = head; $('#body').innerHTML = body
-  if (section === 'history') { const i = $('#q'); i.oninput = () => { q = i.value; clearTimeout(i.t); i.t = setTimeout(load, 150) }; if (document.activeElement !== i && q) { i.focus(); i.setSelectionRange(q.length, q.length) } }
+  if (section === 'history') { const i = $('#q'); i.oninput = () => { q = i.value; clearTimeout(i.t); i.t = setTimeout(load, 150) }; if (had) { i.focus(); i.setSelectionRange(...caret) } }
 }
 // what the user can turn off for one site: [kind, the setting listing those sites, the global switch, name, what it does]
 const PROT = [
@@ -141,7 +143,7 @@ function settings(S) {
     <div class="line"><label>Search engine<small>Used when you type something that isn’t an address</small></label><select class="ds-select" data-engine>${Object.entries(S.engines).map(([k, n]) => `<option value="${k}" ${k === st.searchEngine ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
     <div class="msg">Bangs jump straight to a site: type <b>!w cats</b> or <b>!yt lofi</b>. Type <b>!</b> in the command bar to see them all. Add your own:</div>
     ${st.bangs.map(x => `<div class="line"><label>!${esc(x.trigger)}<small>${esc(x.url)}</small></label><button class="ds-btn sm" data-a="delBang" data-trigger="${esc(x.trigger)}">${icon('trash-2', 14)}</button></div>`).join('')}
-    <div class="line"><input class="ds-field" id="btrig" placeholder="npm" style="width:70px" spellcheck="false"><input class="ds-field" id="burl" placeholder="https://www.npmjs.com/search?q=%s" style="flex:1" spellcheck="false"><button class="ds-btn sm" data-a="addBang">Add</button></div>
+    <div class="line"><input class="ds-field" id="btrig" placeholder="npm" value="${esc(draft.btrig)}" style="width:70px" spellcheck="false"><input class="ds-field" id="burl" placeholder="https://www.npmjs.com/search?q=%s" value="${esc(draft.burl)}" style="flex:1" spellcheck="false"><button class="ds-btn sm" data-a="addBang">Add</button></div>
     <div class="msg ${note?.bang ? 'bad' : ''}">${esc(note?.bang || '')}</div></section>
   <section><h3>Site permissions</h3>
     <div class="msg">Sites ask before using your camera, microphone, location, notifications or clipboard. Answers you chose to remember are listed here.</div>
@@ -155,18 +157,19 @@ function settings(S) {
       <div class="icons">${SPACE_ICONS.map(n => `<button class="ibtn ${n === s.icon ? 'on' : ''}" data-a="spaceIcon" data-sp="${i}" data-icon="${n}" title="${n}">${icon(n, 16)}</button>`).join('')}</div></div>`).join('')}</section>
   <section><h3>Spaces: open sites in the right space</h3>
     ${st.routes.map(r => `<div class="line"><label>${esc(r.host)}<small>always opens in ${esc(S.spaces[r.space]?.name)}</small></label><button class="ds-btn sm" data-a="delRoute" data-host="${esc(r.host)}">${icon('trash-2', 14)}</button></div>`).join('') || '<div class="msg">No rules yet. You can also right-click a tab → “Always open … in”.</div>'}
-    <div class="line"><input class="ds-field" id="rhost" placeholder="example.com" style="flex:1" spellcheck="false"><select class="ds-select" id="rspace">${S.spaces.map((s, i) => s.private ? '' : `<option value="${i}">${esc(s.name)}</option>`).join('')}</select><button class="ds-btn sm" data-a="addRoute">Add</button></div></section>
+    <div class="line"><input class="ds-field" id="rhost" placeholder="example.com" value="${esc(draft.rhost)}" style="flex:1" spellcheck="false"><select class="ds-select" id="rspace">${S.spaces.map((s, i) => s.private ? '' : `<option value="${i}" ${String(i) === draft.rspace ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button class="ds-btn sm" data-a="addRoute">Add</button></div>
+    <div class="msg ${note?.route ? 'bad' : ''}">${esc(note?.route || '')}</div></section>
   <section><h3>Keyboard shortcuts</h3>
     ${Object.entries(S.keys).map(([a, k]) => `<div class="line"><label>${esc(S.labels[a])}</label><kbd class="${recordingFor === a ? 'rec' : ''}">${recordingFor === a ? 'Press keys…' : esc(fmt(k))}</kbd><button class="ds-btn sm" data-a="record" data-action="${a}">${recordingFor === a ? 'Cancel' : 'Change'}</button>${st.shortcuts[a] ? `<button class="ds-btn sm" data-a="resetKey" data-action="${a}" title="Back to default">${icon('undo-2', 14)}</button>` : ''}</div>`).join('')}
     <div class="msg ${note?.key ? 'bad' : ''}">${note?.key ? esc(note.key) : 'Click Change, then press the new combination (Esc to cancel).'}</div></section>
   <section><h3>Autofill</h3><div class="msg">Used to fill address forms when you click a field. Stored on this device only.</div>
-    <div class="form">${[['first', 'First name'], ['last', 'Last name'], ['email', 'Email'], ['phone', 'Phone'], ['org', 'Organization'], ['street', 'Street address'], ['zip', 'Postal code'], ['city', 'City'], ['country', 'Country']].map(([k, l]) => `<input class="ds-field" data-pf="${k}" placeholder="${l}" value="${esc(p[k] || '')}">`).join('')}
-    <button class="ds-btn sm wide" data-a="saveProfile">Save autofill</button><div class="msg wide ${note?.profile ? 'ok' : ''}">${note?.profile || ''}</div></div></section>`
+    ${stateMsg() ?? `<div class="form">${[['first', 'First name'], ['last', 'Last name'], ['email', 'Email'], ['phone', 'Phone'], ['org', 'Organization'], ['street', 'Street address'], ['zip', 'Postal code'], ['city', 'City'], ['country', 'Country']].map(([k, l]) => `<input class="ds-field" data-pf="${k}" placeholder="${l}" value="${esc(p[k] || '')}">`).join('')}
+    <button class="ds-btn sm wide" data-a="saveProfile">Save autofill</button><div class="msg wide ${note?.profile ? 'ok' : ''}">${note?.profile || ''}</div></div>`}</section>`
 }
 const did = el => +el.closest('[data-id]').dataset.id
 const ACT = {
   retry: load, clearDownloads: () => api.call('clearDownloads'), clearArchive: () => api.call('clearArchive'), clearHistory: async () => { await api.call('clearHistory'); load() },
-  openFile: el => api.call('openFile', did(el)), showFile: el => api.call('showFile', did(el)), cancelDownload: el => api.call('cancelDownload', did(el)), retryDownload: async el => { const r = await api.call('retryDownload', did(el)); if (r?.error) { note = { dl: r.error }; render() } },
+  openFile: async el => { const r = await api.call('openFile', did(el)); if (r || note?.dl) { note = r ? { dl: `Couldn’t open this file: ${r}` } : null; render() } }, // the main process answers with the system's error text, or nothing when it worked showFile: el => api.call('showFile', did(el)), cancelDownload: el => api.call('cancelDownload', did(el)), retryDownload: async el => { const r = await api.call('retryDownload', did(el)); if (r?.error) { note = { dl: r.error }; render() } },
   retryExt: async el => { note = { text: 'Trying again…' }; render(); const r = await api.call('retryExtension', el.dataset.eid); note = r.ok ? { text: 'Started.', cls: 'ok' } : { text: 'Still can’t start. You can remove it and install it again.', cls: 'bad' }; load() }, delDownload: el => api.call('delDownload', did(el)),
   restoreArchive: async el => { await api.call('restoreArchive', +el.dataset.i); close() },
   openUrl: async el => { await api.call('open', el.dataset.url); close() },
@@ -178,15 +181,19 @@ const ACT = {
   checkUpdate: async () => { note = { update: { text: 'Checking…' } }; render(); note = { update: await api.call('checkUpdate') }; render() },
   spaceIcon: el => api.call('editSpace', +el.dataset.sp, { icon: el.dataset.icon }),
   delRoute: el => api.call('delRoute', el.dataset.host), delBang: el => api.call('delBang', el.dataset.trigger),
-  addBang: async () => { const r = await api.call('addBang', $('#btrig').value, $('#burl').value); note = r.error ? { bang: r.error } : null; render() },
+  addBang: async () => { const r = await api.call('addBang', $('#btrig').value, $('#burl').value); note = r.error ? { bang: r.error } : null; if (!r.error) draft.btrig = draft.burl = ''; render() },
   installExt: async () => {
     const v = $('#extin').value.trim(); if (!v) { note = { text: 'Paste a Chrome Web Store link or an extension ID.', cls: 'bad' }; return render() }
     installing = true; note = null; render()
     const r = await api.call('installExtension', v); installing = false
-    note = r.error ? { text: r.error, cls: 'bad' } : { text: `Installed “${r.name}”.`, cls: 'ok' }; load()
+    note = r.error ? { text: r.error, cls: 'bad' } : { text: `Installed “${r.name}”.`, cls: 'ok' }; if (!r.error) draft.extin = ''; load()
   },
   removeExt: async el => { await api.call('removeExtension', el.dataset.eid); note = null; load() },
-  addRoute: async () => { const h = $('#rhost').value; if (h.trim()) await api.call('addRoute', h, +$('#rspace').value) },
+  addRoute: async () => {
+    const h = $('#rhost').value, ok = (() => { try { return /^[\w.-]+$/.test(new URL('https://' + h.trim().replace(/^https?:\/\//i, '')).hostname) } catch {} })() // a plain host name, as the main process reads it
+    if (!ok) { note = { route: 'Enter a site address, like example.com.' }; return render() }
+    const r = await api.call('addRoute', h, +$('#rspace').value); note = r?.error ? { route: r.error } : null; if (!r?.error) draft.rhost = ''; render()
+  },
   defaultBrowser: async () => { const ok = await api.call('defaultBrowser'); note = { text: ok ? 'Heliarc is now the default browser.' : 'Choose Heliarc in the system settings window that just opened.', cls: ok ? 'ok' : '' }; render() },
   saveProfile: async () => { const p = {}; document.querySelectorAll('[data-pf]').forEach(i => p[i.dataset.pf] = i.value.trim()); await api.call('setProfile', p); data = p; note = { profile: 'Saved ✓' }; render(); setTimeout(() => { note = null; section === 'settings' && render() }, 2500) },
   record: el => recordingFor === el.dataset.action ? stopRec() : startRec(el.dataset.action),
@@ -196,7 +203,7 @@ $('#body').onclick = $('#head').onclick = e => {
   const el = e.target.closest('[data-a]'); if (!el) return
   e.stopPropagation(); ACT[el.dataset.a]?.(el)
 }
-$('#body').oninput = e => { if (e.target.dataset.pf) (data ??= {})[e.target.dataset.pf] = e.target.value } // keep unsaved autofill edits across re-renders
+$('#body').oninput = e => { if (e.target.dataset.pf) (data ??= {})[e.target.dataset.pf] = e.target.value; else if (Object.hasOwn(draft, e.target.id)) draft[e.target.id] = e.target.value } // keep unsaved autofill edits across re-renders
 $('#body').onchange = async e => {
   const t = e.target
   if (t.dataset.perm) { const [h, k] = t.dataset.perm.split('|'); await api.call('setSitePerm', h, k, t.value === 'x' ? null : t.value === '1') }
@@ -220,7 +227,13 @@ addEventListener('keydown', async e => {
   } else if (e.key === 'Escape') close()
 }, true)
 document.body.onmousedown = e => { if (!e.target.closest('#card')) close() }
-const close = () => { recordingFor = null; api.call('recording', false); document.body.classList.add('out'); setTimeout(() => api.call('closePanel'), 200) }
-api.onState(s => { state = s; if (section !== 'history' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'SELECT') render() })
-api.on('panel', o => { document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); open(o.section) })
+let closing
+const close = () => { recordingFor = null; api.call('recording', false); document.body.classList.add('out'); clearTimeout(closing); closing = setTimeout(() => api.call('closePanel'), 200) }
+// never rebuild the panel under a pressed mouse button: the click would be lost (a field or a list that has the focus is left alone too)
+let pressed = false, stale = false
+const refresh = () => { stale = false; if (section !== 'history' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'SELECT') render() }
+addEventListener('pointerdown', e => { if (e.button === 0 && !e.target.closest('select, input')) pressed = true }, true)
+for (const ev of ['pointerup', 'pointercancel', 'blur']) addEventListener(ev, () => { pressed = false; stale && setTimeout(() => !pressed && refresh(), 60) }, true)
+api.onState(s => { state = s; pressed ? stale = true : refresh() })
+api.on('panel', o => { clearTimeout(closing); document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); open(o.section) })
 </script>

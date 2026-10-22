@@ -231,7 +231,8 @@ let closing
 const close = () => { recordingFor = null; api.call('recording', false); document.body.classList.add('out'); clearTimeout(closing); closing = setTimeout(() => api.call('closePanel'), 200) }
 // never rebuild the panel under a pressed mouse button: the click would be lost (a field or a list that has the focus is left alone too)
 let pressed = false, stale = false
-const refresh = () => { stale = false; if (section !== 'history' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'SELECT') render() }
+const typing = () => document.activeElement?.matches('input:not([type=checkbox]):not([type=color]), select') // switches and colour pickers hold no text: redrawing under them loses nothing
+const refresh = () => { stale = false; if (section !== 'history' && !typing()) render() }
 addEventListener('pointerdown', e => { if (e.button === 0 && !e.target.closest('select, input')) pressed = true }, true)
 const release = () => { pressed = false; stale && setTimeout(() => !pressed && refresh(), 60) }
 for (const ev of ['pointerup', 'pointercancel']) addEventListener(ev, release, true)

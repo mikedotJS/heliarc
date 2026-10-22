@@ -472,7 +472,7 @@ function closePeek() {
 
 // ---- little window: links from other apps ----
 function openExternal(url) { // "Little" window: a roomy, borderless-looking page over a space-colored frame, like Little Arc
-  if (!settings.littleExternal) { newTab(url); win.show(); win.focus(); return }
+  if (!settings.littleExternal) { newTab(url, routeFor(resolve(url))); win.show(); win.focus(); return }
   const sp = routeFor(resolve(url)) ?? 0
   if (little?.space === sp) { loadWeb(little.view.webContents, little, url); little.win.focus(); return }
   little?.win.close() // a link for another space needs a window in that space's profile

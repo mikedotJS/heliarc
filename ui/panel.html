@@ -24,6 +24,7 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 4px 0 }
   .thumb { background: var(--bg); border-radius: var(--r-md); overflow: hidden; cursor: pointer; display: flex; flex-direction: column } .thumb:hover { outline: 2px solid var(--acc) }
   .thumb .pv { height: 100px; display: grid; place-items: center; background: var(--bg); color: var(--dim) } .thumb .pv img, .thumb .pv video { width: 100%; height: 100%; object-fit: cover }
+  .row.click:focus-visible, .thumb:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px }
   .thumb span { padding: 6px 8px; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   .spedit { padding: 4px 0 10px } .spprev { width: 30px; height: 30px; border-radius: var(--r-md); display: grid; place-items: center; color: var(--on-color); flex: none }
   input[type=color] { width: 34px; height: 30px; padding: 2px; border: 1px solid var(--hover); border-radius: var(--r-md); background: var(--bg); cursor: pointer }
@@ -74,7 +75,7 @@ function render() {
     const list = S.downloads.filter(d => section === 'downloads' || (d.state === 'completed' && (MEDIA.test(d.mime || '') || MEDIAEXT.test(d.name))))
     if (section === 'downloads' && list.length) head += '<button data-a="clearDownloads">Clear all</button>'
     body = !list.length ? `<div class="empty">${section === 'media' ? 'Images, videos and audio you download show up here.' : 'No downloads yet.'}</div>` : section === 'media'
-      ? `<div class="grid">${list.map(d => `<div class="thumb" data-a="openFile" data-id="${d.id}" title="${esc(d.name)}"><div class="pv">${/^video\/|\.(mp4|webm|mov|mkv)$/i.test(d.mime + d.name) ? `<video src="${esc(fileUrl(d.path))}" preload="metadata" muted></video>` : /^audio\/|\.(mp3|wav|ogg|m4a|flac)$/i.test(d.mime + d.name) ? icon('music', 28) : `<img src="${esc(fileUrl(d.path))}" onerror="this.replaceWith(document.createTextNode('File moved or deleted'))">`}</div><span>${esc(d.name)}</span></div>`).join('')}</div>`
+      ? `<div class="grid">${list.map(d => `<div class="thumb" tabindex="0" role="button" data-a="openFile" data-id="${d.id}" title="${esc(d.name)}"><div class="pv">${/^video\/|\.(mp4|webm|mov|mkv)$/i.test(d.mime + d.name) ? `<video src="${esc(fileUrl(d.path))}" preload="metadata" muted></video>` : /^audio\/|\.(mp3|wav|ogg|m4a|flac)$/i.test(d.mime + d.name) ? icon('music', 28) : `<img src="${esc(fileUrl(d.path))}" onerror="this.replaceWith(document.createTextNode('File moved or deleted'))">`}</div><span>${esc(d.name)}</span></div>`).join('')}</div>`
       : list.map(d => {
         const live = d.state === 'progressing' || d.state === 'paused', pct = d.total ? d.received / d.total * 100 : 5
         const sub = live ? `${d.state === 'paused' ? 'Paused · ' : ''}${size(d.received)}${d.total ? ' of ' + size(d.total) : ''}` : d.state === 'completed' ? `${size(d.received || d.total)} · ${ago(d.at)}` : d.state === 'cancelled' ? 'Cancelled' : 'Failed: the connection was lost or the site refused it'
@@ -85,10 +86,10 @@ function render() {
     const hrs = S.settings.archiveHours
     if (S.archive.length) head += '<button data-a="clearArchive">Clear all</button>'
     body = `<div class="msg" style="padding:0 10px 8px">${hrs ? `Tabs you haven’t opened for ${hrs >= 24 ? hrs / 24 + ' day(s)' : hrs + ' hours'} are archived here. Pinned tabs and favorites are never archived.` : 'Automatic archiving is off (see Settings).'}</div>` +
-      (S.archive.length ? S.archive.map((a, i) => `<div class="row click" data-a="restoreArchive" data-i="${i}"><span class="ph">${a.icon ? `<img class="fav" src="${esc(a.icon)}">` : icon('globe', 12)}</span><div class="mt"><b>${esc(a.title || a.url)}</b><small>${esc(host(a.url))} · ${esc(S.spaces[a.space]?.name)} · archived ${ago(a.at)}</small></div><span class="acts"><button title="Restore">${icon('undo-2', 15)}</button></span></div>`).join('') : '<div class="empty">Nothing archived yet.</div>')
+      (S.archive.length ? S.archive.map((a, i) => `<div class="row click" tabindex="0" role="button" data-a="restoreArchive" data-i="${i}"><span class="ph">${a.icon ? `<img class="fav" src="${esc(a.icon)}">` : icon('globe', 12)}</span><div class="mt"><b>${esc(a.title || a.url)}</b><small>${esc(host(a.url))} · ${esc(S.spaces[a.space]?.name)} · archived ${ago(a.at)}</small></div><span class="acts"><button title="Restore">${icon('undo-2', 15)}</button></span></div>`).join('') : '<div class="empty">Nothing archived yet.</div>')
   } else if (section === 'history') {
     head += `<input id="q" placeholder="Search history" value="${esc(q)}" spellcheck="false">` + (data?.length || q ? '<button data-a="clearHistory">Clear all</button>' : '')
-    body = stateMsg() ?? (data.length ? data.map(h => `<div class="row click" data-a="openUrl" data-url="${esc(h.url)}"><span class="ph">${icon('globe', 12)}</span><div class="mt"><b>${esc(h.title || h.url)}</b><small>${esc(host(h.url))} · ${ago(h.at)}</small></div><span class="acts"><button data-a="delHistory" data-at="${h.at}" title="Remove">${icon('x', 15)}</button></span></div>`).join('') : `<div class="empty">${q ? 'No match.' : 'No history yet.'}</div>`)
+    body = stateMsg() ?? (data.length ? data.map(h => `<div class="row click" tabindex="0" role="link" data-a="openUrl" data-url="${esc(h.url)}"><span class="ph">${icon('globe', 12)}</span><div class="mt"><b>${esc(h.title || h.url)}</b><small>${esc(host(h.url))} · ${ago(h.at)}</small></div><span class="acts"><button data-a="delHistory" data-at="${h.at}" title="Remove">${icon('x', 15)}</button></span></div>`).join('') : `<div class="empty">${q ? 'No match.' : 'No history yet.'}</div>`)
   } else if (section === 'passwords') {
     body = (S.canSavePw ? '' : '<div class="err" style="padding:12px">This system can’t encrypt passwords, so Heliarc doesn’t save them.</div>') + (stateMsg() ?? (data.length ? data.map(p => `<div class="row"><span class="ph">${icon('key-round', 12)}</span><div class="mt"><b>${esc(host(p.origin))}</b><small>${esc(p.user || '(no username)')}</small></div><span class="acts"><button data-a="delPassword" data-id="${p.id}" title="Delete">${icon('trash-2', 15)}</button></span></div>`).join('') : '<div class="empty">No saved passwords. Heliarc offers to save a login after you sign in to a site.</div>'))
   } else if (section === 'extensions') {
@@ -203,6 +204,7 @@ $('#body').onclick = $('#head').onclick = e => {
   const el = e.target.closest('[data-a]'); if (!el) return
   e.stopPropagation(); ACT[el.dataset.a]?.(el)
 }
+$('#body').onkeydown = e => { if (e.key === 'Enter' && e.target.matches('.row[data-a], .thumb[data-a]')) e.target.click() }
 $('#body').oninput = e => { if (e.target.dataset.pf) (data ??= {})[e.target.dataset.pf] = e.target.value; else if (Object.hasOwn(draft, e.target.id)) draft[e.target.id] = e.target.value } // keep unsaved autofill edits across re-renders
 $('#body').onchange = async e => {
   const t = e.target

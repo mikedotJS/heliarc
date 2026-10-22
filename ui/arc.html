@@ -185,6 +185,8 @@ function render() {
 }
 // never rebuild the list under a pressed mouse button: it would cancel a drag that is about to start
 addEventListener('pointerdown', e => { if (e.button === 0 && e.target.closest('#side')) pressed = true }, true) // left button only: a right-click's mouseup is swallowed by the native menu on macOS
-for (const ev of ['pointerup', 'pointercancel', 'blur']) addEventListener(ev, () => { pressed = false; stale && setTimeout(() => !pressed && !drag && !editing && render(), 60) }, true)
+const release = () => { pressed = false; stale && setTimeout(() => !pressed && !drag && !editing && render(), 60) }
+for (const ev of ['pointerup', 'pointercancel']) addEventListener(ev, release, true)
+addEventListener('blur', release) // not in capture: it would hear every field losing focus (a folder rename), and let go of a button that is still down
 api.onState(s => { state = s; if (drag || pressed || editing) stale = true; else { stale = false; render() } })
 </script>

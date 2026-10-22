@@ -233,7 +233,9 @@ const close = () => { recordingFor = null; api.call('recording', false); documen
 let pressed = false, stale = false
 const refresh = () => { stale = false; if (section !== 'history' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'SELECT') render() }
 addEventListener('pointerdown', e => { if (e.button === 0 && !e.target.closest('select, input')) pressed = true }, true)
-for (const ev of ['pointerup', 'pointercancel', 'blur']) addEventListener(ev, () => { pressed = false; stale && setTimeout(() => !pressed && refresh(), 60) }, true)
+const release = () => { pressed = false; stale && setTimeout(() => !pressed && refresh(), 60) }
+for (const ev of ['pointerup', 'pointercancel']) addEventListener(ev, release, true)
+addEventListener('blur', release) // not in capture: it would hear every field losing focus, and let go of a button that is still down
 api.onState(s => { state = s; pressed ? stale = true : refresh() })
 api.on('panel', o => { clearTimeout(closing); document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); open(o.section) })
 </script>

@@ -115,9 +115,13 @@ $('#upd').onclick = e => { const b = e.target.closest('[data-u]'); b && api.call
 $('#shield').onclick = () => api.call('openPanel', 'protections')
 $('#pwbar').onclick = e => { const a = e.target.dataset.pw; if (a) api.call(a) }
 $('#mini').onclick = e => { const m = e.target.closest('[data-m]')?.dataset.m; api.call(m === 'toggle' ? 'mediaToggle' : m === 'mute' ? 'mute' : 'mediaGo', state.media?.id) }
-$('#dl').onclick = e => { const b = e.target.closest('[data-dl]'); b ? api.call(b.dataset.dl === 'retry' ? 'retryDownload' : 'delDownload', +b.dataset.id) : api.call('openPanel', 'downloads') }
+$('#dl').onclick = async e => {
+  const b = e.target.closest('[data-dl]'); if (!b) return api.call('openPanel', 'downloads')
+  const r = await api.call(b.dataset.dl === 'retry' ? 'retryDownload' : 'delDownload', +b.dataset.id)
+  if (r?.error) { dlError = { id: +b.dataset.id, text: r.error }; render() } // the main process says why a retry can't start (no tab to start it from)
+}
 
-const seen = new Set(); let lastSpace = null, state = null, editing = null, drag = false, pressed = false, stale = false
+const seen = new Set(); let dlError = null, lastSpace = null, state = null, editing = null, drag = false, pressed = false, stale = false
 const sortables = []
 function mount() { // drag & drop between favorites, pinned, folders and today's tabs
   sortables.forEach(s => s.destroy()); sortables.length = 0
@@ -174,7 +178,7 @@ function render() {
   $('#upd').innerHTML = u?.state === 'ready' ? card('', 'download', 'Heliarc ' + (v || '') + ' is ready', 'Restart to update', '<button data-u="install">Restart</button>')
     : u?.state === 'downloading' ? card('', 'download', 'Updating Heliarc' + (v ? ' to ' + v : ''), 'Downloading…', '', 5)
     : s.update ? card('', 'download', 'Heliarc ' + v + ' is available', 'You have ' + s.version, '<button data-u="open">Get it</button>') : ''
-  $('#dl').innerHTML = d?.state === 'interrupted' ? card('', 'triangle-alert', d.name, 'Download failed: the connection was lost or the site refused it', `<button data-dl="retry" data-id="${d.id}">Retry</button><button data-dl="drop" data-id="${d.id}" title="Dismiss">${icon('x', 14)}</button>`) : d ? card('', d.state === 'completed' ? 'check' : 'download', d.name, d.state === 'completed' ? 'Download complete' : `${d.total ? Math.round(d.received / d.total * 100) + '%' : 'Downloading…'}${busy > 1 ? ` · ${busy} downloads` : ''}`, '', d.state === 'completed' ? null : d.total ? d.received / d.total * 100 : 5) : ''
+  $('#dl').innerHTML = d?.state === 'interrupted' ? card('', 'triangle-alert', d.name, dlError?.id === d.id ? dlError.text : 'Download failed: the connection was lost or the site refused it', `<button data-dl="retry" data-id="${d.id}">Retry</button><button data-dl="drop" data-id="${d.id}" title="Dismiss">${icon('x', 14)}</button>`) : d ? card('', d.state === 'completed' ? 'check' : 'download', d.name, d.state === 'completed' ? 'Download complete' : `${d.total ? Math.round(d.received / d.total * 100) + '%' : 'Downloading…'}${busy > 1 ? ` · ${busy} downloads` : ''}`, '', d.state === 'completed' ? null : d.total ? d.received / d.total * 100 : 5) : ''
   ;['mini', 'upd', 'dl'].forEach((k, i) => $('#' + k).firstElementChild?.classList.toggle('still', had[i]))
   $('#shield').innerHTML = s.blockerState === 'loading' ? 'Loading ad blocker…' : s.blockerState === 'error' ? `${icon('shield-alert', 13)} Ad blocker offline (lists unreachable)` : `${icon('shield-check', 13)} ${s.blocked} ads & trackers blocked`
   $('#shield').classList.toggle('off', !!s.siteOff); $('#shield').title = 'Protections on this site: click to manage them'

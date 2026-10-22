@@ -24,7 +24,6 @@
 const $ = s => document.querySelector(s), esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
 let state = { tabs: [] }, mode = 'new', sel = 0, rows = [], hist = [], bangs = [], tag = null, completion = null // completion: the visited site the bar is offering to finish the typed text with
 api.onState(s => { state = s })
-api.call('bangList').then(l => { bangs = l; render() })
 // the visited site whose address starts with what is typed (www. ignored), the one with the most pages in the history first, then the latest
 function complete(q) {
   if (!q || tag || /[\s/:!?#]/.test(q)) return null
@@ -75,7 +74,9 @@ $('#in').onkeydown = e => {
 }
 $('#res').onclick = e => { const r = e.target.closest('.row'); r && rows[+r.dataset.i]?.run() }
 document.body.onmousedown = e => { if (!e.target.closest('#box')) close() }
-const close = () => { document.body.classList.add('out'); setTimeout(() => api.call('closeCmd'), 200) }
+let closing
+const close = () => { document.body.classList.add('out'); clearTimeout(closing); closing = setTimeout(() => api.call('closeCmd'), 200) }
 api.onOpen(o => {
+  clearTimeout(closing); api.call('bangList').then(l => { bangs = l; render() }) // reloaded at each opening: a bang added or removed in Settings counts right away
   document.body.classList.remove('out', 'in'); void document.body.offsetWidth; document.body.classList.add('in'); setTimeout(() => document.body.classList.remove('in'), 700); mode = o.mode; sel = 0; hist = []; completion = null; setTag(null);document.body.style.paddingLeft = o.left + 'px'; document.body.style.paddingRight = o.right + 'px'; $('#in').value = o.value; render(); $('#in').focus(); $('#in').select() })
 </script>

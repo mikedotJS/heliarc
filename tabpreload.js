@@ -24,7 +24,7 @@ addEventListener('submit', e => capture(e.target), true)
 addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.type === 'password') capture(scope(e.target)) }, true)
 addEventListener('click', e => { // SPA logins submit without a form submit event; ignore "show password" style buttons
   const b = e.target.closest?.('button, input[type=submit], [role=button]')
-  if (b && (b.type === 'submit' || LOGIN.test(b.innerText || b.value || b.getAttribute('aria-label') || ''))) capture(scope(b))
+  if (b && (/^submit$/i.test(b.getAttribute('type')) || LOGIN.test(b.innerText || b.value || b.getAttribute('aria-label') || ''))) capture(scope(b))
 }, true)
 
 // Chrome Web Store: its own "Add to Chrome" button stays disabled outside Chrome, so turn it into a working "Add to Heliarc".

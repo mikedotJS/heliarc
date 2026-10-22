@@ -14,6 +14,6 @@ const $ = s => document.querySelector(s); let busy = false
 api.call('authInfo').then(i => { if (i) $('#why').textContent = `${i.proxy ? 'The proxy ' : ''}${i.host} says: “${i.realm || 'Authentication required'}”. Your password is sent to this site.` })
 const done = r => { if (busy) return; busy = true; $('#u').disabled = $('#p').disabled = $('#ok').disabled = $('#no').disabled = true; $('#ok').textContent = r ? 'Signing in…' : 'Cancelling…'; api.call('authDone', r) }
 $('#ok').onclick = () => done({ user: $('#u').value, pass: $('#p').value }); $('#no').onclick = () => done(null)
-addEventListener('keydown', e => { if (e.key === 'Enter') $('#ok').click(); else if (e.key === 'Escape') $('#no').click() })
+addEventListener('keydown', e => { if (e.key === 'Enter' && !e.target.closest('button')) $('#ok').click(); else if (e.key === 'Escape') $('#no').click() })
 $('#u').focus()
 </script>

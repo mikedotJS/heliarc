@@ -16,9 +16,12 @@ const userField = (root, pass) => {
   return before.at(-1) || null
 }
 
-function capture(root) {
+let sent = { key: '', at: 0 }
+function capture(root) { // a click on Sign in is followed by the form's submit: the same login within 2 s is sent once
   const pass = passField(root); if (!pass?.value) return
-  ipcRenderer.send('pw:captured', { user: userField(root, pass)?.value || '', pass: pass.value })
+  const user = userField(root, pass)?.value || '', key = JSON.stringify([user, pass.value]), now = Date.now()
+  if (key === sent.key && now - sent.at < 2000) return
+  sent = { key, at: now }; ipcRenderer.send('pw:captured', { user, pass: pass.value })
 }
 addEventListener('submit', e => capture(e.target), true)
 addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.type === 'password') capture(scope(e.target)) }, true)
@@ -57,7 +60,8 @@ async function fill(el) {
   if (el.type === 'password' || (pass && el === userField(root, pass))) { // without a password field there is no login to fill: a lone email or phone field is an address field
     if (!pass) return
     creds ??= await ipcRenderer.invoke('pw:get'); if (!creds?.length) return
-    const user = userField(root, pass), c = creds.find(x => x.user === user?.value) || creds[0]
+    const user = userField(root, pass), c = creds.find(x => x.user === user?.value) || (!user?.value && creds[0]) // a username the site prefilled that is not saved gets no other account's password
+    if (!c) return
     if (user && !user.value) setValue(user, c.user)
     if (!pass.value) setValue(pass, c.pass)
   } else if (PROFILE[token]) {

@@ -165,9 +165,9 @@ function makeView(tab, opened) { // opened: the window options Electron made for
   wc.on('did-stop-loading', () => { tab.loading = false; push() })
   wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (!tab.manual) wc.setZoomFactor(1); if (u.startsWith(SYSTEM)) { tab.url = tab.sys?.url || ''; tab.error = tab.sys?.msg || null } else { tab.sys = null; tab.url = u.startsWith('file:') ? '' : u; visit(tab, u) } push() })
   wc.on('did-finish-load', () => { tab.upN = 0; setTimeout(() => fitSoon(tab), 500) })
-  wc.on('did-navigate-in-page', (_, u) => { tab.url = u; push() })
-  const toHttps = (e, u) => { const s = settings.httpsOnly && !tab.httpOk?.has(hostOf(u)) && (tab.upN = (tab.upN || 0) + 1) < 4 && privacy.upgrade(u); if (s) { e.preventDefault(); tab.upgraded = s; wc.loadURL(s) } }
-  wc.on('will-navigate', (e, u) => toHttps(e, u)); wc.on('will-redirect', (e, u) => toHttps(e, u)) // HTTPS only: http:// links are upgraded
+  wc.on('did-navigate-in-page', (_, u, isMainFrame) => { if (isMainFrame) { tab.url = u; push() } })
+  const toHttps = (e, u) => { const s = settings.httpsOnly && !tab.httpOk?.has(hostOf(u)) && privacy.upgrade(u); if (s && (tab.upN = (tab.upN || 0) + 1) < 4) { e.preventDefault(); tab.upgraded = s; wc.loadURL(s) } }
+  wc.on('will-navigate', (e, u) => toHttps(e, u)); wc.on('will-redirect', (e, u) => e.isMainFrame && toHttps(e, u)) // HTTPS only: http:// links are upgraded
   wc.on('did-fail-load', (_, code, desc, url, isMain) => {
     if (isMain && url === tab.upgraded && privacy.NO_HTTPS.includes(code)) { // the site has no HTTPS: allow plain http for this host, in this tab
       const http = url.replace(/^https:/, 'http:'); (tab.httpOk ??= new Set()).add(hostOf(url)); tab.upgraded = null; wc.loadURL(http); return

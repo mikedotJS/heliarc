@@ -192,7 +192,12 @@ function makeView(tab, opened) { // opened: the window options Electron made for
     const i = dialog.showMessageBoxSync(win, { type: 'question', message: 'Leave this page?', detail: 'Changes you made may not be saved.', buttons: ['Leave', 'Stay'], defaultId: 1, cancelId: 1 })
     if (i === 0) e.preventDefault()
   })
-  wc.on('select-bluetooth-device', async (e, list, cb) => { e.preventDefault(); const i = await choose(`${hostOf(tab.url)} wants to connect to a Bluetooth device`, list.map(x => x.deviceName || 'Unknown device'), { detail: 'Choose a device.' }); cb(i < 0 ? '' : list[i].deviceId) })
+  let bt = null, btAsking = false // the event repeats as devices show up: one window, answered through the newest callback
+  wc.on('select-bluetooth-device', async (e, list, cb) => {
+    e.preventDefault(); bt = cb; if (btAsking || !list.length) return
+    btAsking = true; const i = await choose(`${hostOf(tab.url)} wants to connect to a Bluetooth device`, list.map(x => x.deviceName || 'Unknown device'), { detail: 'Choose a device.' }); btAsking = false
+    bt(i < 0 ? '' : list[i].deviceId)
+  })
   wc.on('enter-html-full-screen', () => { fsTab = tab; view.setBorderRadius(0); layout() }) // the page fills the whole window, above the sidebar
   wc.on('leave-html-full-screen', () => leaveFullscreen(tab))
   wc.setAudioMuted(tab.muted)

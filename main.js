@@ -187,7 +187,7 @@ function makeView(tab, opened) { // opened: the window options Electron made for
   wc.on('zoom-changed', (_, dir) => { if (tab.id === active) zoom(dir === 'in' ? 1 : -1) })
   wc.on('found-in-page', (_, r) => find.webContents.send('found', { active: r.activeMatchOrdinal, total: r.matches }))
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
-  wc.on('render-process-gone', (_, d) => { if (tab.reviving) { tab.reviving = false; return wc.reload() } /* the page we crashed ourselves to wake it up (hung card) */ if (d.reason !== 'clean-exit') showSystem(tab, 'crash', { url: tab.url, detail: d.reason, msg: `The tab crashed (${d.reason})` }) })
+  wc.on('render-process-gone', (_, d) => { if (tab.reviving) { tab.reviving = false; return wc.reload() } /* the page we crashed ourselves to wake it up (hung card) */ if (hungTab === tab) endHung(); if (d.reason !== 'clean-exit') showSystem(tab, 'crash', { url: tab.url, detail: d.reason, msg: `The tab crashed (${d.reason})` }) })
   wc.on('unresponsive', () => { if (hungTab && hungTab !== tab && isShown(hungTab.id)) return; hungTab = tab; layout(); hungUi.webContents.send('hung', { host: hostOf(tab.url) || 'This page' }) })
   wc.on('responsive', () => { if (hungTab === tab) endHung() })
   wc.on('will-prevent-unload', e => { // the page asks "Leave site?" (unsaved changes)

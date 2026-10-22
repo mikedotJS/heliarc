@@ -490,7 +490,7 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   loadWeb(wc, little, resolve(url))
   lw.on('closed', () => { little = null; for (const v of [view, bar]) if (!v.webContents.isDestroyed()) v.webContents.close() })
 }
-const moveLittle = () => { if (!little) return; const u = realUrl(little.view.webContents, little); little.win.close(); newTab(u); win.show(); win.focus() }
+const moveLittle = () => { if (!little) return; const u = realUrl(little.view.webContents, little), sp = little.space; little.win.close(); newTab(u, sp); win.show(); win.focus() }
 
 // ---- downloads ----
 const saveDownloads = () => store.save('downloads', downloads.filter(d => !d.private).slice(0, 200)) // the Private space keeps nothing on disk
@@ -808,7 +808,7 @@ app.whenReady().then(async () => {
     text ? wc.findInPage(text, next ? { forward, findNext: true } : { forward }) : (wc.stopFindInPage('clearSelection'), find.webContents.send('found', { active: 0, total: 0 }))
   })
   h('findClose', closeFind); h('comboOf', keys.combo)
-  h('peekToTab', () => { if (!peek) return; const u = peek.view.webContents.getURL(); closePeek(); newTab(u) }); h('peekClose', closePeek)
+  h('peekToTab', () => { if (!peek) return; const u = realUrl(peek.view.webContents, peek), sp = peek.space; closePeek(); newTab(u, sp) }); h('peekClose', closePeek)
   h('littleToMain', moveLittle)
   h('mediaToggle', () => byId(mediaTab)?.view?.webContents.executeJavaScript(MEDIA_TOGGLE, true).then(p => { byId(mediaTab).playing = p; push() }).catch(() => {}))
   h('mediaGo', () => mediaTab && activate(mediaTab))

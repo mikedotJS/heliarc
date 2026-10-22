@@ -166,7 +166,8 @@ function makeView(tab, opened) { // opened: the window options Electron made for
   tab.view = view; tab.asleep = false
   wc.setWindowOpenHandler(popupHandler(tab, wc))
   wc.once('destroyed', () => { if (!quitting && tab.view === view && byId(tab.id)) closeTab(tab.id) }) // the page closed itself (window.close): its tab goes with it, not left dead in the list
-  wc.on('did-create-window', w => { hardenWc(w.webContents); w.webContents.setWindowOpenHandler(popupHandler(tab, w.webContents)) }) // a popup gets the same protections, and its own popups too
+  const guard = w => { hardenWc(w.webContents); w.webContents.setWindowOpenHandler(popupHandler(tab, w.webContents)); w.webContents.on('did-create-window', guard) }
+  wc.on('did-create-window', guard) // a popup gets the same protections, and its own popups too
   wc.on('page-title-updated', (_, t) => { tab.title = t; if (history[0]?.url === wc.getURL() && !SPACES[tab.space].private) { history[0].title = t; store.save('history', history) } push() })
   wc.on('page-favicon-updated', (_, icons) => { tab.icon = icons[0]; push() })
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; push() })

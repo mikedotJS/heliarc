@@ -234,7 +234,7 @@ function pageMenu(wc, p) {
 // ---- shortcuts ----
 const RUN = {
   copyLink: () => { const u = cur()?.url; if (!u) return; clipboard.writeText(u); copied = true; push(); setTimeout(() => { copied = false; push() }, 1500) },
-  newPrivateTab: () => { const had = tabs.some(t => t.space === PRIVATE); switchSpace(PRIVATE); had && newTab(null, PRIVATE) }, newTab: () => openCmd('new'), editAddress: () => openCmd('edit'), closeTab: () => active && userClose(active), reload: () => cur()?.view?.webContents.reload(),
+  newPrivateTab: () => { const had = tabs.some(t => t.space === PRIVATE); switchSpace(PRIVATE); had && newTab(null, PRIVATE) }, newTab: () => openCmd('new'), editAddress: () => openCmd('edit'), closeTab: () => peek ? closePeek() : active && userClose(active), reload: () => cur()?.view?.webContents.reload(),
   find: () => openFind(), zoomIn: () => zoom(1), zoomOut: () => zoom(-1), zoomReset: () => zoom(0), toggleSidebar: () => toggleSidebar(), splitView: () => toggleSplit(),
   library: () => openPanel('downloads'), history: () => openPanel('history'), settings: () => openPanel('settings'),
   print: () => cur()?.view?.webContents.print({ printBackground: true }), devtools: () => toggleDevtools(),
@@ -340,7 +340,7 @@ function closeTab(id) {
   const t = byId(id); if (!t) return
   removeTab(t)
   if (active === id) closeFind() // the next tab is not 'leaving' this one (activate() looks at the tab in front, now gone)
-  if (SPACES[t.space].private && !tabs.some(x => x.space === t.space)) { downloads.forEach(d => d.private && dls.get(d.id)?.cancel()); downloads = downloads.filter(d => !d.private); folders = folders.filter(f => f.space !== t.space); wipe(session.fromPartition(SPACES[t.space].partition)); space === t.space ? switchSpace(0) : refresh(); return }
+  if (SPACES[t.space].private && !tabs.some(x => x.space === t.space)) { if (peek?.space === t.space) closePeek(); downloads.forEach(d => d.private && dls.get(d.id)?.cancel()); downloads = downloads.filter(d => !d.private); folders = folders.filter(f => f.space !== t.space); wipe(session.fromPartition(SPACES[t.space].partition)); space === t.space ? switchSpace(0) : refresh(); return }
   if (active !== id) { refresh(); return }
   const sp = t.fav ? space : t.space, same = tabs.filter(x => x.space === sp && !x.fav)
   if (same.length) activate((same.find(x => x.id > id) || same.at(-1)).id)

@@ -47,7 +47,7 @@ const ago = at => { const m = Math.round((at - Date.now()) / 6e4); return Math.a
 const SECTIONS = [['downloads', 'Downloads', 'download'], ['media', 'Media', 'image'], ['archive', 'Archive', 'archive'], ['history', 'History', 'history'], ['passwords', 'Passwords', 'key-round'], ['extensions', 'Extensions', 'puzzle'], ['protections', 'Site protections', 'shield-check'], ['settings', 'Settings', 'settings']]
 const MEDIA = /^(image|video|audio)\//, MEDIAEXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|mp4|webm|mov|mkv|mp3|wav|ogg|m4a|flac)$/i
 const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0' } // what is typed in the add forms survives a redraw
-let state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, detected = []
+let state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, working = null, detected = [] // working: the import or update check in progress, its buttons wait for the answer
 const fileUrl = p => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '').split('/').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:')
 
 async function load() { // sections that need data from the main process: loading -> ready | error
@@ -134,6 +134,8 @@ function protections(S) {
 function settings(S) {
   const st = S.settings, p = data || {}
   const hrs = [[0, 'Never'], [1, 'After 1 hour'], [12, 'After 12 hours'], [24, 'After 1 day'], [168, 'After 7 days'], [720, 'After 30 days']]
+  const wait = k => working === k ? ' is-loading' : '', spin = k => working === k ? '<span class="spin"></span>' : '', off = working ? 'disabled' : ''
+  const imp = (b, what, label) => b[what] ? `<button class="ds-btn sm${wait(b.id + what)}" data-a="importRun" data-id="${b.id}" data-what="${what}" ${off}>${spin(b.id + what)}${label}</button>` : ''
   const toggle = (k, label, sub) => `<div class="line"><label>${label}<small>${sub}</small></label><input type="checkbox" class="ds-switch" data-set="${k}" ${st[k] ? 'checked' : ''}></div>`
   return `<section><h3>General</h3>
     <div class="line"><label>Sidebar side<small>Also in the sidebar’s right-click menu</small></label><select class="ds-select" data-side><option value="left" ${st.sidebarSide === 'right' ? '' : 'selected'}>Left</option><option value="right" ${st.sidebarSide === 'right' ? 'selected' : ''}>Right</option></select></div>
@@ -141,7 +143,7 @@ function settings(S) {
     ${toggle('autoPip', 'Automatic picture-in-picture', 'A playing video keeps playing in a floating window when you leave its tab')}
     ${toggle('littleExternal', 'Open links from other apps in a small window', 'Needs Heliarc to be your default browser')}
     ${toggle('autoUpdateCheck', 'Keep Heliarc up to date', `Heliarc ${esc(S.version)}. Looks for a new version every few hours, downloads it in the background (Mac) and asks you to restart`)}
-    <div class="line"><label>Updates</label><button class="ds-btn sm" data-a="checkUpdate">Check now</button></div><div class="msg ${note?.update?.error ? 'bad' : note?.update ? 'ok' : ''}">${esc(note?.update?.error || note?.update?.text || '')}</div>
+    <div class="line"><label>Updates</label><button class="ds-btn sm${wait('update')}" data-a="checkUpdate" ${off}>${spin('update')}Check now</button></div><div class="msg ${note?.update?.error ? 'bad' : note?.update ? 'ok' : ''}">${esc(note?.update?.error || note?.update?.text || '')}</div>
     <div class="line"><label>Default browser</label><button class="ds-btn sm" data-a="defaultBrowser">Make Heliarc the default</button></div><div class="msg ${note?.cls || ''}">${esc(note?.text || '')}</div></section>
   <section><h3>Privacy</h3>
     ${toggle('blockThirdPartyCookies', 'Block third-party cookies', 'Embedded content can no longer follow you from site to site. Some sign-ins need them: turn them off for one site from the shield at the bottom of the sidebar')}
@@ -162,7 +164,7 @@ function settings(S) {
     <div class="msg">Sites ask before using your camera, microphone, location, notifications or clipboard. Answers you chose to remember are listed here.</div>
     ${Object.entries(st.sitePerms).map(([h, ps]) => Object.entries(ps).map(([k, v]) => `<div class="line"><label>${esc(h)}<small>${esc(S.permLabels[k] || 'Open ' + k.slice(5) + ' links')}</small></label><select class="ds-select" data-perm="${esc(h)}|${k}"><option value="1" ${v ? 'selected' : ''}>Allow</option><option value="0" ${v ? '' : 'selected'}>Block</option><option value="x">Ask again</option></select></div>`).join('')).join('') || '<div class="msg">Nothing remembered yet.</div>'}</section>
   <section><h3>Import from another browser</h3>
-    ${detected.map(b => `<div class="line"><label>${esc(b.name)}</label>${b.history ? `<button class="ds-btn sm" data-a="importRun" data-id="${b.id}" data-what="history">History</button>` : ''}${b.passwords ? `<button class="ds-btn sm" data-a="importRun" data-id="${b.id}" data-what="passwords">Passwords</button>` : ''}${b.bookmarks ? `<button class="ds-btn sm" data-a="importRun" data-id="${b.id}" data-what="bookmarks">Bookmarks</button>` : ''}</div>`).join('') || '<div class="msg">No other browser found on this computer.</div>'}
+    ${detected.map(b => `<div class="line"><label>${esc(b.name)}</label>${imp(b, 'history', 'History')}${imp(b, 'passwords', 'Passwords')}${imp(b, 'bookmarks', 'Bookmarks')}</div>`).join('') || '<div class="msg">No other browser found on this computer.</div>'}
     <div class="line"><label>From a file<small>Bookmarks exported as HTML, or Safari’s History.db. For passwords from Firefox or Safari, export them as a CSV from that browser first</small></label><button class="ds-btn sm" data-a="importFile" data-what="bookmarks">Bookmarks…</button><button class="ds-btn sm" data-a="importFile" data-what="passwords">Passwords…</button><button class="ds-btn sm" data-a="importFile" data-what="safari">Safari history…</button></div>
     <div class="msg ${note?.import?.error ? 'bad' : note?.import ? 'ok' : ''}">${esc(note?.import?.error || note?.import?.text || '')}</div></section>
   <section><h3>Spaces: name, icon and colours</h3>
@@ -180,6 +182,12 @@ function settings(S) {
     <button class="ds-btn sm wide" data-a="saveProfile">Save autofill</button><div class="msg wide ${note?.profile ? 'ok' : ''}">${note?.profile || ''}</div></div>`}</section>`
 }
 const did = el => +el.closest('[data-id]').dataset.id
+async function work(key, field, text, call, failed) { // one at a time: the buttons are disabled until the answer, which is a result or an error message
+  if (working) return
+  working = key; note = { [field]: { text } }; render()
+  try { note = { [field]: await call() } } catch { note = { [field]: { error: failed } } }
+  working = null; paint()
+}
 const ACT = {
   retry: load, clearDownloads: () => api.call('clearDownloads'), clearArchive: () => api.call('clearArchive'), clearHistory: async () => { await api.call('clearHistory'); load() },
   openFile: async el => { const r = await api.call('openFile', did(el)); if (r || note?.dl) { note = r ? { dl: `Couldn’t open this file: ${r}` } : null; render() } }, showFile: el => api.call('showFile', did(el)), cancelDownload: el => api.call('cancelDownload', did(el)), retryDownload: async el => { const r = await api.call('retryDownload', did(el)); if (r?.error) { note = { dl: r.error }; render() } }, // the main process answers with the system's error text, or nothing when it worked
@@ -187,11 +195,11 @@ const ACT = {
   restoreArchive: async el => { await api.call('restoreArchive', +el.dataset.i); close() },
   openUrl: async el => { await api.call('open', el.dataset.url); close() },
   delHistory: async el => { await api.call('delHistory', +el.dataset.at); load() }, delPassword: async el => { await api.call('delPassword', did(el)); load() },
-  importRun: async el => { note = { import: { text: 'Importing…' } }; render(); note = { import: await api.call('importRun', el.dataset.id, el.dataset.what) }; paint() },
+  importRun: el => work(el.dataset.id + el.dataset.what, 'import', 'Importing…', () => api.call('importRun', el.dataset.id, el.dataset.what), 'Import failed. Try again.'),
   importFile: async el => { const r = await api.call('importFile', el.dataset.what); note = r.canceled ? null : { import: r }; render() },
   prot: el => api.call('toggleSite', el.dataset.kind, el.dataset.host), protReset: el => api.call('resetSite', el.dataset.host),
   allowPw: async el => { await api.call('allowPw', el.dataset.o) },
-  checkUpdate: async () => { note = { update: { text: 'Checking…' } }; render(); note = { update: await api.call('checkUpdate') }; paint() },
+  checkUpdate: () => work('update', 'update', 'Checking…', () => api.call('checkUpdate'), 'Could not check for updates. Try again.'),
   spaceIcon: el => api.call('editSpace', +el.dataset.sp, { icon: el.dataset.icon }),
   delRoute: el => api.call('delRoute', el.dataset.host), delBang: el => api.call('delBang', el.dataset.trigger),
   addBang: async () => { const r = await api.call('addBang', $('#btrig').value, $('#burl').value); note = r.error ? { bang: r.error } : null; if (!r.error) draft.btrig = draft.burl = ''; render() },

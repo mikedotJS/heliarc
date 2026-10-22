@@ -326,7 +326,7 @@ function removeTab(t) {
 function userClose(id) { // the page may refuse to close ("Leave site?"), so it is asked first; tabs without a live page close at once
   const wc = byId(id)?.view?.webContents
   if (!wc || wc.isDestroyed() || !/^https?:/.test(wc.getURL())) return closeTab(id)
-  wc.once('destroyed', () => closeTab(id)); wc.close({ waitForBeforeUnload: true })
+  wc.close({ waitForBeforeUnload: true }) // the tab goes when the page is really gone (see makeView), not if the page stays
 }
 function closeTab(id) {
   const t = byId(id); if (!t) return

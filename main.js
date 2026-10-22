@@ -128,6 +128,7 @@ const popupHandler = (tab, wc) => ({ url, disposition, features, frameName, post
   if (disposition === 'foreground-tab' && (!frameName || frameName === '_blank') && !postBody && /^https?:/i.test(url) && privacy.site(url) === privacy.site(wc.getURL())) { wc === tab.view?.webContents ? loadWeb(wc, tab, url, referrer) : wc.loadURL(url, { httpReferrer: referrer }); return { action: 'deny' } } // a link that stays on the same site (target=_blank) navigates this tab; Cmd+click still opens a new one
   const to = routeFor(resolve(url))
   if (to != null && to !== tab.space && !SPACES[tab.space].private) { newTab(url); return { action: 'deny' } } // sent to another space: it can't stay linked
+  if (!/^(https?|about|blob|chrome-extension):/i.test(url)) { wc.loadURL(url).catch(() => {}); return { action: 'deny' } } // an address another app handles (mailto:, zoommtg:…) asks "open in another app?" and gives no page: it must not leave an empty tab behind
   // a tab made from the page's own request keeps window.opener, window.name and postMessage working (Teams safe links, payments, sign-ins)
   return { action: 'allow', createWindow: options => newTab('', tab.space, options).view.webContents }
 }

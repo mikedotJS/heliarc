@@ -216,7 +216,7 @@ $('#body').onclick = $('#head').onclick = e => {
   const el = e.target.closest('[data-a]'); if (!el) return
   e.stopPropagation(); ACT[el.dataset.a]?.(el)
 }
-$('#body').onkeydown = e => { if (e.key === 'Enter' && e.target.matches('.row[data-a], .thumb[data-a]')) e.target.click() }
+$('#body').onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ' && e.target.matches('[role=button]')) && e.target.matches('.row[data-a], .thumb[data-a]')) { e.preventDefault(); e.target.click() } } // Enter opens a row or a thumbnail, Space too when it is a button (not a link)
 $('#body').oninput = e => { if (e.target.dataset.pf) (data ??= {})[e.target.dataset.pf] = e.target.value; else if (Object.hasOwn(draft, e.target.id)) draft[e.target.id] = e.target.value } // keep unsaved autofill edits across re-renders
 $('#body').onchange = async e => {
   const t = e.target

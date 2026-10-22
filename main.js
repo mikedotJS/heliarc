@@ -145,8 +145,13 @@ function showSystem(tab, kind, { url, detail, msg }) {
 }
 let hungTab = null, hungUi = null // the tab that stopped responding, and the card shown over it
 const endHung = () => { hungTab = null; layout() }
+// HTTPS only, for a tab, Peek or the Little window (o): http:// links are upgraded, and a site without HTTPS gets plain http for this host
+const toHttps = (wc, o) => (e, u) => { const s = settings.httpsOnly && !o.httpOk?.has(hostOf(u)) && privacy.upgrade(u); if (s && (o.upN = (o.upN || 0) + 1) < 4) { e.preventDefault(); o.upgraded = s; wc.loadURL(s) } }
+const noHttps = (wc, o, code, url) => { if (url !== o.upgraded || !privacy.NO_HTTPS.includes(code)) return false; (o.httpOk ??= new Set()).add(hostOf(url)); o.upgraded = null; wc.loadURL(url.replace(/^https:/, 'http:')); return true }
+const loadWeb = (wc, o, u) => { const up = settings.httpsOnly && privacy.upgrade(u); if (up) o.upgraded = up; o.upN = 0; wc.loadURL(up || u) }
 function watchSystem(wc, owner) { // Peek and the Little window get the same screens as a tab
-  wc.on('did-fail-load', (_, code, desc, url, isMain) => { if (isMain && code !== -3 && !url.startsWith(SYSTEM)) showSystem(owner, sysKind(code), { url, detail: `${desc} (${code})` }) })
+  const up = toHttps(wc, owner); wc.on('will-navigate', up); wc.on('will-redirect', (e, u) => e.isMainFrame && up(e, u)); wc.on('did-finish-load', () => { owner.upN = 0 })
+  wc.on('did-fail-load', (_, code, desc, url, isMain) => { if (isMain && noHttps(wc, owner, code, url)) return; if (isMain && code !== -3 && !url.startsWith(SYSTEM)) showSystem(owner, sysKind(code), { url, detail: `${desc} (${code})` }) })
   wc.on('render-process-gone', (_, d) => { if (d.reason !== 'clean-exit') showSystem(owner, 'crash', { url: wc.getURL(), detail: d.reason }) })
   wc.on('did-navigate', (_, u) => { if (!u.startsWith(SYSTEM)) owner.sys = null })
 }
@@ -166,12 +171,9 @@ function makeView(tab, opened) { // opened: the window options Electron made for
   wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (!tab.manual) wc.setZoomFactor(1); if (u.startsWith(SYSTEM)) { tab.url = tab.sys?.url || ''; tab.error = tab.sys?.msg || null } else { tab.sys = null; tab.url = u.startsWith('file:') ? '' : u; visit(tab, u) } push() })
   wc.on('did-finish-load', () => { tab.upN = 0; setTimeout(() => fitSoon(tab), 500) })
   wc.on('did-navigate-in-page', (_, u, isMainFrame) => { if (isMainFrame) { tab.url = u; push() } })
-  const toHttps = (e, u) => { const s = settings.httpsOnly && !tab.httpOk?.has(hostOf(u)) && privacy.upgrade(u); if (s && (tab.upN = (tab.upN || 0) + 1) < 4) { e.preventDefault(); tab.upgraded = s; wc.loadURL(s) } }
-  wc.on('will-navigate', (e, u) => toHttps(e, u)); wc.on('will-redirect', (e, u) => e.isMainFrame && toHttps(e, u)) // HTTPS only: http:// links are upgraded
+  const up = toHttps(wc, tab); wc.on('will-navigate', up); wc.on('will-redirect', (e, u) => e.isMainFrame && up(e, u))
   wc.on('did-fail-load', (_, code, desc, url, isMain) => {
-    if (isMain && url === tab.upgraded && privacy.NO_HTTPS.includes(code)) { // the site has no HTTPS: allow plain http for this host, in this tab
-      const http = url.replace(/^https:/, 'http:'); (tab.httpOk ??= new Set()).add(hostOf(url)); tab.upgraded = null; wc.loadURL(http); return
-    }
+    if (isMain && noHttps(wc, tab, code, url)) return
     if (isMain && code !== -3 && !url.startsWith(SYSTEM)) showSystem(tab, sysKind(code), { url, detail: `${desc} (${code})` })
   })
   wc.on('before-input-event', (e, i) => { if (!extCommand(e, i, tab)) shortcut(e, i) })
@@ -442,13 +444,13 @@ function openPeek(url) {
   const wc = view.webContents
   hardenWc(wc); view.setBorderRadius(12)
   peek = { view, space: sp }; watchSystem(wc, peek)
-  wc.setWindowOpenHandler(({ url }) => { wc.loadURL(url); return { action: 'deny' } })
+  wc.setWindowOpenHandler(({ url }) => { loadWeb(wc, peek, url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, peekSend)
   for (const e of ['did-stop-loading', 'did-navigate-in-page', 'dom-ready']) wc.on(e, peekSample)
   wc.on('before-input-event', (e, i) => { if (i.type === 'keyDown' && i.key === 'Escape') { e.preventDefault(); closePeek() } else shortcut(e, i) })
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
   peekUi.setVisible(true); win.contentView.addChildView(view); stack(); layout()
-  wc.loadURL(resolve(url)); wc.focus(); peekSend()
+  loadWeb(wc, peek, resolve(url)); wc.focus(); peekSend()
 }
 function closePeek() {
   if (!peek) return
@@ -459,7 +461,7 @@ function closePeek() {
 // ---- little window: links from other apps ----
 function openExternal(url) { // "Little" window: a roomy, borderless-looking page over a space-colored frame, like Little Arc
   if (!settings.littleExternal) { newTab(url); win.show(); win.focus(); return }
-  if (little) { little.view.webContents.loadURL(url); little.win.focus(); return }
+  if (little) { loadWeb(little.view.webContents, little, url); little.win.focus(); return }
   const area = screen.getDisplayMatching(win.getBounds()).workArea, width = Math.min(1100, Math.max(760, Math.round(area.width * .55))), height = Math.min(900, Math.max(560, Math.round(area.height * .78)))
   const lw = new BaseWindow({ width, height, x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2), minWidth: 480, minHeight: 360, title: 'Heliarc', icon: ICON, backgroundColor: '#2a2a33',
     ...(process.platform === 'darwin' && { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 16 } }) })
@@ -478,11 +480,11 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   const fit = () => { const { width, height } = lw.getContentBounds(); bar.setBounds({ x: 0, y: 0, width, height }); view.setBounds({ x: GAP, y: LITTLEBAR, width: width - GAP * 2, height: height - LITTLEBAR - GAP }) }
   const send = () => !bar.webContents.isDestroyed() && bar.webContents.send('little', { title: wc.getTitle(), url: realUrl(wc, little), loading: wc.isLoading(), c1: SPACES[sp].c1, c2: SPACES[sp].c2 })
   fit(); lw.on('resize', fit)
-  wc.setWindowOpenHandler(({ url }) => { wc.loadURL(url); return { action: 'deny' } })
+  wc.setWindowOpenHandler(({ url }) => { loadWeb(wc, little, url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, send)
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
   bar.webContents.loadFile('ui/little.html'); bar.webContents.on('did-finish-load', send)
-  wc.loadURL(resolve(url))
+  loadWeb(wc, little, resolve(url))
   lw.on('closed', () => { little = null; for (const v of [view, bar]) if (!v.webContents.isDestroyed()) v.webContents.close() })
 }
 const moveLittle = () => { if (!little) return; const u = realUrl(little.view.webContents, little); little.win.close(); newTab(u); win.show(); win.focus() }

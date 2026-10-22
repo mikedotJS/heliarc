@@ -472,11 +472,13 @@ function closePeek() {
 // ---- little window: links from other apps ----
 function openExternal(url) { // "Little" window: a roomy, borderless-looking page over a space-colored frame, like Little Arc
   if (!settings.littleExternal) { newTab(url); win.show(); win.focus(); return }
-  if (little) { loadWeb(little.view.webContents, little, url); little.win.focus(); return }
+  const sp = routeFor(resolve(url)) ?? 0
+  if (little?.space === sp) { loadWeb(little.view.webContents, little, url); little.win.focus(); return }
+  little?.win.close() // a link for another space needs a window in that space's profile
   const area = screen.getDisplayMatching(win.getBounds()).workArea, width = Math.min(1100, Math.max(760, Math.round(area.width * .55))), height = Math.min(900, Math.max(560, Math.round(area.height * .78)))
   const lw = new BaseWindow({ width, height, x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2), minWidth: 480, minHeight: 360, title: 'Heliarc', icon: ICON, backgroundColor: '#2a2a33',
     ...(process.platform === 'darwin' && { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 16 } }) })
-  const sp = routeFor(resolve(url)) ?? 0, bar = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } }); lockScreen(bar.webContents)
+  const bar = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } }); lockScreen(bar.webContents)
   const view = new WebContentsView({ webPreferences: pagePrefs(SPACES[sp].partition) })
   const wc = view.webContents
   hardenWc(wc); view.setBorderRadius(12)
@@ -496,7 +498,7 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
   bar.webContents.loadFile('ui/little.html'); bar.webContents.on('did-finish-load', send)
   loadWeb(wc, little, resolve(url))
-  lw.on('closed', () => { little = null; for (const v of [view, bar]) if (!v.webContents.isDestroyed()) v.webContents.close() })
+  lw.on('closed', () => { if (little?.win === lw) little = null; for (const v of [view, bar]) if (!v.webContents.isDestroyed()) v.webContents.close() })
 }
 const moveLittle = () => { if (!little) return; const u = realUrl(little.view.webContents, little), sp = little.space; little.win.close(); newTab(u, sp); win.show(); win.focus() }
 

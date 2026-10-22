@@ -51,12 +51,12 @@ const fileUrl = p => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '').split
 
 async function load() { // sections that need data from the main process: loading -> ready | error
   if (!['history', 'passwords', 'settings', 'extensions'].includes(section)) { data = null; status = 'ready'; return render() }
-  const mine = ++token; status = 'loading'; data = null; render()
+  const mine = ++token; status = 'loading'; data = null; paint()
   try {
     const r = section === 'history' ? await api.call('history', q) : section === 'passwords' ? await api.call('passwords') : section === 'extensions' ? await api.call('extensions') : (detected = await api.call('importDetect'), await api.call('profile'))
     if (mine === token) { data = r; status = 'ready' }
   } catch (e) { if (mine === token) status = 'error' }
-  if (mine === token) render()
+  if (mine === token) paint()
 }
 function open(sec) { section = sec; q = ''; note = null; recordingFor && stopRec(); load() }
 function nav() {
@@ -174,11 +174,11 @@ const ACT = {
   restoreArchive: async el => { await api.call('restoreArchive', +el.dataset.i); close() },
   openUrl: async el => { await api.call('open', el.dataset.url); close() },
   delHistory: async el => { await api.call('delHistory', +el.dataset.at); load() }, delPassword: async el => { await api.call('delPassword', did(el)); load() },
-  importRun: async el => { note = { import: { text: 'Importing…' } }; render(); note = { import: await api.call('importRun', el.dataset.id, el.dataset.what) }; render() },
+  importRun: async el => { note = { import: { text: 'Importing…' } }; render(); note = { import: await api.call('importRun', el.dataset.id, el.dataset.what) }; paint() },
   importFile: async el => { const r = await api.call('importFile', el.dataset.what); note = r.canceled ? null : { import: r }; render() },
   prot: el => api.call('toggleSite', el.dataset.kind, el.dataset.host), protReset: el => api.call('resetSite', el.dataset.host),
   allowPw: async el => { await api.call('allowPw', el.dataset.o) },
-  checkUpdate: async () => { note = { update: { text: 'Checking…' } }; render(); note = { update: await api.call('checkUpdate') }; render() },
+  checkUpdate: async () => { note = { update: { text: 'Checking…' } }; render(); note = { update: await api.call('checkUpdate') }; paint() },
   spaceIcon: el => api.call('editSpace', +el.dataset.sp, { icon: el.dataset.icon }),
   delRoute: el => api.call('delRoute', el.dataset.host), delBang: el => api.call('delBang', el.dataset.trigger),
   addBang: async () => { const r = await api.call('addBang', $('#btrig').value, $('#burl').value); note = r.error ? { bang: r.error } : null; if (!r.error) draft.btrig = draft.burl = ''; render() },
@@ -195,7 +195,7 @@ const ACT = {
     const r = await api.call('addRoute', h, +$('#rspace').value); note = r?.error ? { route: r.error } : null; if (!r?.error) draft.rhost = ''; render()
   },
   defaultBrowser: async () => { const ok = await api.call('defaultBrowser'); note = { text: ok ? 'Heliarc is now the default browser.' : 'Choose Heliarc in the system settings window that just opened.', cls: ok ? 'ok' : '' }; render() },
-  saveProfile: async () => { const p = {}; document.querySelectorAll('[data-pf]').forEach(i => p[i.dataset.pf] = i.value.trim()); await api.call('setProfile', p); data = p; note = { profile: 'Saved ✓' }; render(); setTimeout(() => { note = null; section === 'settings' && render() }, 2500) },
+  saveProfile: async () => { const p = {}; document.querySelectorAll('[data-pf]').forEach(i => p[i.dataset.pf] = i.value.trim()); await api.call('setProfile', p); data = p; note = { profile: 'Saved ✓' }; render(); setTimeout(() => { note = null; section === 'settings' && paint() }, 2500) },
   record: el => recordingFor === el.dataset.action ? stopRec() : startRec(el.dataset.action),
   resetKey: async el => { await api.call('setShortcut', el.dataset.action, null); note = null },
 }
@@ -232,6 +232,7 @@ const close = () => { recordingFor = null; api.call('recording', false); documen
 // never rebuild the panel under a pressed mouse button: the click would be lost (a field or a list that has the focus is left alone too)
 let pressed = false, stale = false
 const typing = () => document.activeElement?.matches('input:not([type=checkbox]):not([type=color]), select') // switches and colour pickers hold no text: redrawing under them loses nothing
+const paint = () => section !== 'history' && typing() ? stale = true : render() /* a late answer must not take the focus from a field being typed in: redrawn at the next release */
 const refresh = () => { stale = false; if (section !== 'history' && !typing()) render() }
 addEventListener('pointerdown', e => { if (e.button === 0 && !e.target.closest('select, input')) pressed = true }, true)
 const release = () => { pressed = false; stale && setTimeout(() => !pressed && refresh(), 60) }

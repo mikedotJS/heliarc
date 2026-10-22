@@ -5,8 +5,7 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: { contents: read }
 
 jobs:
   build:
@@ -64,6 +63,7 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
+    permissions: { contents: write } # only this job publishes; the build jobs run npm install scripts and get a read-only token
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

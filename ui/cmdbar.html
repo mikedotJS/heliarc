@@ -64,7 +64,7 @@ const onInput = async e => { // an IME composition is searched and completed whe
   completion = null; sel = 0; render(); const q = typed(); hist = q && !tag ? await api.call('history', q) : []
   if (q === typed()) { completion = adding && el.value === q ? complete(q) : null; render(); if (completion) { el.value = q + completion.slice(q.length); el.setSelectionRange(q.length, el.value.length) } } // the offered rest of the address is selected: typing goes on over it, Backspace drops it
 }
-$('#in').oninput = e => e.isComposing || onInput(e)
+$('#in').oninput = e => e?.isComposing || onInput(e)
 $('#in').addEventListener('compositionend', onInput)
 $('#in').onkeydown = e => {
   if (e.isComposing || e.keyCode === 229) return // the keys of an IME composition (Enter validates it) are not commands

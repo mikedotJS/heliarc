@@ -123,13 +123,15 @@ const pagePrefs = partition => ({ partition, sandbox: true, contextIsolation: tr
 const POPUP = /\b(width|height|popup)\b/i
 let quitting = false // every page is destroyed when the app exits: no tab bookkeeping then
 app.once('before-quit', () => { quitting = true }); process.once('exit', () => { quitting = true })
+const NO_OPEN = /^(data|javascript|vbscript):/i // addresses a page may never open by window.open or a link: Chromium blocks data: pages opened by a page, and loadURL would skip that
 const popupHandler = (tab, wc) => ({ url, disposition, features, frameName, postBody, referrer }) => { // wc: the page the handler belongs to (the tab's, or one of its popups)
+  if (NO_OPEN.test(url)) return { action: 'deny' }
   if (disposition === 'new-window' && POPUP.test(features) && tab.id === active) return { action: 'allow', overrideBrowserWindowOptions: { title: 'Heliarc', icon: ICON, autoHideMenuBar: true } }
   if (disposition === 'new-window' && !features) { openPeek(url); return { action: 'deny' } }
   if (disposition === 'foreground-tab' && (!frameName || frameName === '_blank') && !postBody && /^https?:/i.test(url) && privacy.site(url) === privacy.site(wc.getURL())) { wc === tab.view?.webContents ? loadWeb(wc, tab, url, referrer) : wc.loadURL(url, { httpReferrer: referrer }); return { action: 'deny' } } // a link that stays on the same site (target=_blank) navigates this tab; Cmd+click still opens a new one
   const to = routeFor(url)
   if (to != null && to !== tab.space && !SPACES[tab.space].private) { newTab(url); return { action: 'deny' } } // sent to another space: it can't stay linked
-  if (!/^(https?|about|blob|chrome-extension|file):/i.test(url)) { wc.loadURL(url).catch(() => {}); return { action: 'deny' } } // an address another app handles (mailto:, zoommtg:…) asks "open in another app?" and gives no page: it must not leave an empty tab behind
+  if (!/^(https?|about|blob|chrome-extension|file):/i.test(url)) { if (referrer.url && privacy.site(referrer.url) === privacy.site(wc.getURL())) wc.loadURL(url).catch(() => {}); return { action: 'deny' } } // an address another app handles (mailto:, zoommtg:…) asks "open in another app?" and gives no page: it must not leave an empty tab behind. Only the page's own request gets the question (an ad iframe's would be blamed on the site)
   // a tab made from the page's own request keeps window.opener, window.name and postMessage working (Teams safe links, payments, sign-ins)
   return { action: 'allow', createWindow: options => newTab('', tab.space, options).view.webContents }
 }
@@ -464,7 +466,7 @@ function openPeek(url) {
   hardenWc(wc); view.setBorderRadius(12)
   peek = { view, wc, space: sp }; watchSystem(wc, peek)
   wc.once('destroyed', () => { if (!quitting && peek?.view === view) closePeek() }) // the page closed itself (window.close): Peek goes with it, not left empty
-  wc.setWindowOpenHandler(({ url }) => { loadWeb(wc, peek, url); return { action: 'deny' } })
+  wc.setWindowOpenHandler(({ url }) => { if (!NO_OPEN.test(url)) loadWeb(wc, peek, url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, peekSend)
   for (const e of ['did-stop-loading', 'did-navigate-in-page', 'dom-ready']) wc.on(e, peekSample)
   wc.on('before-input-event', (e, i) => { if (i.type === 'keyDown' && i.key === 'Escape') { e.preventDefault(); closePeek() } else shortcut(e, i) })
@@ -503,7 +505,7 @@ function openExternal(url) { // "Little" window: a roomy, borderless-looking pag
   const fit = () => { const { width, height } = lw.getContentBounds(); bar.setBounds({ x: 0, y: 0, width, height }); view.setBounds({ x: GAP, y: LITTLEBAR, width: width - GAP * 2, height: height - LITTLEBAR - GAP }) }
   const send = () => !bar.webContents.isDestroyed() && bar.webContents.send('little', { title: wc.getTitle(), url: realUrl(wc, little), loading: wc.isLoading(), c1: SPACES[sp].c1, c2: SPACES[sp].c2 })
   fit(); lw.on('resize', fit)
-  wc.setWindowOpenHandler(({ url }) => { loadWeb(wc, little, url); return { action: 'deny' } })
+  wc.setWindowOpenHandler(({ url }) => { if (!NO_OPEN.test(url)) loadWeb(wc, little, url); return { action: 'deny' } })
   for (const e of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate']) wc.on(e, send)
   wc.on('context-menu', (_, p) => pageMenu(wc, p))
   bar.webContents.loadFile('ui/little.html'); bar.webContents.on('did-finish-load', send)

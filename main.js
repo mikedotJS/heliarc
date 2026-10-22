@@ -252,7 +252,7 @@ function extCommand(e, i, tab) { // chrome.commands: run an extension's keyboard
   return false
 }
 function shortcut(e, i) {
-  if (i.type !== 'keyDown' || recording) return
+  if (i.type !== 'keyDown' || recording || !restored) return
   const c = keys.combo(i), a = c && keys.actionFor(keys.resolve(settings.shortcuts), c)
   if (a) { e.preventDefault(); RUN[a]() }
 }
@@ -800,7 +800,7 @@ app.whenReady().then(async () => {
   win.on('closed', () => app.quit())
   const privacyReady = setupPrivacy().catch(e => console.warn('privacy setup:', e.message)) // runs while the handlers below register; awaited before the first page loads
 
-  const h = (n, f) => ipcMain.handle(n, (_, ...a) => f(...a))
+  const h = (n, f) => ipcMain.handle(n, (_, ...a) => restored || n === 'ready' ? f(...a) : undefined) // until the session is back, only the UI asking for the state is answered
   h('new', () => openCmd('new')); h('edit', () => openCmd('edit')); h('closeCmd', closeCmd)
   h('activate', activate); h('close', userClose); h('sleep', sleep); h('space', switchSpace); h('mute', mute)
   h('go', input => { go(input); closeCmd() }); h('open', input => { newTab(input); closeCmd() }) // the command bar hands the keyboard to the page it just opened or moved to, not to the one before

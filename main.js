@@ -513,16 +513,17 @@ const moveLittle = () => { if (!little) return; const u = realUrl(little.view.we
 
 // ---- downloads ----
 const saveDownloads = () => store.save('downloads', downloads.filter(d => !d.private).slice(0, 200)) // the Private space keeps nothing on disk
+const dlPaths = new Set() // the files being downloaded: a name is taken from the moment its download starts, before the file exists
 function onDownload(_, item, priv) {
   const dir = app.getPath('downloads'), name = path.basename(item.getFilename()) || 'download', ext = path.extname(name), base = path.basename(name, ext)
   let p = path.join(dir, name), n = 1
-  while (fs.existsSync(p)) p = path.join(dir, `${base} (${n++})${ext}`)
-  item.setSavePath(p)
+  while (fs.existsSync(p) || dlPaths.has(p)) p = path.join(dir, `${base} (${n++})${ext}`)
+  dlPaths.add(p); item.setSavePath(p)
   const d = { id: nextId++, name: path.basename(p), path: p, url: item.getURL(), mime: item.getMimeType(), state: 'progressing', received: 0, total: item.getTotalBytes(), at: Date.now(), private: priv }
   downloads.unshift(d); dls.set(d.id, item)
   item.on('updated', (_, st) => { d.received = item.getReceivedBytes(); d.total = item.getTotalBytes(); d.state = item.isPaused() ? 'paused' : st === 'interrupted' ? 'interrupted' : 'progressing'; pushSoon() })
   item.once('done', (_, st) => {
-    dls.delete(d.id)
+    dls.delete(d.id); dlPaths.delete(p)
     if (!downloads.includes(d)) { if (d.private && st !== 'completed') fs.rm(p, { force: true }, () => {}); return } // already removed from the list (the last Private tab closed): nothing to update, and a cancelled Private download leaves no partial file
     d.state = st; d.received = item.getReceivedBytes(); d.at = Date.now()
     saveDownloads(); push(); setTimeout(push, st === 'completed' ? 8000 : 60500) // the sidebar card for a failed download stays a minute

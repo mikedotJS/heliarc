@@ -221,7 +221,7 @@ addEventListener('keydown', async e => {
     if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return
     e.preventDefault(); e.stopPropagation()
     if (e.key === 'Escape') return stopRec()
-    const c = await api.call('comboOf', { key: e.key, control: e.ctrlKey, meta: e.metaKey, alt: e.altKey, shift: e.shiftKey })
+    const c = await api.call('comboOf', { key: e.key, code: e.code, control: e.ctrlKey, meta: e.metaKey, alt: e.altKey, shift: e.shiftKey })
     const r = await api.call('setShortcut', recordingFor, c)
     note = r.error ? { key: r.error } : null; if (!r.error) stopRec(); else render()
   } else if (e.key === 'Escape') close()

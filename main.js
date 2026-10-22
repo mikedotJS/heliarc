@@ -173,7 +173,7 @@ function makeView(tab, opened) { // opened: the window options Electron made for
   wc.on('page-favicon-updated', (_, icons) => { tab.icon = icons[0]; push() })
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; push() })
   wc.on('did-stop-loading', () => { tab.loading = false; push() })
-  wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (!tab.manual) wc.setZoomFactor(1); if (u.startsWith(SYSTEM)) { tab.url = tab.sys?.url || ''; tab.error = tab.sys?.msg || null } else { tab.sys = null; tab.url = u.startsWith(UI) ? '' : u; visit(tab, u) } push() })
+  wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; wc.setZoomFactor(tab.manual ? tab.zf : 1); if (u.startsWith(SYSTEM)) { tab.url = tab.sys?.url || ''; tab.error = tab.sys?.msg || null } else { tab.sys = null; tab.url = u.startsWith(UI) ? '' : u; visit(tab, u) } push() })
   wc.on('did-finish-load', () => { tab.upN = 0; setTimeout(() => fitSoon(tab), 500) })
   wc.on('did-navigate-in-page', (_, u, isMainFrame) => { if (isMainFrame) { tab.url = u; push() } })
   const up = toHttps(wc, tab); wc.on('will-navigate', up); wc.on('will-redirect', (e, u) => e.isMainFrame && up(e, u))
@@ -261,11 +261,12 @@ function toggleDevtools() { const wc = cur()?.view?.webContents; if (wc) wc.isDe
 function zoom(dir) { // step through Chromium's zoom levels; 0 resets (and lets the page fit the window again)
   const t = cur(), wc = t?.view?.webContents; if (!wc) return
   const z = wc.getZoomFactor(), i = ZOOMS.reduce((b, v, k) => Math.abs(v - z) < Math.abs(ZOOMS[b] - z) ? k : b, 0)
-  t.manual = !!dir; wc.setZoomFactor(dir ? ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i + dir))] : 1); push()
+  t.manual = !!dir; t.zf = dir ? ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i + dir))] : 1; wc.setZoomFactor(t.zf); push()
   if (!dir) fit(t)
 }
 async function fit(t) { // a page wider than the window (min-width layouts) is shrunk to fit instead of scrolling sideways; never below 60%, never over a manual zoom
-  const wc = t.view?.webContents; if (!wc || wc.isDestroyed() || t.manual || !isShown(t.id)) return
+  const wc = t.view?.webContents; if (!wc || wc.isDestroyed() || !isShown(t.id)) return
+  if (t.manual) return void wc.setZoomFactor(t.zf) // Chromium shares the zoom between the tabs of one site: another tab may have changed it
   const w = t.view.getBounds().width; if (!w) return
   const sw = await wc.executeJavaScript('document.documentElement.scrollWidth').catch(() => 0)
   if (t.manual || wc.isDestroyed()) return

@@ -3,7 +3,12 @@ const { ipcRenderer, contextBridge } = require('electron')
 if (location.protocol === 'file:' && location.pathname.endsWith('/ui/system.html')) contextBridge.exposeInMainWorld('sys', { trust: () => ipcRenderer.invoke('sys:trust') }) // the invalid-certificate screen's "Continue anyway"
 const PROFILE = { email: 'email', tel: 'phone', 'given-name': 'first', 'family-name': 'last', name: 'name', organization: 'org', 'street-address': 'street', 'address-line1': 'street', 'postal-code': 'zip', 'address-level2': 'city', 'country-name': 'country' }
 const LOGIN = /log ?in|sign ?in|sign ?up|continue|submit|next|connexion|connecter|identifier|valider/i
-const visible = el => { const r = el.getBoundingClientRect(); return r.width > 10 && r.height > 10 && getComputedStyle(el).visibility !== 'hidden' }
+const visible = el => { // what the user can really see: shown, opaque, not clipped away, and on screen (a trap form hides fields off screen)
+  if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) || (s => s.clip !== 'auto' || s.clipPath !== 'none')(getComputedStyle(el))) return false
+  let r = el.getBoundingClientRect(), x1 = Math.max(r.left, 0), y1 = Math.max(r.top, 0), x2 = Math.min(r.right, innerWidth), y2 = Math.min(r.bottom, innerHeight)
+  for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) if (getComputedStyle(a).overflow !== 'visible') { const c = a.getBoundingClientRect(); x1 = Math.max(x1, c.left); y1 = Math.max(y1, c.top); x2 = Math.min(x2, c.right); y2 = Math.min(y2, c.bottom) }
+  return x2 - x1 > 10 && y2 - y1 > 10
+}
 const setValue = (el, v) => { // frameworks listen to input events, not to .value
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)
   el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }))

@@ -1,4 +1,4 @@
-const fs = require('fs'), os = require('os'), path = require('path'), { pathToFileURL } = require('url')
+const fs = require('fs'), os = require('os'), path = require('path'), { pathToFileURL } = require('url'), privacy = require('./lib/privacy.js')
 // Bangs: "!w cats" -> direct site search (same idea as Helium's native bangs).
 const BANGS = { // trigger: [name, search address, the site's brand colour]
   g: ['Google', 'https://www.google.com/search?q=%s', '#4285f4'], w: ['Wikipedia', 'https://en.wikipedia.org/w/index.php?search=%s', '#3a3a3a'],
@@ -36,11 +36,11 @@ function resolve(input, { searchEngine = 'brave', bangs = [] } = {}) {
   if (!t) return 'about:blank'
   const m = t.match(/^!(\w+)\s+(.+)$/)
   const k = m?.[1].toLowerCase()
-  const url = m && (bangs.find(x => x.trigger === k)?.url || (Object.hasOwn(BANGS, k) && BANGS[k][1]))
+  const url = m && (bangs.find(x => x.trigger === k && hostOf(x))?.url || (Object.hasOwn(BANGS, k) && BANGS[k][1]))
   if (url) return url.replace('%s', encodeURIComponent(m[2]))
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t
   const file = localFile(t); if (file) return file
-  if (/^(localhost|[\w-]+(\.[\w-]+)+)(:\d+)?(\/\S*)?$/i.test(t)) return 'https://' + t
+  if (/^(localhost|[\w-]+(\.[\w-]+)+)(:\d+)?(\/\S*)?$/i.test(t)) return privacy.upgrade('http://' + t) ? 'https://' + t : 'http://' + t /* a local address (dev server, box, NAS) rarely has a certificate: it stays on http, which HTTPS-only never upgrades */
   return (ENGINES[searchEngine] || ENGINES.brave)[1].replace('%s', encodeURIComponent(t))
 }
 // every bang the user can type, theirs first: [{ trigger, name, url, color }] (own bangs get a colour of their own from the site's name)

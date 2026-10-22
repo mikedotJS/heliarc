@@ -13,11 +13,12 @@
 <script>
 const $ = s => document.querySelector(s)
 if (navigator.platform.startsWith('Mac')) document.documentElement.style.setProperty('--lead', '78px') // room for the traffic lights
-$('#lock').innerHTML = icon('lock', 14); $('#mv').innerHTML = icon('external-link', 15) + ' Open in Heliarc'
+$('#mv').innerHTML = icon('external-link', 15) + ' Open in Heliarc'
 $('#mv').onclick = () => api.call('littleToMain')
 api.on('little', p => {
   document.documentElement.style.setProperty('--c1', p.c1); document.documentElement.style.setProperty('--c2', p.c2)
   let host = p.url; try { host = new URL(p.url).hostname.replace(/^www\./, '') } catch {}
+  $('#lock').innerHTML = icon(/^https:/i.test(p.url) ? 'lock' : 'globe', 14) // a plain http page gets no padlock
   $('#u').textContent = host || 'Loading…'; $('#site').title = p.title || p.url || ''
   document.body.classList.toggle('loading', p.loading)
 })

@@ -75,7 +75,8 @@ const fmt = k => (k || '').split('+').map(p => ({ Mod: MAC ? '⌘' : 'Ctrl', Shi
 $('#b').innerHTML = icon('arrow-left', 18); $('#f').innerHTML = icon('arrow-right', 18); $('#r').innerHTML = icon('rotate-cw', 16); $('#plus').innerHTML = icon('plus', 16)
 $('#sp').innerHTML = icon('columns-2', 16); $('#col').innerHTML = icon('panel-left', 16); $('#nf').innerHTML = icon('folder-plus', 16)
 const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } }
-const ico = t => t.loading ? '<span class="spin"></span>' : t.error ? `<span class="ph err">${icon('triangle-alert', 11)}</span>` : t.icon ? `<img src="${esc(t.icon)}" onerror="this.outerHTML='<span class=ph>${esc((t.title||'?')[0]).toUpperCase()}</span>'">` : `<span class="ph">${icon('globe', 11)}</span>`
+const ico = t => t.loading ? '<span class="spin"></span>' : t.error ? `<span class="ph err">${icon('triangle-alert', 11)}</span>` : t.icon ? `<img src="${esc(t.icon)}" data-ch="${esc((t.title || '?')[0].toUpperCase())}">` : `<span class="ph">${icon('globe', 11)}</span>`
+addEventListener('error', e => { const i = e.target; if (i.tagName === 'IMG' && i.dataset.ch) i.replaceWith(Object.assign(document.createElement('span'), { className: 'ph', textContent: i.dataset.ch })) }, true) // a favicon that fails to load becomes the title's first letter
 $('#b').onclick = () => api.call('back'); $('#f').onclick = () => api.call('fwd')
 $('#r').onclick = () => api.call('reload')
 $('#pill').onclick = () => api.call('edit'); $('#newbtn').onclick = () => api.call('new')
@@ -144,7 +145,7 @@ function render() {
   $('#zoom').hidden = !a || a.zoom === 1; $('#zoom').textContent = a ? Math.round(a.zoom * 100) + '%' : ''
   $('#sp').title = `Split view (${fmt(s.keys.splitView)})`; $('#sp').style.background = s.split ? 'var(--glass-2)' : ''; $('#col').title = `Collapse sidebar (${fmt(s.keys.toggleSidebar)})`
   $('#newbtn small').textContent = fmt(s.keys.newTab); $('#pill').title = `Edit address (${fmt(s.keys.editAddress)})`
-  $('#pill').innerHTML = s.copied ? `${icon('check', 14)} <span>Link copied</span>` : a?.url ? `${icon('lock', 14)} <span>${esc(host(a.url) || a.url)}</span>` : '<span style="opacity:.8">Search or enter address…</span>'
+  $('#pill').innerHTML = s.copied ? `${icon('check', 14)} <span>Link copied</span>` : a?.url ? `${icon(/^https:/i.test(a.url) ? 'lock' : 'globe', 14)} <span>${esc(host(a.url) || a.url)}</span>` : '<span style="opacity:.8">Search or enter address…</span>'
   $('#pwbar').className = s.pw && s.canSavePw ? 'show' : ''
   $('#pwbar').innerHTML = s.pw ? `<span>${s.pw.update ? 'Update' : 'Save'} password for <b>${esc(s.pw.user || 'this login')}</b> on ${esc(host(s.pw.origin))}?</span><button data-pw="pwSave">${s.pw.update ? 'Update' : 'Save'}</button><button data-pw="pwNever">Never</button><button data-pw="pwDismiss">Not now</button>` : ''
   $('#exts').setAttribute('partition', sp.partition)
@@ -183,7 +184,7 @@ function render() {
   mount()
 }
 // never rebuild the list under a pressed mouse button: it would cancel a drag that is about to start
-addEventListener('pointerdown', e => { if (e.target.closest('.tab, .tile')) pressed = true }, true)
-for (const ev of ['pointerup', 'pointercancel', 'blur']) addEventListener(ev, () => { pressed = false; stale && setTimeout(() => !pressed && !drag && render(), 60) }, true)
+addEventListener('pointerdown', e => { if (e.button === 0 && e.target.closest('#side')) pressed = true }, true) // left button only: a right-click's mouseup is swallowed by the native menu on macOS
+for (const ev of ['pointerup', 'pointercancel', 'blur']) addEventListener(ev, () => { pressed = false; stale && setTimeout(() => !pressed && !drag && !editing && render(), 60) }, true)
 api.onState(s => { state = s; if (drag || pressed || editing) stale = true; else { stale = false; render() } })
 </script>

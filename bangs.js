@@ -40,7 +40,7 @@ function resolve(input, { searchEngine = 'brave', bangs = [] } = {}) {
   if (url) return url.replace('%s', encodeURIComponent(m[2]))
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t
   const file = localFile(t); if (file) return file
-  if (/^(localhost|[\w-]+(\.[\w-]+)+)(:\d+)?(\/\S*)?$/i.test(t)) return privacy.upgrade('http://' + t) ? 'https://' + t : 'http://' + t /* a local address (dev server, box, NAS) rarely has a certificate: it stays on http, which HTTPS-only never upgrades */
+  if (/^(localhost|[\w-]+(\.[\w-]+)+)(:\d+)?(\/\S*)?$/i.test(t) && !/^\d+(\.\d+){1,2}$/.test(t) && URL.canParse('http://' + t)) return privacy.upgrade('http://' + t) ? 'https://' + t : 'http://' + t /* a local address (dev server, box, NAS) rarely has a certificate: it stays on http, which HTTPS-only never upgrades */
   return (ENGINES[searchEngine] || ENGINES.brave)[1].replace('%s', encodeURIComponent(t))
 }
 // every bang the user can type, theirs first: [{ trigger, name, url, color }] (own bangs get a colour of their own from the site's name)

@@ -43,7 +43,7 @@ if (I.kind === 'offline') { // easter egg: no network, so we are in the Red Room
   const s = document.createElement('script'); s.src = 'lodge.js'; s.onload = () => { cv.src = lodgeImage() }; document.head.append(s)
   let dancing = false // Space: the Man from Another Place dances in the room
   addEventListener('keydown', e => {
-    if (e.code !== 'Space' || e.repeat || dancing || !window.lodgeImage) return
+    if (e.code !== 'Space' || e.repeat || dancing || !window.lodgeImage || e.target.closest('button, a, summary')) return // Space on a focused button or link is theirs
     e.preventDefault(); dancing = true; const still = cv.src; let i = 0
     const step = () => { if (i < lodgeFrames) { cv.src = lodgeImage(i++); setTimeout(step, 90) } else { cv.src = still; dancing = false } }
     step()

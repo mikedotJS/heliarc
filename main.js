@@ -868,7 +868,7 @@ app.whenReady().then(async () => {
     if (k === 'fingerprint') spaceSessions().forEach(applyUserAgent)
     push()
   })
-  h('addRoute', (host, sp) => { host = hostOf('https://' + host.trim().replace(/^https?:\/\//, '')); if (host && SPACES[sp] && !SPACES[sp].private) setRoute(host, sp) })
+  h('addRoute', (host, sp) => { host = hostOf('https://' + host.trim().replace(/^https?:\/\//i, '')); if (host && SPACES[sp] && !SPACES[sp].private) setRoute(host, sp) })
   h('editSpace', (i, o) => { // rename a space, pick its icon and colours; the Private space stays as it is
     const sp = SPACES[i]; if (!sp || sp.private || !o) return
     const edit = { ...(typeof o.name === 'string' && o.name.trim() && { name: o.name.trim().slice(0, 20) }), ...(/^[a-z0-9-]{1,30}$/.test(o.icon) && { icon: o.icon }), ...(/^#[0-9a-f]{6}$/i.test(o.c1) && { c1: o.c1 }), ...(/^#[0-9a-f]{6}$/i.test(o.c2) && { c2: o.c2 }) }

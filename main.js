@@ -345,6 +345,7 @@ function switchSpace(i) {
 }
 function sleep(id) { // hibernate: free the page, keep the tab in the list
   const t = byId(id); if (!t?.view || isShown(id)) return
+  if (hungTab === t) endHung()
   win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; t.asleep = true; t.loading = false; t.playing = false
   if (mediaTab === id) mediaTab = null
   push()
@@ -364,6 +365,7 @@ function go(input) {
 function retarget(t, sp) { // move a tab to another space: pages must be rebuilt in that space's profile
   if (t.space === sp) return
   t.space = sp; t.folder = null // a folder belongs to one space
+  if (hungTab === t) endHung()
   if (t.view) { win.contentView.removeChildView(t.view); t.view.webContents.close(); makeView(t); t.view.setVisible(isShown(t.id)) }
 }
 function place(id, zone, fid, idx = 1e9) { // drag & drop: put a tab in a zone (fav | pinned | folder | list) at an index

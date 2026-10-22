@@ -120,12 +120,12 @@ const pagePrefs = partition => ({ partition, sandbox: true, contextIsolation: tr
 const POPUP = /\b(width|height|popup)\b/i
 let quitting = false // every page is destroyed when the app exits: no tab bookkeeping then
 app.once('before-quit', () => { quitting = true }); process.once('exit', () => { quitting = true })
-const popupHandler = tab =>({ url, disposition, features, frameName }) => {
+const popupHandler = (tab, wc) => ({ url, disposition, features, frameName, postBody, referrer }) => { // wc: the page the handler belongs to (the tab's, or one of its popups)
   if (disposition === 'new-window' && POPUP.test(features) && tab.id === active) return { action: 'allow', overrideBrowserWindowOptions: { title: 'Heliarc', icon: ICON, autoHideMenuBar: true } }
   if (disposition === 'new-window' && !features) { openPeek(url); return { action: 'deny' } }
-  if (disposition === 'foreground-tab' && (!frameName || frameName === '_blank') && /^https?:/i.test(url) && privacy.site(url) === privacy.site(tab.view.webContents.getURL())) { tab.view.webContents.loadURL(url); return { action: 'deny' } } // a link that stays on the same site (target=_blank) navigates this tab; Cmd+click still opens a new one
+  if (disposition === 'foreground-tab' && (!frameName || frameName === '_blank') && !postBody && /^https?:/i.test(url) && privacy.site(url) === privacy.site(wc.getURL())) { wc.loadURL(url, { httpReferrer: referrer }); return { action: 'deny' } } // a link that stays on the same site (target=_blank) navigates this tab; Cmd+click still opens a new one
   const to = routeFor(resolve(url))
-  if (to != null && to !== tab.space) { newTab(url); return { action: 'deny' } } // sent to another space: it can't stay linked
+  if (to != null && to !== tab.space && !SPACES[tab.space].private) { newTab(url); return { action: 'deny' } } // sent to another space: it can't stay linked
   // a tab made from the page's own request keeps window.opener, window.name and postMessage working (Teams safe links, payments, sign-ins)
   return { action: 'allow', createWindow: options => newTab('', tab.space, options).view.webContents }
 }
@@ -161,9 +161,9 @@ function makeView(tab, opened) { // opened: the window options Electron made for
   hardenWc(wc)
   view.setBorderRadius(12)
   tab.view = view; tab.asleep = false
-  wc.setWindowOpenHandler(popupHandler(tab))
+  wc.setWindowOpenHandler(popupHandler(tab, wc))
   wc.once('destroyed', () => { if (!quitting && tab.view === view && byId(tab.id)) closeTab(tab.id) }) // the page closed itself (window.close): its tab goes with it, not left dead in the list
-  wc.on('did-create-window', w => { hardenWc(w.webContents); w.webContents.setWindowOpenHandler(popupHandler(tab)) }) // a popup gets the same protections, and its own popups too
+  wc.on('did-create-window', w => { hardenWc(w.webContents); w.webContents.setWindowOpenHandler(popupHandler(tab, w.webContents)) }) // a popup gets the same protections, and its own popups too
   wc.on('page-title-updated', (_, t) => { tab.title = t; if (history[0]?.url === wc.getURL()) { history[0].title = t; store.save('history', history) } push() })
   wc.on('page-favicon-updated', (_, icons) => { tab.icon = icons[0]; push() })
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; push() })
@@ -299,7 +299,7 @@ function routeFor(url) { // auto-routing: links to a routed site open in that si
 }
 function newTab(input, sp, opened) {
   const url = input ? resolve(input) : ''
-  const tab = { id: nextId++, title: 'New tab', url, icon: null, loading: false, muted: false, asleep: false, error: null, pinned: false, fav: false, folder: null, space: sp ?? routeFor(url) ?? space, last: Date.now() }
+  const tab = { id: nextId++, title: 'New tab', url, icon: null, loading: false, muted: false, asleep: false, error: null, pinned: false, fav: false, folder: null, space: sp ?? (SPACES[space].private ? null : routeFor(url)) ?? space, last: Date.now() }
   tabs.push(tab); makeView(tab, opened); activate(tab.id)
   return tab
 }

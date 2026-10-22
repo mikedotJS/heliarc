@@ -47,6 +47,7 @@ let active = null, space = 0, nextId = 1, blocked = 0, blockerState = 'loading',
 let restored = false // the session is saved only once the previous one is back, or an early push() would overwrite it with an empty one
 let cmdOpen = false, panelOpen = false, findOpen = false, findText = '', recording = false
 let fsTab = null // the tab whose page is in HTML fullscreen (YouTube player…): Electron puts the window in fullscreen, we make the page fill it
+let fsWinWas = false // the window was already fullscreen (the user's choice) when that page asked: closing the tab must not take it out of fullscreen
 let sidebar = true, floating = false, split = null, peek = null, mediaTab = null, pwPending = null, soon = null
 let pwAsking = false, pwLater = null // the native password question of Peek / Little is open; the newest capture that came meanwhile
 const dls = new Map(), configured = new Set()
@@ -330,7 +331,7 @@ function activate(id) {
 }
 function removeTab(t) {
   tabs.splice(tabs.indexOf(t), 1)
-  if (fsTab === t) { fsTab = null; win.setFullScreen(false) } // the page can't say it left fullscreen once it is gone
+  if (fsTab === t) { fsTab = null; if (!fsWinWas) win.setFullScreen(false) } // the page can't say it left fullscreen once it is gone
   if (t.view) { win.contentView.removeChildView(t.view); try { t.view.webContents.close() } catch {} /* already gone when the page closed itself */ }
   if (split?.includes(t.id)) split = null
   if (mediaTab === t.id) mediaTab = null
@@ -360,7 +361,7 @@ function switchSpace(i) {
 function sleep(id) { // hibernate: free the page, keep the tab in the list
   const t = byId(id); if (!t?.view || isShown(id)) return
   if (hungTab === t) endHung()
-  if (fsTab === t) { fsTab = null; win.setFullScreen(false) }
+  if (fsTab === t) { fsTab = null; if (!fsWinWas) win.setFullScreen(false) }
   win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; t.asleep = true; t.loading = false; t.playing = false
   if (mediaTab === id) mediaTab = null
   push()
@@ -587,6 +588,7 @@ function setupSession(ses) {
   privacy.filterRequests(ses, () => settings, () => blocker) // Global Privacy Control, Do Not Track, third-party cookies, ad blocker
   applyUserAgent(ses)
   ses.setPermissionRequestHandler(async (wc, permission, cb, d) => { // camera, microphone, location, notifications, clipboard: ask once per site, then remember
+    if (permission === 'fullscreen' && !fsTab) fsWinWas = win.isFullScreen()
     if (SILENT.has(permission) || permission === 'display-capture') return cb(true) // screen sharing asks through the picker below
     const need = permsOf(permission, d), host = privacy.host(d.requestingUrl || wc.getURL()), saved = settings.sitePerms[host] || {}
     if (!need.length || !host) return cb(false)

@@ -878,6 +878,7 @@ app.whenReady().then(async () => {
     trigger = String(trigger).trim().replace(/^!/, '').toLowerCase(); url = String(url).trim()
     if (!/^\w{1,12}$/.test(trigger)) return { error: 'The shortcut is one short word, like “npm”.' }
     if (!/^https?:\/\/\S+$/.test(url) || !url.includes('%s')) return { error: 'The address must start with https:// and contain %s where the search goes.' }
+    try { new URL(url.replace('%s', 'x')) } catch { return { error: 'This address is not valid.' } }
     settings.bangs = [...settings.bangs.filter(x => x.trigger !== trigger), { trigger, url }]; push(); return { ok: true }
   })
   h('delBang', trigger => { settings.bangs = settings.bangs.filter(x => x.trigger !== trigger); push() })

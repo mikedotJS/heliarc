@@ -18,4 +18,3 @@ Open a private report: GitHub → Security → "Report a vulnerability" on `mike
 
 ## Not covered yet
 - No hands-on attack test beyond the automated ones (opening windows, leaving the app's files, running eval from an app screen).
-- The CI checks (`security.yml`) have not run on GitHub yet.

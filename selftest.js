@@ -1,4 +1,4 @@
-const fs = require('fs')
+const fs = require('fs'), os = require('os'), path = require('path'), shots = path.join(os.tmpdir(), 'heliarc-shots')
 // End-to-end self test: drives the real browser, prints PASS/FAIL, exits.
 // `npm test` = everything (needs network); `npm run test:local` = offline feature tests only.
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -38,10 +38,10 @@ module.exports = async a => {
       a.pin(t1.id); ok('pin', t1.pinned)
       a.switchSpace(1); await sleep(800); ok('space switch -> new tab in Work', a.cur().space === 1 && a.tabs().length === 5, 'tabs=' + a.tabs().length)
       a.switchSpace(0); await sleep(500); ok('back to Home', a.cur().space === 0)
-      await sleep(500); fs.writeFileSync('shot-sidebar.png', (await a.ui().webContents.capturePage()).toPNG())
+      await sleep(500); fs.mkdirSync(shots, { recursive: true }); fs.writeFileSync(path.join(shots, 'shot-sidebar.png'), (await a.ui().webContents.capturePage()).toPNG())
       a.openCmd('new'); await sleep(800); ok('command bar open', a.cmdOpen())
-      fs.writeFileSync('shot-cmdbar.png', (await a.cmd().webContents.capturePage()).toPNG()); a.closeCmd()
-      fs.writeFileSync('shot-page.png', (await a.cur().view.webContents.capturePage()).toPNG())
+      fs.writeFileSync(path.join(shots, 'shot-cmdbar.png'), (await a.cmd().webContents.capturePage()).toPNG()); a.closeCmd()
+      fs.writeFileSync(path.join(shots, 'shot-page.png'), (await a.cur().view.webContents.capturePage()).toPNG())
       for (const t of [...a.tabs()]) a.closeTab(t.id)
       ok('close all -> one new tab', a.tabs().length === 1)
     }

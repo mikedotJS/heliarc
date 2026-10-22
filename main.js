@@ -781,11 +781,14 @@ if (!gotLock) app.quit()
 app.on('second-instance', (_, argv) => whenReady.then(() => { const u = urlArg(argv); u ? openExternal(u) : (win.show(), win.focus()) }))
 app.on('open-url', (e, u) => { e.preventDefault(); whenReady.then(() => openExternal(u)) })
 app.on('open-file', (e, f) => { e.preventDefault(); whenReady.then(() => openExternal(require('url').pathToFileURL(f).href)) }) // macOS: a file opened with Heliarc, or dropped on its icon
-let cleaned = false
+let cleaned = false, clearing = false
+const dropRecords = () => { history = []; downloads = []; store.save('history', history); store.save('downloads', downloads); store.flushAll() } // on disk right away: the exit may come before the slower cleaning is done
+const clearAll = () => { dropRecords(); return Promise.all(spaceSessions().map(wipe)) }
 app.on('before-quit', e => { // "clear everything when I quit": cookies, logins, caches, history, download list
+  if (clearing) return e.preventDefault() // closing the window with the X asks to quit twice: the second must not end the app before the cleaning is done
   if (installing || !settings.clearOnQuit || cleaned) return store.flushAll()
-  e.preventDefault(); cleaned = true
-  Promise.all(spaceSessions().map(wipe)).then(() => { history = []; downloads = []; store.save('history', history); store.save('downloads', downloads); store.flushAll(); app.quit() })
+  e.preventDefault(); cleaned = clearing = true
+  clearAll().then(() => { clearing = false; app.quit() })
 })
 
 app.whenReady().then(async () => {

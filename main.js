@@ -125,7 +125,7 @@ app.once('before-quit', () => { quitting = true }); process.once('exit', () => {
 const popupHandler = (tab, wc) => ({ url, disposition, features, frameName, postBody, referrer }) => { // wc: the page the handler belongs to (the tab's, or one of its popups)
   if (disposition === 'new-window' && POPUP.test(features) && tab.id === active) return { action: 'allow', overrideBrowserWindowOptions: { title: 'Heliarc', icon: ICON, autoHideMenuBar: true } }
   if (disposition === 'new-window' && !features) { openPeek(url); return { action: 'deny' } }
-  if (disposition === 'foreground-tab' && (!frameName || frameName === '_blank') && !postBody && /^https?:/i.test(url) && privacy.site(url) === privacy.site(wc.getURL())) { wc.loadURL(url, { httpReferrer: referrer }); return { action: 'deny' } } // a link that stays on the same site (target=_blank) navigates this tab; Cmd+click still opens a new one
+  if (disposition === 'foreground-tab' && (!frameName || frameName === '_blank') && !postBody && /^https?:/i.test(url) && privacy.site(url) === privacy.site(wc.getURL())) { wc === tab.view?.webContents ? loadWeb(wc, tab, url, referrer) : wc.loadURL(url, { httpReferrer: referrer }); return { action: 'deny' } } // a link that stays on the same site (target=_blank) navigates this tab; Cmd+click still opens a new one
   const to = routeFor(resolve(url))
   if (to != null && to !== tab.space && !SPACES[tab.space].private) { newTab(url); return { action: 'deny' } } // sent to another space: it can't stay linked
   // a tab made from the page's own request keeps window.opener, window.name and postMessage working (Teams safe links, payments, sign-ins)
@@ -151,7 +151,7 @@ const endHung = () => { hungTab = null; layout() }
 // HTTPS only, for a tab, Peek or the Little window (o): http:// links are upgraded, and a site without HTTPS gets plain http for this host
 const toHttps = (wc, o) => (e, u) => { const s = settings.httpsOnly && !o.httpOk?.has(hostOf(u)) && privacy.upgrade(u); if (s && (o.upN = (o.upN || 0) + 1) < 4) { e.preventDefault(); o.upgraded = s; wc.loadURL(s) } }
 const noHttps = (wc, o, code, url) => { if (url !== o.upgraded || !privacy.NO_HTTPS.includes(code)) return false; (o.httpOk ??= new Set()).add(hostOf(url)); o.upgraded = null; wc.loadURL(url.replace(/^https:/, 'http:')); return true }
-const loadWeb = (wc, o, u) => { const up = settings.httpsOnly && privacy.upgrade(u); if (up) o.upgraded = up; o.upN = 0; wc.loadURL(up || u) }
+const loadWeb = (wc, o, u, httpReferrer) => { const up = settings.httpsOnly && !o.httpOk?.has(hostOf(u)) && privacy.upgrade(u); if (up) o.upgraded = up; o.upN = 0; wc.loadURL(up || u, { httpReferrer }) }
 function watchSystem(wc, owner) { // Peek and the Little window get the same screens as a tab
   const up = toHttps(wc, owner); wc.on('will-navigate', up); wc.on('will-redirect', (e, u) => e.isMainFrame && up(e, u)); wc.on('did-finish-load', () => { owner.upN = 0 })
   wc.on('did-fail-load', (_, code, desc, url, isMain) => { if (isMain && noHttps(wc, owner, code, url)) return; if (isMain && code !== -3 && !url.startsWith(SYSTEM)) showSystem(owner, sysKind(code), { url, detail: `${desc} (${code})` }) })

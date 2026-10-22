@@ -331,6 +331,7 @@ function userClose(id) { // the page may refuse to close ("Leave site?"), so it 
 function closeTab(id) {
   const t = byId(id); if (!t) return
   removeTab(t)
+  if (active === id) closeFind() // the next tab is not 'leaving' this one (activate() looks at the tab in front, now gone)
   if (SPACES[t.space].private && !tabs.some(x => x.space === t.space)) { downloads.forEach(d => d.private && dls.get(d.id)?.cancel()); downloads = downloads.filter(d => !d.private); wipe(session.fromPartition(SPACES[t.space].partition)); space === t.space ? switchSpace(0) : refresh(); return }
   if (active !== id) { refresh(); return }
   const sp = t.fav ? space : t.space, same = tabs.filter(x => x.space === sp && !x.fav)

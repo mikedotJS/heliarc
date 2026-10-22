@@ -690,7 +690,7 @@ app.on('select-client-certificate', async (e, wc, url, list, cb) => {
 })
 let update = null // a newer release, when there is one
 let updater = null, installing = false // the background download of that release (Mac, signed app): { state: 'downloading' | 'ready' | 'error' }
-const autoUpdate = process.platform === 'darwin' && app.isPackaged ? autoupdate.setup({
+const autoUpdate = !TEST && process.platform === 'darwin' && app.isPackaged ? autoupdate.setup({
   autoUpdater: require('electron').autoUpdater, feed: `https://update.electronjs.org/mikedotJS/heliarc/darwin-${process.arch}/${app.getVersion()}`,
   onChange: s => { updater = s; push() },
 }) : null

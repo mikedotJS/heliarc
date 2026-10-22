@@ -330,6 +330,7 @@ function activate(id) {
 }
 function removeTab(t) {
   tabs.splice(tabs.indexOf(t), 1)
+  if (fsTab === t) { fsTab = null; win.setFullScreen(false) } // the page can't say it left fullscreen once it is gone
   if (t.view) { win.contentView.removeChildView(t.view); try { t.view.webContents.close() } catch {} /* already gone when the page closed itself */ }
   if (split?.includes(t.id)) split = null
   if (mediaTab === t.id) mediaTab = null
@@ -359,6 +360,7 @@ function switchSpace(i) {
 function sleep(id) { // hibernate: free the page, keep the tab in the list
   const t = byId(id); if (!t?.view || isShown(id)) return
   if (hungTab === t) endHung()
+  if (fsTab === t) { fsTab = null; win.setFullScreen(false) }
   win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; t.asleep = true; t.loading = false; t.playing = false
   if (mediaTab === id) mediaTab = null
   push()

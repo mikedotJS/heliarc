@@ -697,7 +697,7 @@ let update = null // a newer release, when there is one
 let updater = null, installing = false // the background download of that release (Mac, signed app): { state: 'downloading' | 'ready' | 'error' }
 const autoUpdate = !TEST && process.platform === 'darwin' && app.isPackaged ? autoupdate.setup({
   autoUpdater: require('electron').autoUpdater, feed: `https://update.electronjs.org/mikedotJS/heliarc/darwin-${process.arch}/${app.getVersion()}`,
-  onChange: s => { updater = s; push() },
+  onChange: s => { updater = s; if (s?.state === 'error') installing = false; push() },
 }) : null
 async function checkUpdate() {
   try { update = await updates.check(app.getVersion()); if (update && autoUpdate && !updater) autoUpdate.check(); push(); return update ? { text: `Heliarc ${update.version} is available.` } : { text: `Heliarc ${app.getVersion()} is up to date.` } } catch (e) { return { error: `Couldn’t check for updates: ${e.message}` } }
@@ -813,6 +813,7 @@ app.whenReady().then(async () => {
   win.on('resize', layout)
   win.on('enter-full-screen', layout); win.on('leave-full-screen', layout) // the page follows the window
   win.on('closed', () => app.quit())
+  win.on('session-end', () => { if (settings.clearOnQuit) dropRecords() }) // Windows shutdown or log-off: no before-quit then, and no time for more than this
   const privacyReady = setupPrivacy().catch(e => console.warn('privacy setup:', e.message)) // runs while the handlers below register; awaited before the first page loads
 
   const h = (n, f) => ipcMain.handle(n, (_, ...a) => restored || ['ready', 'authInfo', 'authDone'].includes(n) ? f(...a) : undefined) // until the session is back, only the UI asking for the state and the sign-in window (a proxy can ask before) are answered
@@ -912,7 +913,7 @@ app.whenReady().then(async () => {
     const file = r.filePaths[0]
     return attempt(() => what === 'passwords' ? addPasswords(importers.passwords(fs.readFileSync(file, 'utf8'))) : what === 'safari' ? addHistory(importers.history('safari', file)) : addBookmarks(importers.bookmarks('file', file), 'Imported file'))
   })
-  h('installUpdate', () => { installing = true; autoUpdate?.install() })
+  h('installUpdate', async () => { if (settings.clearOnQuit) await clearAll(); installing = true; try { autoUpdate?.install() } catch { installing = false } }) // the restart skips the cleaning of the quit, so it is done first
   h('authInfo', () => authCurrent?.info); h('authDone', r => authCurrent?.finish(r))
   h('checkUpdate', checkUpdate); h('openRelease', async () => { // the update feed can lag behind a fresh release: try the in-app update first, the release page is the way out
     if (!update) return

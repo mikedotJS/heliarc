@@ -835,7 +835,7 @@ app.whenReady().then(async () => {
   h('showFile', id => { const d = downloads.find(x => x.id === id); d && shell.showItemInFolder(d.path) })
   h('cancelDownload', id => { dls.get(id)?.cancel() })
   h('retryDownload', id => { // start the same download again, from the same kind of tab (a Private one for a Private download)
-    const d = downloads.find(x => x.id === id), t = d && tabs.find(x => x.view && (d.private ? x.space === PRIVATE : x === cur()))
+    const d = downloads.find(x => x.id === id), t = d && [cur(), ...tabs].find(x => x?.view && (d.private ? x.space === PRIVATE : !SPACES[x.space].private))
     if (!t) return { error: d?.private ? 'Open a Private tab to try this download again.' : 'Open a tab to try this download again.' }
     downloads = downloads.filter(x => x !== d); saveDownloads(); t.view.webContents.downloadURL(d.url); push()
   })

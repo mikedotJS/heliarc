@@ -134,7 +134,7 @@ const popupHandler = (tab, wc) => ({ url, disposition, features, frameName, post
 // WebRTC doesn't reveal the local network address, except on the sites where the user turned that off (checked again at each navigation)
 const webrtcPolicy = wc => settings.webrtcProtect && !settings.webrtcOff.includes(privacy.host(wc.getURL())) ? 'default_public_interface_only' : 'default'
 const navTo = new WeakMap() // page -> the address its main frame is loading (wc.getURL() still shows the old page then)
-const hardenWc = wc => { wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc)); wc.on('did-navigate', () => wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc))); for (const e of ['did-start-navigation', 'did-redirect-navigation']) wc.on(e, d => d.isMainFrame && navTo.set(wc, d.url)) }
+const hardenWc = wc => { wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc)); wc.on('did-navigate', () => wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc))); for (const e of ['did-start-navigation', 'did-redirect-navigation']) wc.on(e, d => d.isMainFrame && navTo.set(wc, d.url)); for (const e of ['did-navigate', 'did-stop-loading']) wc.on(e, () => navTo.delete(wc)) } // a navigation that ends without a page (download, 204) is no longer the address being loaded
 // the protections the user can turn off for one site: name -> the setting listing the sites where it is off
 const SITE_OFF = { ads: 'adblockOff', cookies: 'cookiesOk', fingerprint: 'fingerprintOff', webrtc: 'webrtcOff' }
 // which system screen a failed load gets: Chromium's net error codes

@@ -787,7 +787,7 @@ app.whenReady().then(async () => {
   const h = (n, f) => ipcMain.handle(n, (_, ...a) => f(...a))
   h('new', () => openCmd('new')); h('edit', () => openCmd('edit')); h('closeCmd', closeCmd)
   h('activate', activate); h('close', userClose); h('sleep', sleep); h('space', switchSpace); h('mute', mute)
-  h('go', input => { closeCmd(); go(input) }); h('open', input => { closeCmd(); newTab(input) })
+  h('go', input => { go(input); closeCmd() }); h('open', input => { newTab(input); closeCmd() }) // the command bar hands the keyboard to the page it just opened or moved to, not to the one before
   h('pin', id => { const t = byId(id); if (t) toFavOrBack(t, t.pinned ? 'list' : 'pinned') })
   h('back', () => cur()?.view?.webContents.navigationHistory.goBack())
   h('fwd', () => cur()?.view?.webContents.navigationHistory.goForward())

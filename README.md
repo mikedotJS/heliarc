@@ -24,7 +24,7 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 - Password manager (encrypted with the OS keychain: asks to save after a login, fills on focus) and address autofill
 - Import history, bookmarks and saved passwords from Chrome, Edge, Brave and Arc (on Mac, macOS asks you to allow access to the browser's key; on Windows, recent Chrome and Edge lock their passwords to themselves, so export a CSV from them), history and bookmarks from Firefox and Safari, or anything from exported files; Firefox and Safari passwords come in from a CSV you export (Settings → Import)
 - Swipe two fingers on a page for back / forward, or on the sidebar to change space. On Mac the app updates itself in the background and asks you to restart; on Windows a notice appears in the sidebar when a newer release is out
-- AI assistants can drive Heliarc over [MCP](https://modelcontextprotocol.io) (Settings → *AI assistants*, off by default): list, open, switch and close tabs, read a page, click, type, scroll, screenshot. Local only (127.0.0.1), protected by a secret token, and the Private space is never reachable. In Claude Code: copy the command shown in Settings
+- AI assistants can drive Heliarc over [MCP](https://modelcontextprotocol.io) (Settings → *AI assistants*, off by default): list, open, switch, close, pin, favorite, move and sleep tabs, read a page, wait for text, click, type, pick drop-down options, scroll, screenshot, search history, list downloads. Local only (127.0.0.1), protected by a secret token, and the Private space is never reachable. In Claude Code: copy the command shown in Settings
 
 **Not there yet**: Netflix/Spotify-style protected video (Widevine needs a different Electron build), passkeys.
 

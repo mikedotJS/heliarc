@@ -782,6 +782,25 @@ const mcp = mcpLib.create({
   open: (url, name) => { const named = SPACES.findIndex(s => s.name.toLowerCase() === name?.toLowerCase()); return newTab(url, named >= 0 ? named : routeFor(url) ?? (SPACES[space].private ? 0 : space)).id },
   navigate: (id, url) => { activate(id); return go(url)?.id ?? id }, // a routed site may open in a new tab of its own space: that tab is the answer
   activate, close: closeTab,
+  organize: (id, action, arg) => {
+    const t = byId(id); if (!t || SPACES[t.space].private) return 'No such tab'
+    if (action === 'pin' || action === 'unpin') { if (t.fav) return 'This tab is a favorite: unfavorite it first'; toFavOrBack(t, action === 'pin' ? 'pinned' : 'list') }
+    else if (action === 'favorite' || action === 'unfavorite') toFavOrBack(t, action === 'favorite' ? 'fav' : 'list')
+    else if (action === 'sleep') { if (isShown(id)) return 'This tab is in front: switch to another tab first'; if (t.asleep) return 'Already asleep'; sleep(id) }
+    else if (action === 'move_to_space') {
+      const sp = SPACES.findIndex(x => !x.private && x.name.toLowerCase() === arg?.toLowerCase()); if (sp < 0) return 'Unknown space. Choose one of: ' + SPACES.filter(x => !x.private).map(x => x.name).join(', ')
+      if (t.fav) return 'A favorite belongs to every space'
+      retarget(t, sp); active === id ? activate(id) : push()
+    } else if (action === 'move_to_folder') {
+      if (!arg?.trim()) return 'Give the name of the folder'
+      if (t.fav) return 'Unfavorite this tab first'
+      let f = folders.find(x => x.space === t.space && x.name.toLowerCase() === arg.trim().toLowerCase())
+      if (!f) { newFolder(); f = folders.at(-1); f.name = arg.trim().slice(0, 40); f.space = t.space }
+      place(id, 'folder', f.id)
+    }
+  },
+  searchHistory: (q, limit) => history.filter(x => !q || (x.title + ' ' + x.url).toLowerCase().includes(q.toLowerCase())).slice(0, limit).map(x => ({ title: x.title, url: x.url, at: new Date(x.at).toISOString() })),
+  downloads: () => downloads.filter(d => !d.private).slice(0, 50).map(d => ({ name: d.name, path: d.path, url: d.url, state: d.state, bytes: d.received || d.total, at: new Date(d.at).toISOString() })),
   history: (id, action) => { const wc = byId(id).view.webContents; action === 'reload' ? wc.reload() : action === 'back' ? wc.navigationHistory.goBack() : wc.navigationHistory.goForward() },
 })
 let mcpToken = null

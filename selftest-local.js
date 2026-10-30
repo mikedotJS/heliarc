@@ -9,6 +9,7 @@ const PAGES = {
   '/second': '<title>Second page</title><p>second</p>',
   '/wide': '<title>Wide</title><body style="margin:0;min-width:1200px"><p>wide</p>',
   '/login': '<title>Login</title><form id=f method=post action=/done><input id=u name=user type=text><input id=p name=pass type=password><button type=button id=eye>Show</button><button>Go</button></form>',
+  '/form': '<title>Form</title><label for=c>Colour</label><select id=c name=colour><option value=r>Red</option><option value=b>Blue</option></select><script>setTimeout(() => { const p = document.createElement("p"); p.id = "late"; p.textContent = "Loaded later"; document.body.append(p) }, 800)</script>',
   '/done': '<title>Done</title>ok',
   '/darktop': '<title>Dark top</title><body style="margin:0;background:#112233;color:#fff"><p>night</p>',
   '/profile': '<title>Profile</title><form><input id=em autocomplete=email><input id=fn autocomplete=given-name><input id=ci autocomplete=address-level2></form>',
@@ -812,6 +813,19 @@ module.exports = async (a, ok) => {
     ok('a Private tab is invisible and out of reach', !listed.some(t => t.id === pv.id) && (await call(c, 'switch_tab', { tab: pv.id })).err && (await call(c, 'close_tab', { tab: pv.id })).err && a.tabs().some(t => t.id === pv.id))
     ok('a tab that is not in front must be brought forward first', (await call(c, 'read_page', { tab: o.id })).err && !(await call(c, 'switch_tab', { tab: o.id })).err && !(await call(c, 'read_page', { tab: o.id })).err)
     ok('close_tab closes', !(await call(c, 'close_tab', { tab: lg.id })).err && !a.tabs().some(t => t.id === lg.id))
+    const fm = JSON.parse((await call(c, 'open_tab', { url: base + '/form' })).text)
+    ok('wait_for waits for a text that comes later', (await call(c, 'wait_for', { text: 'Loaded later' })).text === 'Found' && (await call(c, 'wait_for', { selector: '#late' })).text === 'Found')
+    ok('wait_for gives up with an error', (await call(c, 'wait_for', { text: 'never here', seconds: 1 })).err)
+    ok('select_option picks by label and by option text', (await call(c, 'select_option', { text: 'Colour', option: 'Blue' })).text === 'Chose Blue' && await js(a.cur().view.webContents, 'document.querySelector("#c").value') === 'b')
+    ok('select_option lists the options when one is wrong', /Red | Blue/.test((await call(c, 'select_option', { selector: '#c', option: 'Green' })).text))
+    ok('organize_tab pins and unpins', !(await call(c, 'organize_tab', { tab: fm.id, action: 'pin' })).err && a.tabs().find(t => t.id === fm.id).pinned && !(await call(c, 'organize_tab', { tab: fm.id, action: 'unpin' })).err && !a.tabs().find(t => t.id === fm.id).pinned)
+    ok('organize_tab puts a tab in a folder, created if missing', !(await call(c, 'organize_tab', { tab: fm.id, action: 'move_to_folder', arg: 'Reading' })).err && S.folders().some(f => f.name === 'Reading' && f.id === a.tabs().find(t => t.id === fm.id).folder))
+    ok('organize_tab moves a tab to another space', !(await call(c, 'organize_tab', { tab: fm.id, action: 'move_to_space', arg: 'Work' })).err && a.tabs().find(t => t.id === fm.id).space === 1 && (await call(c, 'organize_tab', { tab: fm.id, action: 'move_to_space', arg: 'Private' })).err)
+    const x2 = JSON.parse((await call(c, 'open_tab', { url: base + '/second' })).text)
+    ok('organize_tab sleeps a tab that is not in front, not the one in front', !(await call(c, 'organize_tab', { tab: fm.id, action: 'sleep' })).err && a.tabs().find(t => t.id === fm.id).asleep && (await call(c, 'organize_tab', { tab: x2.id, action: 'sleep' })).err)
+    ok('search_history finds a visited page', JSON.parse((await call(c, 'search_history', { query: 'Second page' })).text).some(h => h.url === base + '/second'))
+    const dl = JSON.parse((await call(c, 'list_downloads')).text)
+    ok('list_downloads lists the files', Array.isArray(dl) && dl.every(d => d.path && d.state), JSON.stringify(dl).slice(0, 120))
     await c.close()
     await js(panel(), `api.call('mcpNewToken')`)
     ok('a new token cuts off the old one', await until(async () => (await info()).token && (await info()).token !== token && await post({ Authorization: 'Bearer ' + token }) === 401))

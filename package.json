@@ -31,7 +31,7 @@
     "@electron/osx-sign": "^2.7.1",
     "@electron/packager": "^20.3.0",
     "electron": "^44.7.0",
-    "lucide-static": "^1.55.0",
+    "lucide-static": "^1.61.0",
     "patch-package": "^8.0.1",
     "png-to-ico": "^3.0.2"
   },

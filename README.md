@@ -26,6 +26,7 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 - Swipe two fingers on a page for back / forward, or on the sidebar to change space. On Mac the app updates itself in the background and asks you to restart; on Windows a notice appears in the sidebar when a newer release is out
 - AI assistants can drive Heliarc over [MCP](https://modelcontextprotocol.io) (Settings → *AI assistants*, off by default): list, open, switch, close, pin, favorite, move and sleep tabs, read a page, wait for text, click, type, pick drop-down options, scroll, screenshot, search history, list downloads. Local only (127.0.0.1), protected by a secret token, and the Private space is never reachable. In Claude Code: copy the command shown in Settings
 
+- **Ask Heliarc** (Settings → *AI assistants*, off by default): type a sentence in the command bar (⌘L) and press Tab, or start with ?, and Heliarc does it in your browser with your own Claude API key (kept encrypted by the system). It shows each step, can be stopped, asks before any click that sends, pays, deletes or publishes, never types passwords and never sees the Private space
 **Not there yet**: Netflix/Spotify-style protected video (Widevine needs a different Electron build), passkeys.
 
 **Arc-style**

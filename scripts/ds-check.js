@@ -2,7 +2,7 @@
 // `--inventory`: how many different colours, radii and font sizes each screen uses (what is left to migrate).
 const fs = require('fs'), path = require('path')
 const ui = process.env.DS_UI || path.join(__dirname, '..', 'ui'), read = f => fs.readFileSync(path.join(ui, f), 'utf8')
-const MIGRATED = ['system.html', 'hung.html', 'design-system.html', 'components.css', 'cmdbar.html', 'find.html', 'peek.html', 'little.html', 'newtab.html', 'auth.html', 'panel.html', 'arc.html', 'common.css'] // grows as screens move to the design system
+const MIGRATED = ['system.html', 'hung.html', 'ask.html', 'design-system.html', 'components.css', 'cmdbar.html', 'find.html', 'peek.html', 'little.html', 'newtab.html', 'auth.html', 'panel.html', 'arc.html', 'common.css'] // grows as screens move to the design system
 
 const lum = h => { const c = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(v => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2] }
 const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + .05) / (y + .05) }

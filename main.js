@@ -12,6 +12,9 @@ const importers = require('./lib/importers')
 const updates = require('./lib/updates')
 const autoupdate = require('./lib/autoupdate')
 const mcpLib = require('./lib/mcp')
+const assistant = require('./lib/assistant')
+const { Client: McpClient } = require('@modelcontextprotocol/sdk/client/index.js')
+const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js')
 
 const TEST = process.argv.some(a => /^--(selftest|motioncheck)/.test(a))
 if (process.env.HELIARC_USER_DATA) app.setPath('userData', process.env.HELIARC_USER_DATA)
@@ -36,13 +39,13 @@ const SPACES = [ // one browser profile (cookies, logins) per space
 ]
 const PRIVATE = SPACES.findIndex(s => s.private)
 const ZOOMS = [.25, .33, .5, .67, .75, .8, .9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
-const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false }
+const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false, assistant: false }
 // Picture-in-picture for the biggest playing, unmuted video (needs a user gesture, which executeJavaScript can claim)
 const PIP_ON = `(async () => { const v = [...document.querySelectorAll('video')].filter(v => !v.paused && !v.ended && !v.muted && v.readyState > 2 && v.videoWidth && !v.disablePictureInPicture).sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0]; if (!v || document.pictureInPictureElement) return false; await v.requestPictureInPicture(); return true })()`
 const PIP_OFF = `document.pictureInPictureElement && document.exitPictureInPicture()`
 const MEDIA_TOGGLE = `(() => { const m = [...document.querySelectorAll('video,audio')]; const on = m.filter(x => !x.paused); if (on.length) { on.forEach(x => x.pause()); return false } (m.find(x => x.currentTime > 0) || m[0])?.play(); return true })()`
 
-let win, ui, cmd, panel, find, peekUi, edge, little
+let win, ui, cmd, panel, find, peekUi, edge, little, askUi
 let tabs = [], folders = [], archive = [], history = [], downloads = [], vault = [], profile = {}, settings = structuredClone(DEFAULTS)
 let active = null, space = 0, nextId = 1, blocked = 0, blockerState = 'loading', copied = false // copied: the address pill says "Link copied" for a moment after Mod+Shift+C
 let restored = false // the session is saved only once the previous one is back, or an early push() would overwrite it with an empty one
@@ -72,6 +75,7 @@ const push = () => {
   const c = listed(active) ? cur() : null, nav = c?.view?.webContents?.navigationHistory
   const s = {
     active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), siteOff: Object.values(SITE_OFF).filter(f => settings[f].includes(privacy.host(c?.url || ''))).length, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
+    askReady: !!assistantCfgRaw().key,
     sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.filter(d => !d.private || space === PRIVATE).slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: listed(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
@@ -102,10 +106,11 @@ function layout() {
   })
   if (hungTab && !tabs.includes(hungTab)) hungTab = null
   if (hungUi) { const on = !!hungTab && isShown(hungTab.id); on && hungUi.setBounds(hungTab.view.getBounds()); hungUi.setVisible(on) }
+  if (askUi) { const w = Math.min(560, c.w - 40); askUi.setBounds({ x: c.x + Math.round((c.w - w) / 2), y: Math.max(c.y, c.y + c.h - askH - 18), width: w, height: askH }) }
   if (peek) { const r = peekRect(); peek.view.setBounds({ x: r.x, y: r.y + PEEKBAR, width: r.w, height: r.h - PEEKBAR }) }
 }
 function stack() { // z-order: sidebar < pages < peek < floating sidebar < edge < find < panel < command bar
-  const order = [!floating && ui, ...tabs.map(t => t.view), hungUi, peekUi, peek?.view, floating && ui, edge, find, panel, cmd]
+  const order = [!floating && ui, ...tabs.map(t => t.view), hungUi, peekUi, peek?.view, floating && ui, edge, find, askUi, panel, cmd]
   order.forEach(v => v && win.contentView.addChildView(v))
 }
 const refresh = () => { tabs.forEach(t => t.view?.setVisible(isShown(t.id))); layout(); push() }
@@ -774,7 +779,7 @@ function setRoute(host, sp) { settings.routes = [...settings.routes.filter(r => 
 // ---- app lifecycle ----
 const urlArg = argv => { for (const a of argv) { const u = /^https?:\/\//i.test(a) ? a : bangs.localFile(a, true); if (u) return u } } // a web address, or a web page file (Open with… / default browser)
 // MCP: lets an AI assistant drive the browser (lib/mcp.js). Off until the user turns it on in Settings; never sees the Private space
-const mcp = mcpLib.create({
+const mcpHost = {
   version: app.getVersion(),
   tabs: () => tabs.filter(t => !SPACES[t.space].private).map(t => ({ id: t.id, title: t.title, url: t.url, space: SPACES[t.space].name, active: t.id === active, pinned: t.pinned, loading: t.loading, asleep: t.asleep, error: t.error })),
   spaces: () => SPACES.filter(s => !s.private).map(s => s.name),
@@ -802,13 +807,46 @@ const mcp = mcpLib.create({
   searchHistory: (q, limit) => history.filter(x => !q || (x.title + ' ' + x.url).toLowerCase().includes(q.toLowerCase())).slice(0, limit).map(x => ({ title: x.title, url: x.url, at: new Date(x.at).toISOString() })),
   downloads: () => downloads.filter(d => !d.private).slice(0, 50).map(d => ({ name: d.name, path: d.path, url: d.url, state: d.state, bytes: d.received || d.total, at: new Date(d.at).toISOString() })),
   history: (id, action) => { const wc = byId(id).view.webContents; action === 'reload' ? wc.reload() : action === 'back' ? wc.navigationHistory.goBack() : wc.navigationHistory.goForward() },
-})
+}
+const mcp = mcpLib.create(mcpHost)
 let mcpToken = null
 const mcpSync = async () => { // starts or stops the server to match the setting
   await mcp.stop()
   if (settings.mcp) { mcpToken ??= store.load('mcp', {}).token; if (!mcpToken) { mcpToken = mcp.newToken(); store.save('mcp', { token: mcpToken }) } await mcp.start(mcpToken) }
   push()
 }
+
+// "Ask Heliarc": a sentence typed in the command bar; Claude acts through the same tools as an MCP assistant (lib/assistant.js), in-process.
+// The API key is kept encrypted by the system (like the passwords); only a yes/no about it ever reaches the screens.
+let askRun = null, askH = 150 // askRun: { q, steps, status: 'run' | 'confirm' | 'done' | 'error', text, error, confirm, ctl }
+let assistantData = null // what is saved: { key (encrypted), model }, read once
+const assistantSave = patch => { assistantData = { ...assistantCfgRaw(), ...patch }; store.save('assistant', assistantData) }
+const assistantCfgRaw = () => assistantData ??= store.load('assistant', {})
+const assistantCfg = () => { const c = assistantCfgRaw(); let key = null; try { key = c.key ? safeStorage.decryptString(Buffer.from(c.key, 'base64')) : null } catch {} return { key, model: assistant.MODELS[c.model] ? c.model : 'haiku' } }
+const askSend = () => { if (!askUi || askUi.webContents.isDestroyed()) return; const { ctl, ...r } = askRun || {}; askUi.webContents.send('ask', askRun && r); layout() }
+const askEnd = patch => { if (!askRun || askRun.status === 'done' || askRun.status === 'error') return; Object.assign(askRun, { confirm: null }, patch); askSend() }
+function askConfirm({ label, site }) { // the click would send, pay, delete or publish: nothing happens until the user says so (no answer in 2 minutes = no)
+  return new Promise(resolve => {
+    const done = ok => { clearTimeout(timer); if (askRun?.confirm?.resolve === done) { askRun.confirm = null; askRun.status = 'run'; askSend() } resolve(ok) }
+    const timer = setTimeout(() => done(false), 120000)
+    askRun.confirm = { label, site, resolve: done }; askRun.status = 'confirm'; askSend()
+  })
+}
+async function askStart(question) {
+  question = String(question || '').trim().slice(0, 1000); if (!question || askRun?.status === 'run' || askRun?.status === 'confirm') return
+  const cfg = assistantCfg(); if (!settings.assistant || !cfg.key) return openPanel('settings')
+  closeCmd(); const ctl = new AbortController(); askRun = { q: question, steps: [], status: 'run', text: '', error: null, confirm: null, ctl }
+  askUi.setVisible(true); stack(); askSend()
+  const run = askRun, [a, b] = InMemoryTransport.createLinkedPair(), server = mcpLib.build(mcpHost, { confirm: askConfirm }), client = new McpClient({ name: 'heliarc-assistant', version: app.getVersion() })
+  try {
+    await Promise.all([server.connect(b), client.connect(a)])
+    const r = await assistant.ask({ apiKey: cfg.key, model: assistant.MODELS[cfg.model], question, mcp: client, signal: ctl.signal,
+      onEvent: e => { if (askRun !== run) return; const i = run.steps.findIndex(x => x.id === e.id); i < 0 ? run.steps.push({ id: e.id, name: e.name, input: e.input, state: e.state }) : Object.assign(run.steps[i], { state: e.state }); askSend() } })
+    askEnd({ status: 'done', text: r.text || 'Done.' })
+  } catch (e) { askEnd({ status: 'error', error: ctl.signal.aborted ? 'Stopped.' : assistant.friendly(e) }) }
+  finally { run.confirm?.resolve(false); client.close().catch(() => {}); server.close().catch(() => {}) }
+}
+const askClose = () => { if (askRun?.status === 'run' || askRun?.status === 'confirm') { askRun.ctl.abort(); askRun.confirm?.resolve(false) } askRun = null; askUi.setVisible(false); (peek?.view || cur()?.view)?.webContents.focus() }
 
 let ready
 const whenReady = new Promise(r => { ready = r })
@@ -847,7 +885,7 @@ app.whenReady().then(async () => {
   ElectronChromeExtensions.handleCRXProtocol(session.defaultSession) // extension icons in <browser-action-list>
   ui = new WebContentsView({ webPreferences: { ...prefs, sandbox: false } }); lockScreen(ui.webContents) // not sandboxed: its preload loads the extension toolbar element
   win.contentView.addChildView(ui); ui.webContents.loadFile('ui/arc.html'); ui.webContents.on('before-input-event', shortcut)
-  peekUi = overlay('peek.html'); edge = overlay('edge.html'); find = overlay('find.html'); panel = overlay('panel.html'); cmd = overlay('cmdbar.html'); hungUi = overlay('hung.html')
+  peekUi = overlay('peek.html'); edge = overlay('edge.html'); find = overlay('find.html'); panel = overlay('panel.html'); cmd = overlay('cmdbar.html'); hungUi = overlay('hung.html'); askUi = overlay('ask.html')
   win.on('resize', layout)
   win.on('enter-full-screen', layout); win.on('leave-full-screen', layout) // the page follows the window
   win.on('closed', () => app.quit())
@@ -916,7 +954,7 @@ app.whenReady().then(async () => {
   h('setSetting', (k, v) => {
     if (k === 'adblockList') { if (Object.hasOwn(LISTS, v)) { settings[k] = v; loadBlocker() } return } // loadBlocker pushes by itself
     if (k === 'mcp') { settings.mcp = !!v; mcpSync(); return }
-    const plain = ['archiveHours', 'autoPip', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck'].includes(k)
+    const plain = ['assistant', 'archiveHours', 'autoPip', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck'].includes(k)
     if (!plain && !(k === 'searchEngine' && Object.hasOwn(bangs.ENGINES, v)) && !(k === 'sidebarSide' && (v === 'left' || v === 'right'))) return
     settings[k] = v
     if (k === 'sidebarSide') layout()
@@ -974,6 +1012,16 @@ app.whenReady().then(async () => {
     const clash = Object.entries(keys.resolve(settings.shortcuts)).find(([a, k]) => k === c && a !== action)
     if (clash) return { error: `Already used by “${keys.ACTIONS[clash[0]][0]}”` }
     settings.shortcuts[action] = c; push(); return { ok: true }
+  })
+  h('ask', askStart); h('askStop', () => askRun?.ctl.abort()); h('askClose', askClose); h('askConfirm', ok => askRun?.confirm?.resolve(!!ok)); h('askSize', n => { askH = Math.max(60, Math.min(Math.round(+n) || 150, 520)); layout() })
+  h('assistantInfo', () => ({ hasKey: !!assistantCfgRaw().key, model: assistantCfg().model, canEncrypt: safeStorage.isEncryptionAvailable() }))
+  h('assistantModel', m => { if (assistant.MODELS[m]) { assistantSave({ model: m }); push() } })
+  h('assistantRemoveKey', () => { assistantSave({ key: null }); push() })
+  h('assistantSetKey', async key => { // checked with Claude before it is kept
+    key = String(key || '').trim(); if (!/^sk-ant-[\w-]{20,}$/.test(key)) return { error: 'This doesn’t look like a Claude API key (it starts with sk-ant-).' }
+    if (!safeStorage.isEncryptionAvailable()) return { error: 'This system can’t encrypt the key, so Heliarc won’t keep it.' }
+    const r = await assistant.checkKey(key); if (r.error) return r
+    assistantSave({ key: safeStorage.encryptString(key).toString('base64') }); push(); return { ok: true }
   })
   h('mcpInfo', () => ({ ...mcp.status(), token: settings.mcp ? mcpToken : null }))
   h('mcpNewToken', async () => { mcpToken = mcp.newToken(); store.save('mcp', { token: mcpToken }); await mcpSync() }) // the old token stops working at once
@@ -1049,7 +1097,7 @@ app.whenReady().then(async () => {
     tabs: () => tabs, newTab, closeTab, sleep, activate, go, resolve, cur, switchSpace, openCmd, closeCmd, cmdOpen: () => cmdOpen,
     pin: id => { const t = byId(id); t.pinned = !t.pinned; push() }, stats: () => ({ blocked, blockerState }), win: () => win, ui: () => ui, cmd: () => cmd,
     // library of hooks for the feature tests
-    S: { userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
+    S: { mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
       ext, crx, extCommand, SYSTEM, realUrl, hungUi: () => hungUi, hungTab: () => hungTab, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },

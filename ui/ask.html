@@ -1,0 +1,57 @@
+<!doctype html><html class="ds-auto"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="script-src file: 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
+<style>
+  /* "Ask Heliarc": what the assistant is doing, step by step, over the bottom of the page. The window resizes to this card (askSize) so the page stays usable around it */
+  @keyframes rise { from { opacity: 0; transform: translateY(12px) } } @keyframes step { from { opacity: 0; transform: translateY(4px) } }
+  html, body { background: transparent; overflow: hidden }
+  #box { background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); animation: rise var(--dur-ui) var(--ease-out); font-size: var(--fs-md) }
+  .q { display: flex; gap: var(--space-3); align-items: flex-start; color: var(--dim) } .q b { flex: 1; color: var(--fg); font-weight: 600; overflow-wrap: anywhere } .q .ic { color: var(--acc); margin-top: 1px }
+  .steps { list-style: none; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); max-height: 38vh; overflow-y: auto }
+  .steps li { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1); animation: step var(--dur-micro) var(--ease-out) } .steps .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .steps .st { display: grid; place-items: center; flex: none; color: var(--ok) } .steps .fail .st, .steps .fail .t { color: var(--err) } .steps .run .st { color: var(--acc) }
+  .answer { font-size: var(--fs-lg); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 38vh; overflow-y: auto }
+  .note { display: flex; gap: var(--space-3); padding: var(--space-3); border-radius: var(--r-md); background: var(--bg); line-height: 1.45 } .note b { display: block } .note .ic { flex: none; margin-top: 1px }
+  .note.warn .ic { color: var(--warn) } .note.bad .ic { color: var(--err) } .note small { color: var(--dim); font-size: var(--fs-md) }
+  .acts { display: flex; gap: var(--space-2); justify-content: flex-end; align-items: center } .acts .sp { flex: 1; color: var(--dim); font-size: var(--fs-sm) }
+</style>
+<main id="box" role="dialog" aria-label="Ask Heliarc" aria-live="polite"></main>
+<script>
+const $ = s => document.querySelector(s), esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return String(u || 'a page').slice(0, 40) } }
+const cut = (s, n = 36) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s }
+// one line per tool call, in plain words
+const LABEL = {
+  open_tab: i => `Open ${host(i.url)}`, navigate: i => `Go to ${host(i.url)}`, switch_tab: () => 'Switch tab', close_tab: () => 'Close a tab', list_tabs: () => 'Look at your tabs', list_spaces: () => 'Look at your spaces',
+  history: i => ({ back: 'Go back', forward: 'Go forward', reload: 'Reload the page' })[i.action], read_page: () => 'Read the page', screenshot: () => 'Look at the page', scroll: () => 'Scroll',
+  click: i => `Click “${cut(i.text || 'an element')}”`, type: i => `Type “${cut(i.value, 24)}”${i.submit ? ' and press Enter' : ''}`, press_key: i => `Press ${i.key}`, wait_for: () => 'Wait for the page', select_option: i => `Choose “${cut(i.option, 24)}”`,
+  organize_tab: i => ({ pin: 'Pin the tab', unpin: 'Unpin the tab', favorite: 'Make it a favorite', unfavorite: 'Remove it from favorites', sleep: 'Put the tab to sleep', move_to_space: `Move it to ${i.arg}`, move_to_folder: `Put it in “${cut(i.arg, 24)}”` })[i.action],
+  search_history: () => 'Search your history', list_downloads: () => 'Look at your downloads',
+}
+const label = s => (LABEL[s.name]?.(s.input || {}) ?? s.name.replace(/_/g, ' '))
+const icoFor = st => st === 'done' ? icon('check', 15) : st === 'fail' ? icon('x', 15) : '<span class="spin"></span>'
+let S = null, acting = false // acting: a button was pressed, waiting for the answer from the app
+function render() {
+  if (!S) return
+  const run = S.status === 'run', confirm = S.status === 'confirm', done = S.status === 'done', err = S.status === 'error'
+  const steps = S.steps.length ? `<ul class="steps">${S.steps.map(s => `<li class="${s.state}"><span class="st">${icoFor(s.state)}</span><span class="t">${esc(label(s))}</span></li>`).join('')}</ul>` : run ? '<ul class="steps"><li class="run"><span class="st"><span class="spin"></span></span><span class="t">Thinking…</span></li></ul>' : ''
+  let body = steps
+  if (confirm) body += `<div class="note warn">${icon('triangle-alert', 18)}<div><b>Heliarc wants to click “${esc(S.confirm.label || 'a button')}”</b><small>On ${esc(S.confirm.site || 'this page')}. It may send, pay, delete or publish something.</small></div></div>`
+  if (done) body += `<div class="answer">${esc(S.text)}</div>`
+  if (err) body += `<div class="note bad">${icon('triangle-alert', 18)}<div><b>${esc(S.error)}</b>${S.steps.some(s => s.state === 'done') ? '<small>What was already done in your browser stays done.</small>' : ''}</div></div>`
+  const acts = run ? `<span class="sp"></span><button class="ds-btn sm ${acting ? 'is-loading' : ''}" data-a="stop" ${acting ? 'disabled' : ''}>${acting ? 'Stopping…' : 'Stop'}</button>`
+    : confirm ? `<button class="ds-btn sm" data-a="no" ${acting ? 'disabled' : ''} autofocus>Cancel</button><button class="ds-btn sm primary" data-a="yes" ${acting ? 'disabled' : ''}>Allow this click</button>`
+    : err ? `<button class="ds-btn sm" data-a="close">Close</button><button class="ds-btn sm primary" data-a="retry">Try again</button>`
+    : `<button class="ds-btn sm" data-a="copy">${S.copied ? 'Copied ✓' : 'Copy'}</button><button class="ds-btn sm primary" data-a="close">Close</button>`
+  $('#box').innerHTML = `<div class="q">${icon('sparkles', 16)}<b>${esc(S.q)}</b></div>${body}<div class="acts">${acts}</div>`
+  $('#box').querySelector('[autofocus]')?.focus()
+  $('.steps')?.scrollTo(0, 1e6)
+}
+const ACT = {
+  stop: () => { acting = true; render(); api.call('askStop') }, yes: () => { acting = true; render(); api.call('askConfirm', true) }, no: () => { acting = true; render(); api.call('askConfirm', false) },
+  close: () => api.call('askClose'), retry: () => api.call('ask', S.q),
+  copy: async () => { await navigator.clipboard.writeText(S.text); S.copied = true; render(); setTimeout(() => { if (S) { S.copied = false; render() } }, 2000) },
+}
+$('#box').onclick = e => ACT[e.target.closest('[data-a]')?.dataset.a]?.()
+addEventListener('keydown', e => { if (e.key === 'Escape' && S) S.status === 'run' ? ACT.stop() : S.status === 'confirm' ? ACT.no() : ACT.close() })
+api.on('ask', s => { const was = S?.status; S = s; if (s?.status !== was) acting = false; render() })
+new ResizeObserver(() => api.call('askSize', Math.ceil($('#box').getBoundingClientRect().height) + 2)).observe($('#box'))
+</script>

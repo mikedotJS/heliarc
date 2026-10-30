@@ -46,15 +46,15 @@ const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 const ago = at => { const m = Math.round((at - Date.now()) / 6e4); return Math.abs(m) < 60 ? rtf.format(m, 'minute') : Math.abs(m) < 1440 ? rtf.format(Math.round(m / 60), 'hour') : rtf.format(Math.round(m / 1440), 'day') }
 const SECTIONS = [['downloads', 'Downloads', 'download'], ['media', 'Media', 'image'], ['archive', 'Archive', 'archive'], ['history', 'History', 'history'], ['passwords', 'Passwords', 'key-round'], ['extensions', 'Extensions', 'puzzle'], ['protections', 'Site protections', 'shield-check'], ['settings', 'Settings', 'settings']]
 const MEDIA = /^(image|video|audio)\//, MEDIAEXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|mp4|webm|mov|mkv|mp3|wav|ogg|m4a|flac)$/i
-const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0' } // what is typed in the add forms survives a redraw
-let qt, shown = {}, state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, working = null, mcpData = null, detected = [] // working: the import or update check in progress, its buttons wait for the answer
+const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0', akey: '' } // what is typed in the add forms survives a redraw
+let qt, shown = {}, state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, working = null, mcpData = null, asData = null, detected = [] // working: the import or update check in progress, its buttons wait for the answer
 const fileUrl = p => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '').split('/').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:')
 
 async function load() { // sections that need data from the main process: loading -> ready | error
   if (!['history', 'passwords', 'settings', 'extensions'].includes(section)) { data = null; status = 'ready'; return render() }
   const mine = ++token; status = 'loading'; data = null; paint()
   try {
-    const r = section === 'history' ? await api.call('history', q) : section === 'passwords' ? await api.call('passwords') : section === 'extensions' ? await api.call('extensions') : (detected = await api.call('importDetect'), mcpData = await api.call('mcpInfo'), await api.call('profile'))
+    const r = section === 'history' ? await api.call('history', q) : section === 'passwords' ? await api.call('passwords') : section === 'extensions' ? await api.call('extensions') : (detected = await api.call('importDetect'), mcpData = await api.call('mcpInfo'), asData = await api.call('assistantInfo'), await api.call('profile'))
     if (mine === token) { data = r; status = 'ready' }
   } catch (e) { if (mine === token) status = 'error' }
   if (mine === token) paint()
@@ -143,6 +143,17 @@ function mcpBlock(st) { // the server starts a moment after the switch: waiting,
     <div class="line"><input class="ds-field" readonly value="${esc(mcpCmd(m))}" style="flex:1" spellcheck="false" onfocus="this.select()"><button class="ds-btn sm" data-a="mcpCopy">Copy</button><button class="ds-btn sm" data-a="mcpNewToken">New token</button></div>
     <div class="msg ${note?.mcp ? 'ok' : ''}">${esc(note?.mcp || 'Other apps: address http://127.0.0.1:' + m.port + '/mcp, header Authorization: Bearer plus the token above. A new token cuts off every app that used the old one.')}</div>`
 }
+const MODEL_NAMES = { haiku: 'Haiku (fastest, cheapest)', sonnet: 'Sonnet (balanced)', opus: 'Opus (most careful)' }
+function assistantBlock(st) { // the key is never shown again once saved: only whether there is one
+  if (!st.assistant || !asData) return ''
+  const wait = working === 'akey'
+  if (!asData.canEncrypt) return '<div class="msg bad">This system can’t encrypt the key, so Heliarc doesn’t keep it.</div>'
+  const msg = `<div class="msg ${note?.akey?.error ? 'bad' : note?.akey ? 'ok' : ''}">${esc(note?.akey?.error || note?.akey?.text || '')}</div>`
+  if (!asData.hasKey) return `<div class="line"><input class="ds-field" id="akey" type="password" placeholder="Claude API key (sk-ant-…)" value="${esc(draft.akey)}" style="flex:1" spellcheck="false" autocomplete="off" ${wait ? 'disabled' : ''}><button class="ds-btn sm${wait ? ' is-loading' : ''}" data-a="assistantSave" ${wait ? 'disabled' : ''}>${wait ? '<span class="spin"></span>Checking…' : 'Save'}</button></div>${msg}`
+  return `<div class="line"><label>Claude API key<small>Saved, encrypted. It is never shown again</small></label><button class="ds-btn sm" data-a="assistantRemove">Remove</button></div>
+    <div class="line"><label>Model<small>Faster is cheaper. Opus handles long, tricky requests best</small></label><select class="ds-select" data-amodel>${Object.entries(MODEL_NAMES).map(([k, n]) => `<option value="${k}" ${k === asData.model ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+    <div class="msg">Heliarc asks you before each click that sends, pays, deletes or publishes, and never types passwords.</div>${msg}`
+}
 function settings(S) {
   const st = S.settings, p = data || {}
   const hrs = [[0, 'Never'], [1, 'After 1 hour'], [12, 'After 12 hours'], [24, 'After 1 day'], [168, 'After 7 days'], [720, 'After 30 days']]
@@ -168,7 +179,9 @@ function settings(S) {
     <div class="msg">The Private space (${esc(fmt(S.keys.newPrivateTab))}) keeps nothing: no history, no saved tabs, no extensions, and it is wiped when its last tab closes. Pages are never preloaded in the background.</div></section>
   <section><h3>AI assistants</h3>
     ${toggle('mcp', 'Let an AI assistant control Heliarc', 'Claude, Cursor and other MCP apps can open tabs, read pages, click and type, on this computer only. They never see the Private space')}
-    ${mcpBlock(st)}</section>
+    ${mcpBlock(st)}
+    ${toggle('assistant', 'Ask Heliarc, in the command bar', 'Type a sentence (or start with ?) and Heliarc does it in your browser. Uses your own Claude API key, kept encrypted by your system. Your sentence and the pages it reads for that request are sent to Claude, nothing else')}
+    ${assistantBlock(st)}</section>
   <section><h3>Search</h3>
     <div class="line"><label>Search engine<small>Used when you type something that isn’t an address</small></label><select class="ds-select" data-engine>${Object.entries(S.engines).map(([k, n]) => `<option value="${k}" ${k === st.searchEngine ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
     <div class="msg">Bangs jump straight to a site: type <b>!w cats</b> or <b>!yt lofi</b>. Type <b>!</b> in the command bar to see them all. Add your own:</div>
@@ -232,6 +245,8 @@ const ACT = {
   },
   defaultBrowser: async () => { const ok = await api.call('defaultBrowser'); note = { text: ok ? 'Heliarc is now the default browser.' : 'Choose Heliarc in the system settings window that just opened.', cls: ok ? 'ok' : '' }; render() },
   saveProfile: async () => { const p = {}; document.querySelectorAll('[data-pf]').forEach(i => p[i.dataset.pf] = i.value.trim()); await api.call('setProfile', p); data = p; const mine = note = { profile: 'Saved ✓' }; render(); setTimeout(() => { if (note === mine) { note = null; section === 'settings' && paint() } }, 2500) },
+  assistantSave: () => work('akey', 'akey', 'Checking…', async () => { const r = await api.call('assistantSetKey', draft.akey); if (r.error) return r; draft.akey = ''; asData = await api.call('assistantInfo'); return { text: 'Key saved ✓' } }, 'Couldn’t check the key. Try again.'),
+  assistantRemove: async () => { await api.call('assistantRemoveKey'); asData = await api.call('assistantInfo'); note = null; render() },
   mcpCopy: async () => { await navigator.clipboard.writeText(mcpCmd(mcpData)); const mine = note = { mcp: 'Copied ✓' }; render(); setTimeout(() => { if (note === mine) { note = null; section === 'settings' && paint() } }, 2500) },
   mcpNewToken: async () => { await api.call('mcpNewToken'); mcpData = await api.call('mcpInfo'); const mine = note = { mcp: 'New token ready: copy the command again.' }; render(); setTimeout(() => { if (note === mine) { note = null; section === 'settings' && paint() } }, 4000) },
   record: el => recordingFor === el.dataset.action ? stopRec() : startRec(el.dataset.action),
@@ -248,6 +263,7 @@ $('#body').onchange = async e => {
   try { if (t.dataset.perm) { const [h, k] = t.dataset.perm.split('|'); await api.call('setSitePerm', h, k, t.value === 'x' ? null : t.value === '1') }
   else if (t.matches('[data-list]')) await api.call('setSetting', 'adblockList', t.value)
   else if (t.matches('[data-engine]')) await api.call('setSetting', 'searchEngine', t.value)
+  else if (t.matches('[data-amodel]')) { await api.call('assistantModel', t.value); asData = await api.call('assistantInfo') }
   else if (t.matches('[data-side]')) await api.call('setSetting', 'sidebarSide', t.value)
   else if (t.matches('[data-hours]')) await api.call('setSetting', 'archiveHours', +t.value)
   else if (t.dataset.f) await api.call('editSpace', +t.dataset.sp, { [t.dataset.f]: t.value })

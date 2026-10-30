@@ -41,7 +41,7 @@ const chip = b => `<span class="chip" style="background:${b.color};color:${ink(b
 const typed = () => { const i = $('#in'), v = (completion && i.selectionStart < i.selectionEnd ? i.value.slice(0, i.selectionStart) : i.value).trim(); return tag ? (v ? `!${tag.trigger} ${v}` : '') : v }
 const askRow = (q, key = 'Tab') => { // "Ask Heliarc": the sentence goes to the assistant; without a key the row says what is missing and opens Settings
   const text = q.replace(/^\?\s*/, '')
-  return { kind: 'ask', label: 'Ask Heliarc', sub: state.askReady ? text : 'Add your Claude API key first', key: state.askReady ? key : 'Open Settings', run: () => state.askReady ? api.call('ask', text) : api.call('openPanel', 'settings') }
+  return { kind: 'ask', label: 'Ask Heliarc', sub: !state.askReady ? 'Add your Claude API key first' : text || 'Type what you want Heliarc to do', key: state.askReady ? key : 'Open Settings', run: () => !state.askReady ? api.call('openPanel', 'settings') : text && api.call('ask', text) }
 }
 function render() {
   const q = typed(), ql = q.toLowerCase()
@@ -58,7 +58,8 @@ function render() {
     .forEach(t => rows.push({ kind: 'tab', label: t.title || t.url, sub: t.url, run: () => api.call('activate', t.id).then(() => api.call('closeCmd')), key: 'Switch to tab' }))
   const open = new Set(state.tabs.map(t => t.url))
   if (!tag) hist.filter(h => !open.has(h.url)).slice(0, 5).forEach(h => rows.push({ kind: 'hist', label: h.title || h.url, sub: h.url, run: () => api.call(mode === 'edit' ? 'go' : 'open', h.url), key: 'History' }))
-  if (state.settings?.assistant && /^\?\s*\S/.test(q)) rows = [askRow(q, '↵')] // "? do this": straight to the assistant
+  if (state.settings?.assistant && /^\?/.test(q)) rows = [askRow(q, '↵')] // "? do this": straight to the assistant
+  if (state.settings?.assistant && !q && !tag) rows.unshift({ kind: 'ask', label: 'Ask Heliarc', sub: 'Press Tab, then say what to do', key: 'Tab', run: () => { const i = $('#in'); i.value = '? '; i.focus(); onInput() } }) // the way in, shown while the bar is empty
   if (!rows.length) rows.push({ kind: 'none', label: 'Type to search the web or open a site', run: () => {} })
   sel = Math.min(sel, rows.length - 1)
   $('#res').innerHTML = rows.map((r, i) => `<div class="row ${i === sel ? 'sel' : ''}" id="r${i}" role="option" aria-selected="${i === sel}" data-i="${i}" style="--i:${i}">${icon(r.kind === 'ask' ? 'sparkles' : r.kind === 'tab' ? 'layers' : r.kind === 'go' || r.kind === 'bang' ? 'search' : r.kind === 'hist' ? 'history' : 'globe', 16)} ${r.chip || ''}<b>${esc(r.label)}</b> <small>${esc(r.sub || '')}</small><span class="k">${r.key || ''}</span></div>`).join('')
@@ -80,7 +81,7 @@ $('#in').onkeydown = e => {
   else if (e.key === 'ArrowDown') { sel = (sel + 1) % rows.length; render(); e.preventDefault() }
   else if (e.key === 'ArrowUp') { sel = (sel - 1 + rows.length) % rows.length; render(); e.preventDefault() }
   else if ((e.key === 'Tab' || e.key === 'ArrowRight') && completion && $('#in').selectionStart < $('#in').selectionEnd) { const i = $('#in'); completion = null; i.setSelectionRange(i.value.length, i.value.length); render(); e.preventDefault() } // accept the offered address
-  else if (e.key === 'Tab' && rows.some(r => r.kind === 'ask' && r.key === 'Tab')) { rows.find(r => r.kind === 'ask').run(); e.preventDefault() }
+  else if (e.key === 'Tab' && rows.some(r => r.kind === 'ask')) { rows.find(r => r.kind === 'ask').run(); e.preventDefault() }
   else if (e.key === 'Tab' && rows[sel]?.kind === 'bang' && rows[sel].key === 'Tab') { rows[sel].run(); e.preventDefault() }
   else if (e.key === 'Enter') rows[sel]?.run()
 }

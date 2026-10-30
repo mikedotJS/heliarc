@@ -11,6 +11,7 @@ const privacy = require('./lib/privacy')
 const importers = require('./lib/importers')
 const updates = require('./lib/updates')
 const autoupdate = require('./lib/autoupdate')
+const mcpLib = require('./lib/mcp')
 
 const TEST = process.argv.some(a => /^--(selftest|motioncheck)/.test(a))
 if (process.env.HELIARC_USER_DATA) app.setPath('userData', process.env.HELIARC_USER_DATA)
@@ -35,7 +36,7 @@ const SPACES = [ // one browser profile (cookies, logins) per space
 ]
 const PRIVATE = SPACES.findIndex(s => s.private)
 const ZOOMS = [.25, .33, .5, .67, .75, .8, .9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
-const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true }
+const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false }
 // Picture-in-picture for the biggest playing, unmuted video (needs a user gesture, which executeJavaScript can claim)
 const PIP_ON = `(async () => { const v = [...document.querySelectorAll('video')].filter(v => !v.paused && !v.ended && !v.muted && v.readyState > 2 && v.videoWidth && !v.disablePictureInPicture).sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0]; if (!v || document.pictureInPictureElement) return false; await v.requestPictureInPicture(); return true })()`
 const PIP_OFF = `document.pictureInPictureElement && document.exitPictureInPicture()`
@@ -772,6 +773,24 @@ function setRoute(host, sp) { settings.routes = [...settings.routes.filter(r => 
 
 // ---- app lifecycle ----
 const urlArg = argv => { for (const a of argv) { const u = /^https?:\/\//i.test(a) ? a : bangs.localFile(a, true); if (u) return u } } // a web address, or a web page file (Open with… / default browser)
+// MCP: lets an AI assistant drive the browser (lib/mcp.js). Off until the user turns it on in Settings; never sees the Private space
+const mcp = mcpLib.create({
+  version: app.getVersion(),
+  tabs: () => tabs.filter(t => !SPACES[t.space].private).map(t => ({ id: t.id, title: t.title, url: t.url, space: SPACES[t.space].name, active: t.id === active, pinned: t.pinned, loading: t.loading, asleep: t.asleep, error: t.error })),
+  spaces: () => SPACES.filter(s => !s.private).map(s => s.name),
+  page: id => { const t = byId(id); return t?.view && isShown(id) ? t.view.webContents : null },
+  open: (url, name) => { const named = SPACES.findIndex(s => s.name.toLowerCase() === name?.toLowerCase()); return newTab(url, named >= 0 ? named : routeFor(url) ?? (SPACES[space].private ? 0 : space)).id },
+  navigate: (id, url) => { activate(id); return go(url)?.id ?? id }, // a routed site may open in a new tab of its own space: that tab is the answer
+  activate, close: closeTab,
+  history: (id, action) => { const wc = byId(id).view.webContents; action === 'reload' ? wc.reload() : action === 'back' ? wc.navigationHistory.goBack() : wc.navigationHistory.goForward() },
+})
+let mcpToken = null
+const mcpSync = async () => { // starts or stops the server to match the setting
+  await mcp.stop()
+  if (settings.mcp) { mcpToken ??= store.load('mcp', {}).token; if (!mcpToken) { mcpToken = mcp.newToken(); store.save('mcp', { token: mcpToken }) } await mcp.start(mcpToken) }
+  push()
+}
+
 let ready
 const whenReady = new Promise(r => { ready = r })
 app.setName('Heliarc')
@@ -877,6 +896,7 @@ app.whenReady().then(async () => {
   // settings
   h('setSetting', (k, v) => {
     if (k === 'adblockList') { if (Object.hasOwn(LISTS, v)) { settings[k] = v; loadBlocker() } return } // loadBlocker pushes by itself
+    if (k === 'mcp') { settings.mcp = !!v; mcpSync(); return }
     const plain = ['archiveHours', 'autoPip', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck'].includes(k)
     if (!plain && !(k === 'searchEngine' && Object.hasOwn(bangs.ENGINES, v)) && !(k === 'sidebarSide' && (v === 'left' || v === 'right'))) return
     settings[k] = v
@@ -936,6 +956,8 @@ app.whenReady().then(async () => {
     if (clash) return { error: `Already used by “${keys.ACTIONS[clash[0]][0]}”` }
     settings.shortcuts[action] = c; push(); return { ok: true }
   })
+  h('mcpInfo', () => ({ ...mcp.status(), token: settings.mcp ? mcpToken : null }))
+  h('mcpNewToken', async () => { mcpToken = mcp.newToken(); store.save('mcp', { token: mcpToken }); await mcpSync() }) // the old token stops working at once
   h('defaultBrowser', () => {
     for (const p of ['http', 'https']) process.defaultApp ? app.setAsDefaultProtocolClient(p, process.execPath, [path.resolve(__dirname)]) : app.setAsDefaultProtocolClient(p)
     if (process.platform === 'win32') shell.openExternal('ms-settings:defaultapps')
@@ -1000,7 +1022,7 @@ app.whenReady().then(async () => {
       }, 250)
     })
   }
-  ready()
+  ready(); settings.mcp && mcpSync()
   const first = urlArg(process.argv.slice(1)); if (first) openExternal(first)
 
   if (process.argv.includes('--motioncheck')) require('./scripts/motion-check')({ newTab, switchSpace, openCmd, closeCmd, ui: () => ui, cmd: () => cmd })

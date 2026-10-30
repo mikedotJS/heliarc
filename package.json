@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.20.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "electron-chrome-extensions": "^4.9.0",
     "fflate": "^0.8.3",
     "htmlparser2": "^12.0.0",

@@ -823,7 +823,7 @@ let assistantData = null // what is saved: { key (encrypted), model }, read once
 const assistantSave = patch => { assistantData = { ...assistantCfgRaw(), ...patch }; store.save('assistant', assistantData) }
 const assistantCfgRaw = () => assistantData ??= store.load('assistant', {})
 const assistantCfg = () => { const c = assistantCfgRaw(); let key = null; try { key = c.key ? safeStorage.decryptString(Buffer.from(c.key, 'base64')) : null } catch {} return { key, model: assistant.MODELS[c.model] ? c.model : 'haiku' } }
-const askSend = () => { if (!askUi || askUi.webContents.isDestroyed()) return; const { ctl, ...r } = askRun || {}; askUi.webContents.send('ask', askRun && r); layout() }
+const askSend = () => { if (!askUi || askUi.webContents.isDestroyed()) return; const { ctl, confirm, ...r } = askRun || {}; askUi.webContents.send('ask', askRun && { ...r, confirm: confirm && { label: confirm.label, site: confirm.site } }); layout() } // only what the card shows: a function (ctl, confirm.resolve) cannot cross to the screen
 const askEnd = patch => { if (!askRun || askRun.status === 'done' || askRun.status === 'error') return; Object.assign(askRun, { confirm: null }, patch); askSend() }
 function askConfirm({ label, site }) { // the click would send, pay, delete or publish: nothing happens until the user says so (no answer in 2 minutes = no)
   return new Promise(resolve => {
@@ -832,21 +832,31 @@ function askConfirm({ label, site }) { // the click would send, pay, delete or p
     askRun.confirm = { label, site, resolve: done }; askRun.status = 'confirm'; askSend()
   })
 }
-async function askStart(question) {
+let askHistory = [] // the conversation so far as plain text ({ role, content }): kept while the card is open, so a follow-up knows what was said
+const askHere = () => { // the page the user is looking at, told to Claude with each question. The Private space is never described
+  const t = cur(); if (!t) return {}
+  if (SPACES[t.space].private) return { text: 'the Private space, which you cannot see' }
+  const clean = (s, n) => String(s || '').replace(/[\r\n[\]]+/g, ' ').trim().slice(0, n)
+  return { text: `“${clean(t.title, 150)}” ${clean(t.url, 300) || 'blank tab'} (tab ${t.id}, space ${SPACES[t.space].name})`, site: t.url && privacy.host(t.url) }
+}
+async function askStart(question, follow) { // follow: continues the conversation of the open card; otherwise a new one starts
   question = String(question || '').trim().slice(0, 1000); if (!question || askRun?.status === 'run' || askRun?.status === 'confirm') return
   const cfg = assistantCfg(); if (!settings.assistant || !cfg.key) return openPanel('settings')
-  closeCmd(); const ctl = new AbortController(); askRun = { q: question, steps: [], status: 'run', text: '', error: null, confirm: null, ctl }
+  if (!follow) askHistory = []
+  const here = askHere()
+  closeCmd(); const ctl = new AbortController(); askRun = { q: question, page: here.site, steps: [], status: 'run', text: '', error: null, confirm: null, ctl }
   askUi.setVisible(true); stack(); askSend()
   const run = askRun, [a, b] = InMemoryTransport.createLinkedPair(), server = mcpLib.build(mcpHost, { confirm: askConfirm }), client = new McpClient({ name: 'heliarc-assistant', version: app.getVersion() })
   try {
     await Promise.all([server.connect(b), client.connect(a)])
-    const r = await assistant.ask({ apiKey: cfg.key, model: assistant.MODELS[cfg.model], question, mcp: client, signal: ctl.signal,
+    const r = await assistant.ask({ apiKey: cfg.key, model: assistant.MODELS[cfg.model], question, history: askHistory, here: here.text, mcp: client, signal: ctl.signal,
       onEvent: e => { if (askRun !== run) return; const i = run.steps.findIndex(x => x.id === e.id); i < 0 ? run.steps.push({ id: e.id, name: e.name, input: e.input, state: e.state }) : Object.assign(run.steps[i], { state: e.state }); askSend() } })
+    if (askRun === run) askHistory = [...askHistory, { role: 'user', content: r.prompt }, { role: 'assistant', content: r.text || 'Done.' }].slice(-20)
     askEnd({ status: 'done', text: r.text || 'Done.' })
   } catch (e) { askEnd({ status: 'error', error: ctl.signal.aborted ? 'Stopped.' : assistant.friendly(e) }) }
   finally { run.confirm?.resolve(false); client.close().catch(() => {}); server.close().catch(() => {}) }
 }
-const askClose = () => { if (askRun?.status === 'run' || askRun?.status === 'confirm') { askRun.ctl.abort(); askRun.confirm?.resolve(false) } askRun = null; askUi.setVisible(false); (peek?.view || cur()?.view)?.webContents.focus() }
+const askClose = () => { if (askRun?.status === 'run' || askRun?.status === 'confirm') { askRun.ctl.abort(); askRun.confirm?.resolve(false) } askRun = null; askHistory = []; askUi.setVisible(false); (peek?.view || cur()?.view)?.webContents.focus() }
 
 let ready
 const whenReady = new Promise(r => { ready = r })

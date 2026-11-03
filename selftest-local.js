@@ -10,7 +10,13 @@ const PAGES = {
   '/wide': '<title>Wide</title><body style="margin:0;min-width:1200px"><p>wide</p>',
   '/login': '<title>Login</title><form id=f method=post action=/done><input id=u name=user type=text><input id=p name=pass type=password><button type=button id=eye>Show</button><button>Go</button></form>',
   '/form': '<title>Form</title><label for=c>Colour</label><select id=c name=colour><option value=r>Red</option><option value=b>Blue</option></select><script>setTimeout(() => { const p = document.createElement("p"); p.id = "late"; p.textContent = "Loaded later"; document.body.append(p) }, 800)</script>',
-  '/risky': '<title>Risky</title><button id=d onclick="window.hit = 1">Delete account</button><button id=ok onclick="window.safe = 1">Save draft</button>',
+  '/rich': '<title>Rich</title><style>#box{height:120px;overflow:auto}#agree{position:absolute;opacity:0;width:0;height:0}</style><input id=agree type=checkbox><label for=agree>I accept the terms</label><br>' +
+    '<button id=dd onclick="menu.hidden=!menu.hidden">Country</button><div id=menu hidden><div role=option onclick="dd.textContent=this.textContent;menu.hidden=true">France</div><div role=option onclick="dd.textContent=this.textContent;menu.hidden=true">Spain</div></div><br>' +
+    '<input id=ind placeholder="Industry" oninput="sug.hidden=false"><ul id=sug hidden><li role=option onclick="ind.value=this.textContent;sug.hidden=true">Software Development</li><li role=option>Retail</li></ul>' +
+    '<div id=box><div style="height:500px">tall</div><button id=deep>Deep button</button></div>' + '<p>' + 'lorem ipsum '.repeat(300) + '</p>' +
+    '',
+  '/late': '<title>Late</title><script>setTimeout(() => document.body.append("Built late"), 900)</script>',
+  '/risky':'<title>Risky</title><button id=d onclick="window.hit = 1">Delete account</button><button id=ok onclick="window.safe = 1">Save draft</button>',
   '/done': '<title>Done</title>ok',
   '/darktop': '<title>Dark top</title><body style="margin:0;background:#112233;color:#fff"><p>night</p>',
   '/profile': '<title>Profile</title><form><input id=em autocomplete=email><input id=fn autocomplete=given-name><input id=ci autocomplete=address-level2></form>',
@@ -819,7 +825,24 @@ module.exports = async (a, ok) => {
     ok('wait_for gives up with an error', (await call(c, 'wait_for', { text: 'never here', seconds: 1 })).err)
     ok('select_option picks by label and by option text', (await call(c, 'select_option', { text: 'Colour', option: 'Blue' })).text === 'Chose Blue' && await js(a.cur().view.webContents, 'document.querySelector("#c").value') === 'b')
     ok('select_option lists the options when one is wrong', /Red | Blue/.test((await call(c, 'select_option', { selector: '#c', option: 'Green' })).text))
-    ok('organize_tab pins and unpins', !(await call(c, 'organize_tab', { tab: fm.id, action: 'pin' })).err && a.tabs().find(t => t.id === fm.id).pinned && !(await call(c, 'organize_tab', { tab: fm.id, action: 'unpin' })).err && !a.tabs().find(t => t.id === fm.id).pinned)
+    const rc = JSON.parse((await call(c, 'open_tab', { url: base + '/rich' })).text), wr = () => a.cur().view.webContents
+    const p1 = JSON.parse((await call(c, 'read_page', { max_chars: 500 })).text), p2 = JSON.parse((await call(c, 'read_page', { max_chars: 500, offset: p1.next_offset })).text)
+    ok('read_page lists the elements before the text, and keeps a custom check box with its state', Object.keys(p1).indexOf('elements') < Object.keys(p1).indexOf('text') && p1.elements.some(e => e.label === 'I accept the terms' && e.checked === false), JSON.stringify(p1.elements))
+    ok('a long text comes in parts, each one continuing the last', p1.text.length === 500 && p1.next_offset === 500 && p2.text.length === 500 && p1.textTotal > 3000 && p2.text !== p1.text)
+    ok('click ticks a custom check box by its label', !(await call(c, 'click', { text: 'I accept the terms' })).err && await js(wr(), 'document.querySelector("#agree").checked') === true)
+    ok('select_option opens a custom drop-down and clicks the option', (await call(c, 'select_option', { text: 'Country', option: 'France' })).text === 'Chose France' && await js(wr(), 'document.querySelector("#dd").textContent') === 'France')
+    await call(c, 'type', { selector: '#ind', value: 'soft' })
+    ok('select_option alone picks a suggestion of the open list', (await call(c, 'select_option', { option: 'Software Development' })).text === 'Chose Software Development' && await js(wr(), 'document.querySelector("#ind").value') === 'Software Development')
+    ok('click finds any text on the page', !(await call(c, 'click', { text: 'tall' })).err)
+    const sc = JSON.parse((await call(c, 'scroll', { to: 'bottom', selector: '#box' })).text)
+    ok('scroll moves the area that scrolls and says where it is', sc.scrollY > 0 && sc.scrollY === sc.scrollMax && sc.scrolling === '#box', JSON.stringify(sc))
+    ok('type without value says what is missing', /Missing value/.test((await call(c, 'type', { selector: '#ind' })).text))
+    const sh = await c.callTool({ name: 'screenshot', arguments: {} })
+    ok('screenshot comes with a written description', sh.content[0].type === 'image' && /On screen:.*Industry/.test(sh.content[1]?.text), sh.content[1]?.text)
+    await call(c, 'open_tab', { url: base + '/late' })
+    ok('read_page waits for a page that builds itself late', /Built late/.test((await call(c, 'read_page')).text))
+    await call(c, 'close_tab', { tab: rc.id }); await call(c, 'switch_tab', { tab: fm.id })
+    ok('organize_tab pins and unpins',!(await call(c, 'organize_tab', { tab: fm.id, action: 'pin' })).err && a.tabs().find(t => t.id === fm.id).pinned && !(await call(c, 'organize_tab', { tab: fm.id, action: 'unpin' })).err && !a.tabs().find(t => t.id === fm.id).pinned)
     ok('organize_tab puts a tab in a folder, created if missing', !(await call(c, 'organize_tab', { tab: fm.id, action: 'move_to_folder', arg: 'Reading' })).err && S.folders().some(f => f.name === 'Reading' && f.id === a.tabs().find(t => t.id === fm.id).folder))
     ok('organize_tab moves a tab to another space', !(await call(c, 'organize_tab', { tab: fm.id, action: 'move_to_space', arg: 'Work' })).err && a.tabs().find(t => t.id === fm.id).space === 1 && (await call(c, 'organize_tab', { tab: fm.id, action: 'move_to_space', arg: 'Private' })).err)
     const x2 = JSON.parse((await call(c, 'open_tab', { url: base + '/second' })).text)
@@ -852,6 +875,17 @@ module.exports = async (a, ok) => {
     ok('the card says what is about to be clicked', await dom(`document.body.innerText`).then(x => /Place order/.test(x) && /shop.example/.test(x) && /Allow this click/.test(x) && /Open shop.example/.test(x)))
     show({ q: 'x y z', steps: [], status: 'error', error: 'Couldn’t reach Claude.' }); await sleep(300)
     ok('an error card has a way out', await dom(`document.body.innerText`).then(x => /Couldn’t reach Claude/.test(x) && /Try again/.test(x) && /Close/.test(x)))
+    const done = { q: 'Summarize this', page: 'example.com', steps: [], status: 'done', text: 'It is a demo page.' }
+    show(done); await sleep(300)
+    ok('an answer card says which page it is about and offers a follow-up', await dom(`document.body.innerText`).then(x => /On example.com/.test(x) && /It is a demo page/.test(x)) && await dom(`!!document.querySelector('#fu')`))
+    await dom(`(() => { const f = document.querySelector('#fu'); f.value = 'and the pricing?'; f.dispatchEvent(new Event('input', { bubbles: true })) })()`); show({ ...done }); await sleep(300)
+    ok('what was typed in the follow-up survives a redraw', await dom(`document.querySelector('#fu').value`) === 'and the pricing?')
+    show({ ...done, text: 'Voici **trois** points :\n\n- un\n- deux avec `code`\n\n[Docs](https://example.com/docs) ![pixel](https://evil.example/p.png) <img src=x onerror="window.__pwn=1"> [piège](javascript:window.__pwn=1)' }); await sleep(300)
+    ok('the answer is shown as formatted markdown', await dom(`(() => { const a = document.querySelector('.answer'); return !!a.querySelector('strong') && a.querySelectorAll('li').length === 2 && !!a.querySelector('code') && !/\\*\\*/.test(a.innerText) })()`))
+    ok('a link in the answer is a real http link', await dom(`document.querySelector('.answer a[href="https://example.com/docs"]')?.innerText`) === 'Docs')
+    ok('but images, scripts and javascript: links are stripped', await dom(`(() => { const a = document.querySelector('.answer'); return !a.querySelector('img,script') && ![...a.querySelectorAll('a')].some(x => /^javascript/i.test(x.getAttribute('href') || '')) && !window.__pwn })()`))
+    show({ ...done, status: 'run' }); await sleep(300)
+    ok('no follow-up field while the assistant is working', await dom(`!document.querySelector('#fu')`))
     show(null); reset()
   })
 

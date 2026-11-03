@@ -1,4 +1,4 @@
-<!doctype html><html class="ds-auto"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="script-src file: 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'"><link rel="stylesheet" href="common.css"><script src="icons.js"></script>
+<!doctype html><html class="ds-auto"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="script-src file: 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'"><link rel="stylesheet" href="common.css"><script src="icons.js"></script><script src="../node_modules/marked/lib/marked.umd.js"></script><script src="../node_modules/dompurify/dist/purify.min.js"></script>
 <style>
   /* "Ask Heliarc": what the assistant is doing, step by step, over the bottom of the page. The window resizes to this card (askSize) so the page stays usable around it */
   @keyframes rise { from { opacity: 0; transform: translateY(12px) } } @keyframes step { from { opacity: 0; transform: translateY(4px) } }
@@ -8,14 +8,23 @@
   .steps { list-style: none; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); max-height: 38vh; overflow-y: auto }
   .steps li { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1); animation: step var(--dur-micro) var(--ease-out) } .steps .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   .steps .st { display: grid; place-items: center; flex: none; color: var(--ok) } .steps .fail .st, .steps .fail .t { color: var(--err) } .steps .run .st { color: var(--acc) }
-  .answer { font-size: var(--fs-lg); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 38vh; overflow-y: auto }
+  .answer { font-size: var(--fs-lg); line-height: 1.5; overflow-wrap: anywhere; max-height: 38vh; overflow-y: auto }
+  /* the answer is markdown (parsed, then cleaned: see md()) */
+  .answer > :first-child { margin-top: 0 } .answer > :last-child { margin-bottom: 0 } .answer p, .answer ul, .answer ol, .answer pre, .answer blockquote, .answer table { margin: 0 0 var(--space-2) } .answer ul, .answer ol { padding-left: 1.4em }
+  .answer h1, .answer h2, .answer h3, .answer h4 { font-size: var(--fs-lg); font-weight: 600; margin: var(--space-3) 0 var(--space-1) } .answer a { color: var(--acc); text-decoration: underline; cursor: pointer }
+  .answer code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9em; background: var(--bg); padding: 1px 5px; border-radius: var(--r-sm, 4px) } .answer pre { background: var(--bg); padding: var(--space-3); border-radius: var(--r-md); overflow-x: auto; white-space: pre } .answer pre code { padding: 0; background: none }
+  .answer blockquote { border-left: 3px solid var(--line); padding-left: var(--space-3); color: var(--dim) } .answer table { border-collapse: collapse; display: block; overflow-x: auto } .answer th, .answer td { border: 1px solid var(--line); padding: var(--space-1) var(--space-2) } .answer hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-3) 0 }
   .note { display: flex; gap: var(--space-3); padding: var(--space-3); border-radius: var(--r-md); background: var(--bg); line-height: 1.45 } .note b { display: block } .note .ic { flex: none; margin-top: 1px }
   .note.warn .ic { color: var(--warn) } .note.bad .ic { color: var(--err) } .note small { color: var(--dim); font-size: var(--fs-md) }
+  .pg { display: flex; align-items: center; gap: var(--space-2); color: var(--dim); font-size: var(--fs-sm); margin-top: calc(-1 * var(--space-2)) } .pg .ic { flex: none }
   .acts { display: flex; gap: var(--space-2); justify-content: flex-end; align-items: center } .acts .sp { flex: 1; color: var(--dim); font-size: var(--fs-sm) }
 </style>
 <main id="box" role="dialog" aria-label="Ask Heliarc" aria-live="polite"></main>
 <script>
 const $ = s => document.querySelector(s), esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+// the answer is written by a model that reads untrusted pages: only plain formatting and http(s) links get through, no images, no scripts
+const TAGS = "p br strong em del code pre ul ol li blockquote a h1 h2 h3 h4 hr table thead tbody tr th td".split(" ")
+const md = t => DOMPurify.sanitize(marked.parse(String(t ?? ""), { gfm: true, breaks: true, async: false }), { ALLOWED_TAGS: TAGS, ALLOWED_ATTR: ["href"], ALLOWED_URI_REGEXP: /^https?:/i })
 const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return String(u || 'a page').slice(0, 40) } }
 const cut = (s, n = 36) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s }
 // one line per tool call, in plain words
@@ -28,30 +37,36 @@ const LABEL = {
 }
 const label = s => (LABEL[s.name]?.(s.input || {}) ?? s.name.replace(/_/g, ' '))
 const icoFor = st => st === 'done' ? icon('check', 15) : st === 'fail' ? icon('x', 15) : '<span class="spin"></span>'
-let S = null, acting = false // acting: a button was pressed, waiting for the answer from the app
+let S = null, acting = false, draft = '' // acting: a button was pressed, waiting for the answer from the app. draft: the follow-up being typed
 function render() {
   if (!S) return
   const run = S.status === 'run', confirm = S.status === 'confirm', done = S.status === 'done', err = S.status === 'error'
   const steps = S.steps.length ? `<ul class="steps">${S.steps.map(s => `<li class="${s.state}"><span class="st">${icoFor(s.state)}</span><span class="t">${esc(label(s))}</span></li>`).join('')}</ul>` : run ? '<ul class="steps"><li class="run"><span class="st"><span class="spin"></span></span><span class="t">Thinking…</span></li></ul>' : ''
   let body = steps
   if (confirm) body += `<div class="note warn">${icon('triangle-alert', 18)}<div><b>Heliarc wants to click “${esc(S.confirm.label || 'a button')}”</b><small>On ${esc(S.confirm.site || 'this page')}. It may send, pay, delete or publish something.</small></div></div>`
-  if (done) body += `<div class="answer">${esc(S.text)}</div>`
+  if (done) body += `<div class="answer">${md(S.text)}</div><input class="ds-field" id="fu" placeholder="Ask a follow-up…" value="${esc(draft)}" maxlength="1000" spellcheck="false" autocomplete="off" aria-label="Ask a follow-up">`
   if (err) body += `<div class="note bad">${icon('triangle-alert', 18)}<div><b>${esc(S.error)}</b>${S.steps.some(s => s.state === 'done') ? '<small>What was already done in your browser stays done.</small>' : ''}</div></div>`
   const acts = run ? `<span class="sp"></span><button class="ds-btn sm ${acting ? 'is-loading' : ''}" data-a="stop" ${acting ? 'disabled' : ''}>${acting ? 'Stopping…' : 'Stop'}</button>`
     : confirm ? `<button class="ds-btn sm" data-a="no" ${acting ? 'disabled' : ''} autofocus>Cancel</button><button class="ds-btn sm primary" data-a="yes" ${acting ? 'disabled' : ''}>Allow this click</button>`
     : err ? `<button class="ds-btn sm" data-a="close">Close</button><button class="ds-btn sm primary" data-a="retry">Try again</button>`
     : `<button class="ds-btn sm" data-a="copy">${S.copied ? 'Copied ✓' : 'Copy'}</button><button class="ds-btn sm primary" data-a="close">Close</button>`
-  $('#box').innerHTML = `<div class="q">${icon('sparkles', 16)}<b>${esc(S.q)}</b></div>${body}<div class="acts">${acts}</div>`
+  $('#box').innerHTML = `<div class="q">${icon('sparkles', 16)}<b>${esc(S.q)}</b></div>${S.page ? `<div class="pg">${icon('globe', 13)}<span>On ${esc(S.page)}</span></div>` : ''}${body}<div class="acts">${acts}</div>`
   $('#box').querySelector('[autofocus]')?.focus()
+  if (document.hasFocus() && document.activeElement === document.body) $('#fu')?.focus() // the cursor goes to the field only when the card already has it (after a follow-up, a redraw): never taken from the page
   $('.steps')?.scrollTo(0, 1e6)
 }
 const ACT = {
   stop: () => { acting = true; render(); api.call('askStop') }, yes: () => { acting = true; render(); api.call('askConfirm', true) }, no: () => { acting = true; render(); api.call('askConfirm', false) },
-  close: () => api.call('askClose'), retry: () => api.call('ask', S.q),
+  close: () => api.call('askClose'), retry: () => api.call('ask', S.q, true),
   copy: async () => { await navigator.clipboard.writeText(S.text); S.copied = true; render(); setTimeout(() => { if (S) { S.copied = false; render() } }, 2000) },
 }
-$('#box').onclick = e => ACT[e.target.closest('[data-a]')?.dataset.a]?.()
+$('#box').onclick = e => { const a = e.target.closest('.answer a'); if (a) { e.preventDefault(); return api.call('open', a.href) } ACT[e.target.closest('[data-a]')?.dataset.a]?.() }
+$('#box').addEventListener('input', e => { if (e.target.id === 'fu') draft = e.target.value })
+$('#box').addEventListener('keydown', e => { // Enter in the follow-up field sends it into the same conversation
+  if (e.target.id !== 'fu' || e.key !== 'Enter' || e.isComposing) return
+  const q = draft.trim(); if (q) { draft = ''; api.call('ask', q, true) }
+})
 addEventListener('keydown', e => { if (e.key === 'Escape' && S) S.status === 'run' ? ACT.stop() : S.status === 'confirm' ? ACT.no() : ACT.close() })
-api.on('ask', s => { const was = S?.status; S = s; if (s?.status !== was) acting = false; render() })
+api.on('ask', s => { const was = S?.status; S = s; if (!s) draft = ''; if (s?.status !== was) acting = false; render() })
 new ResizeObserver(() => api.call('askSize', Math.ceil($('#box').getBoundingClientRect().height) + 2)).observe($('#box'))
 </script>

@@ -6,6 +6,7 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 
 **Privacy**
 - Built-in ad and tracker blocking ([Ghostery adblocker](https://github.com/ghostery/adblocker)) with a choice of filter lists, and, from the shield at the bottom of the sidebar, a switch per site for ads, third-party cookies, the hardware masking and the WebRTC protection (some sign-ins or calls need one of them off)
+- Streaming that needs DRM (TF1+, Netflix, Disney+...) plays: Heliarc runs on [castLabs Electron](https://github.com/castlabs/electron-releases) with Widevine, and the builds are signed through castLabs EVS. Ad-blocker warnings ("turn off your ad blocker") are hidden by the Adblock Warning Removal List (Settings → Privacy)
 - Third-party cookies blocked, HTTPS used whenever the site supports it, WebRTC doesn't reveal your local address, no speculative page loading, Global Privacy Control and Do Not Track headers
 - Locked-down app: its own screens run no remote or injected code and can't be sent elsewhere, and the packaged app switches off the Electron features that would let someone run code through it. Dependencies and secrets are checked in CI: see [SECURITY.md](SECURITY.md)
 - Fingerprint hardening: sites see a plain Chrome with common hardware (the browser identity changes right away; the hardware values apply to tabs opened from now on)

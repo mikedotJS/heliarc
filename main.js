@@ -1,6 +1,6 @@
 const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen, dialog, desktopCapturer, net, components } = require('electron')
 const path = require('path'), fs = require('fs'), os = require('os')
-const { ElectronBlocker } = require('@ghostery/adblocker-electron')
+const blockerLib = require('@ghostery/adblocker-electron'), { ElectronBlocker } = blockerLib
 const bangs = require('./bangs')
 const resolve = input => bangs.resolve(input, settings)
 const { ElectronChromeExtensions } = require('electron-chrome-extensions')
@@ -39,7 +39,7 @@ const SPACES = [ // one browser profile (cookies, logins) per space
 ]
 const PRIVATE = SPACES.findIndex(s => s.private)
 const ZOOMS = [.25, .33, .5, .67, .75, .8, .9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
-const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false, assistant: false }
+const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', antiAdblock: true, searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false, assistant: false }
 // Picture-in-picture for the biggest playing, unmuted video (needs a user gesture, which executeJavaScript can claim)
 const PIP_ON = `(async () => { const v = [...document.querySelectorAll('video')].filter(v => !v.paused && !v.ended && !v.muted && v.readyState > 2 && v.videoWidth && !v.disablePictureInPicture).sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0]; if (!v || document.pictureInPictureElement) return false; await v.requestPictureInPicture(); return true })()`
 const PIP_OFF = `document.pictureInPictureElement && document.exitPictureInPicture()`
@@ -709,14 +709,15 @@ async function checkUpdate() {
   try { update = await updates.check(app.getVersion()); if (update && autoUpdate && !updater) autoUpdate.check(); push(); return update ? { text: `Heliarc ${update.version} is available.` } : { text: `Heliarc ${app.getVersion()} is up to date.` } } catch (e) { return { error: `Couldn’t check for updates: ${e.message}` } }
 }
 let blocker = null
-const LISTS = { ads: ['Ads only', 'fromPrebuiltAdsOnly'], adsTrackers: ['Ads and trackers', 'fromPrebuiltAdsAndTracking'], full: ['Ads, trackers and annoyances', 'fromPrebuiltFull'] }
+const LISTS = { ads: ['Ads only', 'adsLists'], adsTrackers: ['Ads and trackers', 'adsAndTrackingLists'], full: ['Ads, trackers and annoyances', 'fullLists'] } // the second item names the library's list of lists
+const ANTI_ADBLOCK = 'https://easylist-downloads.adblockplus.org/antiadblockfilters.txt' // Adblock Warning Removal List, updated daily
 const adsAllowed = u => privacy.adsAllowed(settings.adblockOff, privacy.host(u))
 let blockerList = null, loading = 0, loadSeq = 0, blockerSeq = 0 // the list of the blocker that is running; loads in flight; order of the loads started / of the one that runs
 async function loadBlocker() { // (re)loads the filter lists picked in Settings, then points every space's session at them
   const want = settings.adblockList, seq = ++loadSeq // the list asked for by THIS call: a later pick must not be mistaken for it
   blockerState = 'loading'; loading++; push()
   try {
-    const b = await ElectronBlocker[LISTS[want]?.[1] || LISTS.adsTrackers[1]](fetch)
+    const b = await ElectronBlocker.fromLists(fetch, [...blockerLib[LISTS[want]?.[1] || LISTS.adsTrackers[1]], ...(settings.antiAdblock ? [ANTI_ADBLOCK] : [])])
     if (seq < blockerSeq) return // a newer pick already finished first: this older load must not replace it
     blockerSeq = seq
     b.on('request-blocked', () => { blocked++; pushSoon() })
@@ -964,6 +965,7 @@ app.whenReady().then(async () => {
   // settings
   h('setSetting', (k, v) => {
     if (k === 'adblockList') { if (Object.hasOwn(LISTS, v)) { settings[k] = v; loadBlocker() } return } // loadBlocker pushes by itself
+    if (k === 'antiAdblock') { settings.antiAdblock = !!v; loadBlocker(); return } // loadBlocker pushes by itself
     if (k === 'mcp') { settings.mcp = !!v; mcpSync(); return }
     const plain = ['assistant', 'archiveHours', 'autoPip', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck'].includes(k)
     if (!plain && !(k === 'searchEngine' && Object.hasOwn(bangs.ENGINES, v)) && !(k === 'sidebarSide' && (v === 'left' || v === 'right'))) return

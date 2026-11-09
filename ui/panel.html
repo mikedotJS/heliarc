@@ -174,6 +174,7 @@ function settings(S) {
     ${toggle('webrtcProtect', 'Hide your local address from WebRTC', 'Applies to tabs opened from now on')}
     ${toggle('fingerprint', 'Limit browser fingerprinting', 'Sites see a plain Chrome with common hardware. The browser identity changes right away; the hardware values apply to tabs opened from now on')}
     <div class="line"><label>Ad blocker lists<small>You can also allow ads on one site: click the shield at the bottom of the sidebar</small></label><select class="ds-select" data-list>${Object.entries(S.lists).map(([k, n]) => `<option value="${k}" ${k === st.adblockList ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+    ${toggle('antiAdblock', 'Hide "turn off your ad blocker" warnings', 'Adds the Adblock Warning Removal List, updated daily. It cannot help when a site puts its ads inside the video itself')}
     ${toggle('clearOnQuit', 'Clear everything when I quit', 'Cookies and site data (you get logged out of sites), caches, history and the download list. Saved passwords and open tabs stay')}
     ${(st.pwNever || []).map(o => `<div class="line"><label>${esc(o)}<small>Heliarc never offers to save a password here</small></label><button class="ds-btn sm" data-a="allowPw" data-o="${esc(o)}">Allow again</button></div>`).join('')}
     <div class="msg">The Private space (${esc(fmt(S.keys.newPrivateTab))}) keeps nothing: no history, no saved tabs, no extensions, and it is wiped when its last tab closes. Pages are never preloaded in the background.</div></section>

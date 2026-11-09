@@ -25,7 +25,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
-      - run: pip install castlabs-evs # signs the app so streaming sites (TF1+, Netflix...) accept its DRM
+      - name: Install castlabs-evs (signs the app so streaming sites like TF1+ and Netflix accept its DRM)
+        shell: bash
+        run: |
+          PY=python3; [ "$RUNNER_OS" = Windows ] && PY=python # the same interpreter scripts/sign-evs.js calls
+          $PY -m pip install --break-system-packages castlabs-evs # Homebrew's Python refuses plain installs
       - name: Import the Developer ID certificate (Mac, only when the Apple secrets are set)
         if: runner.os == 'macOS' && env.MAC_CERT_P12 != ''
         env:

@@ -1,6 +1,7 @@
 // Builds dist/Heliarc-win32-x64/ (Heliarc.exe) and dist/Heliarc-windows-x64.zip. Run: npm run package:win
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process')
 const root = path.join(__dirname, '..')
+process.env.ELECTRON_MIRROR ??= 'https://github.com/castlabs/electron-releases/releases/download/' // Electron with Widevine DRM (castLabs), not the stock one
 ;(async () => {
   fs.mkdirSync(path.join(root, 'build'), { recursive: true })
   const pngToIco = (await import('png-to-ico')).default, { packager } = await import('@electron/packager')
@@ -11,6 +12,7 @@ const root = path.join(__dirname, '..')
     ignore: [/^\/(dist|build|motion-.*|shot-.*|screenshot.*|site|\.git|\.github|\.gitignore|\.claude)/],
   })
   execFileSync(process.execPath, [path.join(__dirname, 'fuses.js'), path.join(root, 'dist', 'Heliarc-win32-x64', 'Heliarc.exe')], { stdio: 'inherit' })
+  execFileSync(process.execPath, [path.join(__dirname, 'sign-evs.js'), path.join(root, 'dist', 'Heliarc-win32-x64')], { stdio: 'inherit' }) // after the fuses: they edit the binary
   const zip = path.join(root, 'dist', 'Heliarc-windows-x64.zip')
   fs.rmSync(zip, { force: true })
   execFileSync(path.join(process.env.SystemRoot, 'System32', 'tar.exe'), ['-a', '-c', '-f', zip, '-C', path.join(root, 'dist'), 'Heliarc-win32-x64'], { stdio: 'inherit' }) // Windows' own bsdtar writes a zip for a .zip name (the tar on the PATH can be GNU tar, which reads "E:" as a remote host)

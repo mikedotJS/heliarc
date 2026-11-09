@@ -25,6 +25,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
+      - run: pip install castlabs-evs # signs the app so streaming sites (TF1+, Netflix...) accept its DRM
       - name: Import the Developer ID certificate (Mac, only when the Apple secrets are set)
         if: runner.os == 'macOS' && env.MAC_CERT_P12 != ''
         env:
@@ -44,6 +45,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
       - name: Smoke test the packaged app (launches it and runs the offline self test)
         if: matrix.artifact != 'mac-x64'
         continue-on-error: true

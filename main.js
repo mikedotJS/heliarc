@@ -1,4 +1,4 @@
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen, dialog, desktopCapturer, net } = require('electron')
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen, dialog, desktopCapturer, net, components } = require('electron')
 const path = require('path'), fs = require('fs'), os = require('os')
 const { ElectronBlocker } = require('@ghostery/adblocker-electron')
 const bangs = require('./bangs')
@@ -710,7 +710,7 @@ async function checkUpdate() {
 }
 let blocker = null
 const LISTS = { ads: ['Ads only', 'fromPrebuiltAdsOnly'], adsTrackers: ['Ads and trackers', 'fromPrebuiltAdsAndTracking'], full: ['Ads, trackers and annoyances', 'fromPrebuiltFull'] }
-const adsAllowed = u => settings.adblockOff.includes(privacy.host(u))
+const adsAllowed = u => privacy.adsAllowed(settings.adblockOff, privacy.host(u))
 let blockerList = null, loading = 0, loadSeq = 0, blockerSeq = 0 // the list of the blocker that is running; loads in flight; order of the loads started / of the one that runs
 async function loadBlocker() { // (re)loads the filter lists picked in Settings, then points every space's session at them
   const want = settings.adblockList, seq = ++loadSeq // the list asked for by THIS call: a later pick must not be mistaken for it
@@ -720,7 +720,7 @@ async function loadBlocker() { // (re)loads the filter lists picked in Settings,
     if (seq < blockerSeq) return // a newer pick already finished first: this older load must not replace it
     blockerSeq = seq
     b.on('request-blocked', () => { blocked++; pushSoon() })
-    const cosmetics = b.getCosmeticsFilters.bind(b) // ChatGPT's own filters stub out its telemetry calls, and the page then answers "Content failed to load": keep its ad hiding, drop the injected scripts
+    const cosmetics = b.getCosmeticsFilters.bind(b) // ChatGPT's and TF1+'s own filters stub out fetch calls, and the page then answers "Content failed to load" / "Nous éprouvons des difficultés à lancer cette vidéo": keep their ad hiding, drop the injected scripts
     b.getCosmeticsFilters = p => /(^|\.)(chatgpt|openai)\.com$/.test(p.hostname) ? { ...cosmetics(p), scripts: [] } : cosmetics(p)
     const cosmetic = '@ghostery/adblocker/' // its cosmetic-filter handlers are global: ours skip the sites where ads are allowed
     const unhandle = () => ['inject-cosmetic-filters', 'is-mutation-observer-enabled'].forEach(ch => ipcMain.removeHandler(cosmetic + ch))
@@ -879,6 +879,7 @@ app.on('before-quit', e => { // "clear everything when I quit": cookies, logins,
 
 app.whenReady().then(async () => {
   if (!gotLock) return // another instance is running: it handles this launch
+  await components?.whenReady() // Widevine DRM (castlabs Electron): TF1+, Netflix, Disney+ …
   if (process.platform === 'darwin') app.dock?.setIcon(ICON)
   const saved = store.load('session', {})
   settings = { ...structuredClone(DEFAULTS), ...saved.settings }; for (const [i, o] of Object.entries(settings.spaces)) SPACES[i] && !SPACES[i].private && Object.assign(SPACES[i], o); history = store.load('history', []); vault = store.load('vault', []); profile = store.load('profile', {})

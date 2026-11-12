@@ -1,8 +1,109 @@
 diff --git a/node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js b/node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js
-index 67d3be4..afecece 100644
+index 67d3be4..4b1a466 100644
 --- a/node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js
 +++ b/node_modules/electron-chrome-extensions/dist/chrome-extension-api.preload.js
-@@ -449,12 +449,47 @@
+@@ -114,12 +114,22 @@
+         ctx.putImageData(imageData, 0, 0);
+         return canvas.toDataURL();
+       }
++      // Heliarc: an error thrown by an extension's own listener used to travel back into this preload and kill the extension's
++      // service worker (Bitwarden restarted in a loop). As in Chrome, it is logged and the extension carries on.
++      const guarded = (callback) => (...args) => {
++        try {
++          const r = callback(...args);
++          if (r && typeof r.catch === "function") r.catch((e) => console.error(e));
++        } catch (e) {
++          console.error(e);
++        }
++      };
+       class ExtensionEvent {
+         constructor(name) {
+           this.name = name;
+         }
+         addListener(callback) {
+-          electron.addExtensionListener(extensionId, this.name, callback);
++          electron.addExtensionListener(extensionId, this.name, guarded(callback));
+         }
+         removeListener(callback) {
+           electron.removeExtensionListener(extensionId, this.name, callback);
+@@ -140,18 +150,24 @@
+           throw new Error("Method not implemented.");
+         }
+       }
++      // Heliarc: these settings reach the browser. They were silent no-ops whose get() never answered: ticking
++      // "Make Bitwarden your default password manager" did nothing, and its Autofill settings page then stayed half loaded
+       class ChromeSetting {
+-        constructor() {
++        constructor(name) {
++          this.name = name;
+           this.onChange = {
+             addListener: () => {
+             }
+           };
+         }
+-        set() {
++        set(details, callback) {
++          return invokeExtension2("privacy.set")(this.name, details && details.value, ...callback ? [callback] : []);
+         }
+-        get() {
++        get(details, callback) {
++          return invokeExtension2("privacy.get")(this.name, ...callback ? [callback] : []);
+         }
+-        clear() {
++        clear(details, callback) {
++          return invokeExtension2("privacy.set")(this.name, void 0, ...callback ? [callback] : []);
+         }
+       }
+       class Event {
+@@ -159,9 +175,7 @@
+           this.listeners = [];
+         }
+         _emit(...args) {
+-          this.listeners.forEach((listener) => {
+-            listener(...args);
+-          });
++          this.listeners.forEach((listener) => guarded(listener)(...args));
+         }
+         addListener(callback) {
+           this.listeners.push(callback);
+@@ -198,7 +212,12 @@
+           this.onMessage._emit(message);
+         }
+         _disconnect() {
+-          this.disconnect();
++          // Heliarc: the desktop app went away (or isn't installed). As in Chrome, listeners get the port and can read the reason in chrome.runtime.lastError
++          if (!this.connected) return;
++          this.connected = false;
++          chrome.runtime.lastError = { message: "Native host has exited." };
++          this.onDisconnect._emit(this);
++          chrome.runtime.lastError = void 0;
+         }
+         postMessage(message) {
+           this._send(message);
+@@ -414,16 +433,16 @@
+             return {
+               ...base,
+               network: {
+-                networkPredictionEnabled: new ChromeSetting(),
+-                webRTCIPHandlingPolicy: new ChromeSetting()
++                networkPredictionEnabled: new ChromeSetting("networkPredictionEnabled"),
++                webRTCIPHandlingPolicy: new ChromeSetting("webRTCIPHandlingPolicy")
+               },
+               services: {
+-                autofillAddressEnabled: new ChromeSetting(),
+-                autofillCreditCardEnabled: new ChromeSetting(),
+-                passwordSavingEnabled: new ChromeSetting()
++                autofillAddressEnabled: new ChromeSetting("autofillAddressEnabled"),
++                autofillCreditCardEnabled: new ChromeSetting("autofillCreditCardEnabled"),
++                passwordSavingEnabled: new ChromeSetting("passwordSavingEnabled")
+               },
+               websites: {
+-                hyperlinkAuditingEnabled: new ChromeSetting()
++                hyperlinkAuditingEnabled: new ChromeSetting("hyperlinkAuditingEnabled")
+               }
+             };
+           }
+@@ -449,12 +468,47 @@
          },
          storage: {
            factory: (base) => {
@@ -52,7 +153,7 @@ index 67d3be4..afecece 100644
              };
            }
          },
-@@ -560,14 +595,13 @@
+@@ -560,14 +614,13 @@
          const baseApi = chrome[apiName];
          const api = apiDefinitions[apiName];
          if (api.shouldInject && !api.shouldInject()) return;
@@ -73,7 +174,7 @@ index 67d3be4..afecece 100644
      if (!process.contextIsolated) {
        console.warn(`injectExtensionAPIs: context isolation disabled in ${location.href}`);
 diff --git a/node_modules/electron-chrome-extensions/dist/cjs/index.js b/node_modules/electron-chrome-extensions/dist/cjs/index.js
-index b4242b0..735e89b 100644
+index b4242b0..bba1dc7 100644
 --- a/node_modules/electron-chrome-extensions/dist/cjs/index.js
 +++ b/node_modules/electron-chrome-extensions/dist/cjs/index.js
 @@ -172,6 +172,9 @@ var _PopupView = class _PopupView extends import_node_events.EventEmitter {
@@ -115,7 +216,43 @@ index b4242b0..735e89b 100644
      } else {
        this.setSize({ width: _PopupView.BOUNDS.maxWidth, height: _PopupView.BOUNDS.maxHeight });
        await new Promise((resolve) => setTimeout(resolve, 100));
-@@ -964,7 +978,8 @@ var _TabsAPI = class _TabsAPI {
+@@ -712,6 +726,8 @@ var _WindowsAPI = class _WindowsAPI {
+     window.once("closed", () => {
+       this.ctx.store.windowDetailsCache.delete(windowId);
+       this.ctx.store.removeWindow(window);
++      // Heliarc: a closed pop-out is no longer the current window
++      if (this.ctx.store.lastFocusedWindowId === windowId) this.ctx.store.lastFocusedWindowId = Array.from(this.ctx.store.windows).find((w) => !w.isDestroyed())?.id;
+       this.onRemoved(windowId);
+     });
+     this.onCreated(windowId);
+@@ -741,11 +757,8 @@ var _WindowsAPI = class _WindowsAPI {
+     return details;
+   }
+   getWindowDetails(win) {
+-    if (this.ctx.store.windowDetailsCache.has(win.id)) {
+-      return this.ctx.store.windowDetailsCache.get(win.id);
+-    }
+-    const details = this.createWindowDetails(win);
+-    return details;
++    // Heliarc: always read the window, the cached copy went stale as soon as the window moved (Bitwarden places its pop-outs from these numbers)
++    return this.createWindowDetails(win);
+   }
+   getWindowFromId(id) {
+     if (id === _WindowsAPI.WINDOW_ID_CURRENT) {
+@@ -774,6 +787,12 @@ var _WindowsAPI = class _WindowsAPI {
+     const win = this.getWindowFromId(windowId);
+     if (!win) return;
+     const props = updateProperties;
++    // Heliarc: move, resize and focus, which Bitwarden uses to bring its pop-out forward and to hand the keyboard back to the page afterwards
++    if ([props.left, props.top, props.width, props.height].some((v) => typeof v === "number")) {
++      const b = win.getBounds();
++      win.setBounds({ x: props.left ?? b.x, y: props.top ?? b.y, width: props.width ?? b.width, height: props.height ?? b.height });
++    }
++    if (props.focused) win.focus();
+     if (props.state) {
+       switch (props.state) {
+         case "maximized":
+@@ -964,7 +983,8 @@ var _TabsAPI = class _TabsAPI {
      return tabs.map(this.getTabDetails.bind(this));
    }
    getCurrent(event) {
@@ -125,7 +262,108 @@ index b4242b0..735e89b 100644
      return tab ? this.getTabDetails(tab) : void 0;
    }
    async create(event, details = {}) {
-@@ -2614,6 +2629,19 @@ function readLoadedExtensionManifest(ctx, extension) {
+@@ -1008,6 +1028,8 @@ var _TabsAPI = class _TabsAPI {
+           return false;
+         }
+       }
++      // Heliarc: "currentWindow" and "lastFocusedWindow" narrow the search, now that an extension's pop-out is a window with its own tab
++      if ((info.currentWindow || info.lastFocusedWindow) && this.ctx.store.lastFocusedWindowId !== tab.windowId) return false;
+       if (isSet(info.windowId)) {
+         if (info.windowId === _TabsAPI.WINDOW_ID_CURRENT) {
+           if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false;
+@@ -1760,7 +1782,7 @@ function readRegistryKey(hive, path5, key) {
+       }
+       const lines = output.trim().split("\n");
+       const resultLine = lines.find(
+-        (line) => key ? line.includes(key) : line.includes("(Default)")
++        (line) => line.includes(key || "REG_SZ")
+       );
+       if (resultLine) {
+         const parts = resultLine.trim().split(/\s{2,}/);
+@@ -1845,13 +1867,18 @@ var NativeMessagingHost = class {
+       this.send(message);
+     };
+     this.receive = (data) => {
+-      const length = data.readUInt32LE(0);
+-      const message = JSON.parse(data.subarray(4, 4 + length).toString());
+-      d7("receive: %s", message);
+-      if (this.keepAlive && this.sender) {
+-        this.sender.send(`crx-native-msg-${this.connectionId}`, message);
+-      } else {
+-        this.resolveResponse?.(message);
++      // Heliarc: one read can hold several messages, or only part of one
++      this.buffer = this.buffer ? Buffer.concat([this.buffer, data]) : data;
++      while (this.buffer.length >= 4 && this.buffer.length >= 4 + this.buffer.readUInt32LE(0)) {
++        const length = this.buffer.readUInt32LE(0);
++        const message = JSON.parse(this.buffer.subarray(4, 4 + length).toString());
++        this.buffer = this.buffer.subarray(4 + length);
++        d7("receive: %s", message);
++        if (this.keepAlive && this.sender) {
++          this.sender.send(`crx-native-msg-${this.connectionId}`, message);
++        } else {
++          this.resolveResponse?.(message);
++        }
+       }
+     };
+     this.keepAlive = keepAlive;
+@@ -1929,11 +1956,10 @@ var NativeMessagingHost = class {
+       d7("send: pending");
+       return;
+     }
+-    const message = JSON.stringify(json);
+-    const buffer = Buffer.alloc(4 + message.length);
++    const message = Buffer.from(JSON.stringify(json)); // Heliarc: the length is in bytes, not characters
++    const buffer = Buffer.alloc(4);
+     buffer.writeUInt32LE(message.length, 0);
+-    buffer.write(message, 4);
+-    this.process.stdin.write(buffer);
++    this.process.stdin.write(Buffer.concat([buffer, message]));
+   }
+   sendAndReceive(message) {
+     this.send(message);
+@@ -1957,8 +1983,22 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
+         application
+       );
+       this.hostMap[connectionId] = host;
++      // Heliarc: as in Chrome, the host ends with whoever opened the connection (a service worker that stops, a page that closes).
++      // It used to stay behind, one more at every restart of the worker
++      const end = () => this.disconnectNative(event, connectionId);
++      if (event.type === "frame") {
++        event.sender.once("destroyed", end);
++      } else {
++        const workers = this.ctx.session.serviceWorkers;
++        const onStatus = (d) => {
++          if (d.versionId === event.sender.versionId && d.runningStatus !== "running" && d.runningStatus !== "starting") end();
++        };
++        workers.on("running-status-changed", onStatus);
++        host.unwatch = () => workers.off("running-status-changed", onStatus);
++      }
+     };
+     this.disconnectNative = (event, connectionId) => {
++      this.hostMap[connectionId]?.unwatch?.();
+       this.hostMap[connectionId]?.destroy();
+       this.hostMap[connectionId] = void 0;
+     };
+@@ -2223,7 +2263,8 @@ var CommandsAPI = class {
+       commands.push({
+         name,
+         description: details.description,
+-        shortcut: ""
++        // Heliarc: the key the extension suggests is the one Heliarc listens to (Bitwarden otherwise says "the autofill shortcut is not set")
++        shortcut: details.suggested_key?.[{ darwin: "mac", win32: "windows" }[process.platform] || "linux"] ?? details.suggested_key?.default ?? ""
+       });
+     }
+   }
+@@ -2465,7 +2506,7 @@ var ExtensionRouter = class {
+     }
+     if (handler.permission) {
+       const manifest = extension?.manifest;
+-      if (!extension || !manifest.permissions?.includes(handler.permission)) {
++      if (!extension || !manifest.permissions?.includes(handler.permission) && !loadGrants()[extension.id]?.includes(handler.permission)) {
+         throw new Error(
+           `${handlerName} requires an extension with ${handler.permission} permissions`
+         );
+@@ -2614,6 +2655,24 @@ function readLoadedExtensionManifest(ctx, extension) {
  }
  
  // src/browser/api/permissions.ts
@@ -142,10 +380,15 @@ index b4242b0..735e89b 100644
 +  const host = g.host === "*" || g.host === o.host || (g.host.startsWith("*.") && (o.host === g.host.slice(2) || o.host.endsWith(g.host.slice(1))));
 +  return scheme && host && (g.path === "/*" || g.path === o.path);
 +};
++// Heliarc: optional permissions an extension was granted are remembered across restarts and count when an API checks them
++// (Bitwarden's nativeMessaging, without which it can never reach its desktop app to unlock with Touch ID)
++var grants;
++var grantsFile = () => path.join(import_electron.app.getPath("userData"), "extension-grants.json");
++var loadGrants = () => grants ??= (() => { try { return JSON.parse(import_node_fs.readFileSync(grantsFile(), "utf8")); } catch { return {}; } })();
  var PermissionsAPI = class {
    constructor(ctx) {
      this.ctx = ctx;
-@@ -2623,7 +2651,7 @@ var PermissionsAPI = class {
+@@ -2623,7 +2682,7 @@ var PermissionsAPI = class {
        const hasPermissions = permissions.permissions ? permissions.permissions.every(
          (permission) => currentPermissions.permissions.includes(permission)
        ) : true;
@@ -154,3 +397,21 @@ index b4242b0..735e89b 100644
        return hasPermissions && hasOrigins;
      };
      this.getAll = ({ extension }) => {
+@@ -2656,6 +2715,8 @@ var PermissionsAPI = class {
+             permissions.permissions.push(permission);
+           }
+         }
++        loadGrants()[extension.id] = permissions.permissions.filter((p) => !(extension.manifest.permissions || []).includes(p));
++        import_node_fs.writeFileSync(grantsFile(), JSON.stringify(grants));
+       }
+       return true;
+     };
+@@ -2676,7 +2737,7 @@ var PermissionsAPI = class {
+   processExtension(extension) {
+     const manifest = extension.manifest;
+     this.permissionMap.set(extension.id, {
+-      permissions: manifest.permissions || [],
++      permissions: [...manifest.permissions || [], ...loadGrants()[extension.id] || []],
+       origins: manifest.host_permissions || []
+     });
+   }

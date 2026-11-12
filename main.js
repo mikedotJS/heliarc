@@ -39,7 +39,7 @@ const SPACES = [ // one browser profile (cookies, logins) per space
 ]
 const PRIVATE = SPACES.findIndex(s => s.private)
 const ZOOMS = [.25, .33, .5, .67, .75, .8, .9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
-const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', antiAdblock: true, searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false, assistant: false }
+const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', antiAdblock: true, extPrivacy: {}, searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false, assistant: false }
 // Picture-in-picture for the biggest playing, unmuted video (needs a user gesture, which executeJavaScript can claim)
 const PIP_ON = `(async () => { const v = [...document.querySelectorAll('video')].filter(v => !v.paused && !v.ended && !v.muted && v.readyState > 2 && v.videoWidth && !v.disablePictureInPicture).sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0]; if (!v || document.pictureInPictureElement) return false; await v.requestPictureInPicture(); return true })()`
 const PIP_OFF = `document.pictureInPictureElement && document.exitPictureInPicture()`
@@ -589,6 +589,7 @@ async function installExtension(input) {
 // ---- Chrome extension APIs (tabs, webNavigation, popups…) for every space's session ----
 const crx = new Map()
 const crxOf = tab => crx.get(session.fromPartition(SPACES[tab.space].partition))
+const EXT_PRIVACY = ['passwordSavingEnabled', 'autofillAddressEnabled', 'autofillCreditCardEnabled'] // the chrome.privacy settings an extension may switch off (Heliarc has no card filling: that one is only remembered)
 const applyUserAgent = ses => ses.setUserAgent(settings.fingerprint ? app.userAgentFallback.replace(/ (Electron|Heliarc)\/\S+/g, '') : app.userAgentFallback) // on: sites see a plain Chrome, not an Electron app
 function setupSession(ses) {
   if (configured.has(ses)) return; configured.add(ses)
@@ -628,7 +629,9 @@ function setupSession(ses) {
       const v = new WebContentsView({ webPreferences: { partition: sp.partition, sandbox: true, contextIsolation: true } })
       w.contentView.addChildView(v)
       const fit = () => { const { width, height } = w.getContentBounds(); v.setBounds({ x: 0, y: 0, width, height }) }
-      const wc = v.webContents; fit(); w.on('resize', fit); if (url) wc.loadURL(url)
+      const wc = v.webContents; fit(); w.on('resize', fit)
+      api.addTab(wc, w) // as in Chrome, the pop-out is a tab in a window of its own: that is how Bitwarden finds its passkey window again, to close it once you have answered
+      if (url) wc.loadURL(url)
       wc.once('destroyed', () => { if (!w.isDestroyed()) w.close() }) // the page closed itself (window.close): the window goes with it
       w.on('closed', () => { if (!wc.isDestroyed()) wc.close() })
       return w
@@ -636,7 +639,19 @@ function setupSession(ses) {
   })
   crx.set(ses, api)
   // chrome.storage.onChanged never reaches extension service workers in Electron: contexts announce their writes (see the patch of the library preload) and we relay them
-  api.ctx.router.apiHandler()('storage.notifyChanged', ({ extension }, area, changes) => api.ctx.router.sendEvent(extension.id, 'storage.onChanged', changes, area))
+  const handle = api.ctx.router.apiHandler()
+  handle('storage.notifyChanged', ({ extension }, area, changes) => api.ctx.router.sendEvent(extension.id, 'storage.onChanged', changes, area))
+  // chrome.privacy.services: a password manager made "the default one" (Bitwarden, Proton Pass) switches Heliarc's own offers off, as it does Chrome's.
+  // settings.extPrivacy lists what is switched off and by whom: passwordSavingEnabled (the offer to save a login), autofillAddressEnabled (filling your address)
+  handle('privacy.get', ({ extension }, name) => {
+    const by = settings.extPrivacy[name]
+    return EXT_PRIVACY.includes(name) ? { value: !by, levelOfControl: !by ? 'controllable_by_this_extension' : by.id === extension.id ? 'controlled_by_this_extension' : 'controlled_by_other_extensions' } : { levelOfControl: 'not_controllable' }
+  })
+  handle('privacy.set', ({ extension }, name, value) => {
+    if (!EXT_PRIVACY.includes(name)) return
+    if (value === false) settings.extPrivacy[name] = { id: extension.id, name: extension.name }; else if (settings.extPrivacy[name]?.id === extension.id) delete settings.extPrivacy[name]
+    push()
+  })
 }
 // ---- site permissions ----
 const PERMS = { camera: 'use your camera', microphone: 'use your microphone', geolocation: 'use your location', notifications: 'show notifications', 'clipboard-read': 'read your clipboard', midi: 'use your MIDI devices', midiSysex: 'fully control your MIDI devices', fileSystem: 'read and write the files or folders you picked' }
@@ -959,12 +974,13 @@ app.whenReady().then(async () => {
   h('setProfile', p => { profile = { ...p, name: [p.first, p.last].filter(Boolean).join(' ') }; store.save('profile', profile) })
   h('pwSave', () => { if (pwPending) { savePw(pwPending); pwPending = null; push() } })
   h('allowPw', origin => { settings.pwNever = settings.pwNever.filter(x => x !== origin); push() })
+  h('pwOfferAgain', () => { delete settings.extPrivacy.passwordSavingEnabled; push() }) // take the offer to save passwords back from the extension that switched it off
   h('pwNever', () => { if (pwPending) { if (!settings.pwNever.includes(pwPending.origin)) settings.pwNever.push(pwPending.origin); pwPending = null; push() } })
   h('pwDismiss', () => { pwPending = null; push() })
   h('extensions', () => [...ext.list(extSessions()[0]), ...ext.failures().map(f => ({ ...f, failed: true }))])
   h('retryExtension', async id => { const ok = await ext.retry(id, extSessions()); push(); refreshExts(); return { ok } })
   h('installExtension', installExtension)
-  h('removeExtension', async id => { await ext.remove(id, extSessions()); push(); refreshExts() })
+  h('removeExtension', async id => { await ext.remove(id, extSessions()); for (const k of Object.keys(settings.extPrivacy)) if (settings.extPrivacy[k].id === id) delete settings.extPrivacy[k]; push(); refreshExts() }) // what the extension had switched off comes back with its removal
   // settings
   h('setSetting', (k, v) => {
     if (k === 'adblockList') { if (Object.hasOwn(LISTS, v)) { settings[k] = v; loadBlocker() } return } // loadBlocker pushes by itself
@@ -1059,7 +1075,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.on('pw:captured', async (e, { user, pass }) => {
     const t = pageOf(e.sender), origin = senderOrigin(e)
-    if (!t || SPACES[t.space].private || !origin || !pass || !safeStorage.isEncryptionAvailable() || settings.pwNever.includes(origin)) return
+    if (!t || SPACES[t.space].private || !origin || !pass || !safeStorage.isEncryptionAvailable() || settings.pwNever.includes(origin) || settings.extPrivacy.passwordSavingEnabled) return
     const old = vault.find(v => v.origin === origin && v.user === user)
     if (old && decrypt(old.pass) === pass) return
     if (!tabs.includes(t)) { // Peek / Little have no sidebar bar: a native question instead, one at a time; a capture that arrives meanwhile waits (the newest one is asked next)
@@ -1080,7 +1096,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('pw:get', e => { const o = senderOrigin(e); return o && pageOf(e.sender) ? vault.filter(v => v.origin === o).map(v => ({ user: v.user, pass: decrypt(v.pass) })) : [] })
   ipcMain.on('fp:site', e => { e.returnValue = !settings.fingerprintOff.includes(privacy.host(e.sender.getURL())) }) // the page preload asks whether to mask the hardware on this site
-  ipcMain.handle('profile:get', e => pageOf(e.sender) ? profile : null)
+  ipcMain.handle('profile:get', e => pageOf(e.sender) && !settings.extPrivacy.autofillAddressEnabled ? profile : null)
 
   await ext.loadInstalled(extSessions()) // before any page loads, so content scripts reach restored tabs
   refreshExts()

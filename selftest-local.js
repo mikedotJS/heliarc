@@ -730,9 +730,9 @@ module.exports = async (a, ok) => {
     const der2 = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ type: 'spki', format: 'der' })
     const header2 = Buffer.concat([pb(2, pb(1, der2)), pb(10000, pb(1, crypto.createHash('sha256').update(der2).digest().subarray(0, 16)))])
     const zip2 = zipSync({
-      'manifest.json': Buffer.from(JSON.stringify({ manifest_version: 3, name: 'Injector', version: '1', permissions: ['scripting', 'tabs', 'storage'], host_permissions: ['<all_urls>'], background: { service_worker: 'bg.js' }, content_scripts: [{ matches: ['<all_urls>'], js: ['t.js'], run_at: 'document_start', all_frames: true }] })),
+      'manifest.json': Buffer.from(JSON.stringify({ manifest_version: 3, name: 'Injector', version: '1', permissions: ['scripting', 'tabs', 'storage', 'privacy'], optional_permissions: ['nativeMessaging'], host_permissions: ['<all_urls>'], background: { service_worker: 'bg.js' }, content_scripts: [{ matches: ['<all_urls>'], js: ['t.js'], run_at: 'document_start', all_frames: true }] })),
       't.js': Buffer.from(`chrome.runtime.sendMessage({ hello: 1 }); chrome.runtime.sendMessage({ ask: 1 }).then(r => { document.documentElement.dataset.reply = JSON.stringify(r) }).catch(e => { document.documentElement.dataset.reply = 'ERR ' + e.message })`),
-      'bg.js': Buffer.from(`chrome.scripting.registerContentScripts([{ id: 'reg', matches: ['<all_urls>'], js: ['reg.js'], runAt: 'document_start', allFrames: true, world: 'ISOLATED' }]).catch(e => chrome.scripting.executeScript({ target: { tabId: 0 }, func: () => 0 }).catch(() => {})); chrome.runtime.onMessage.addListener((m, s, send) => { if (m.ask) { setTimeout(() => send({ ok: 1 }), 50); return true } chrome.scripting.executeScript({ target: { tabId: s.tab.id, frameIds: [s.frameId ?? 0] }, files: ['inj.js'], injectImmediately: true, world: 'ISOLATED' }); chrome.windows.create({ url: chrome.runtime.getURL('w.html'), type: 'popup', width: 300, height: 300 }) }); chrome.storage.onChanged.addListener((c, a) => { if (c.ping) chrome.storage.session.set({ pong: [a, c.ping.newValue] }) })`),
+      'bg.js': Buffer.from(`chrome.scripting.registerContentScripts([{ id: 'reg', matches: ['<all_urls>'], js: ['reg.js'], runAt: 'document_start', allFrames: true, world: 'ISOLATED' }]).catch(e => chrome.scripting.executeScript({ target: { tabId: 0 }, func: () => 0 }).catch(() => {})); let n = 0; chrome.tabs.onCreated.addListener(() => { throw new Error('boom') }); chrome.runtime.onMessage.addListener((m, s, send) => { if (m.ask) { setTimeout(() => send({ ok: 1 }), 50); return true } if (m.count) { send({ n: ++n }); return } if (m.closePop) { chrome.tabs.query({ url: chrome.runtime.getURL('w.html') + '*' }).then(ts => ts.forEach(t => chrome.windows.remove(t.windowId))); return } if (m.takeover) { chrome.privacy.services.passwordSavingEnabled.set({ value: false }).then(() => chrome.privacy.services.passwordSavingEnabled.get({})).then(send); return true } if (m.native) { chrome.permissions.request({ permissions: ['nativeMessaging'] }).then(() => { const p = chrome.runtime.connectNative('heliarc.missing.host'); p.onDisconnect.addListener(() => { send({ why: chrome.runtime.lastError?.message }); throw new Error('boom') }) }); return true } chrome.scripting.executeScript({ target: { tabId: s.tab.id, frameIds: [s.frameId ?? 0] }, files: ['inj.js'], injectImmediately: true, world: 'ISOLATED' }); chrome.windows.create({ url: chrome.runtime.getURL('w.html'), type: 'popup', width: 300, height: 300 }) }); chrome.storage.onChanged.addListener((c, a) => { if (c.ping) chrome.storage.session.set({ pong: [a, c.ping.newValue] }) })`),
       'w.html': Buffer.from('<title>popout ok</title><script src="w.js"></script>'),
       'w.js': Buffer.from(`setTimeout(() => chrome.storage.local.set({ ping: 7 }), 1500)`),
       'reg.js': Buffer.from(`document.documentElement.dataset.registered = 'yes'`),
@@ -746,8 +746,24 @@ module.exports = async (a, ok) => {
     const pong = async () => { try { return await wpage()?.executeJavaScript(`chrome.storage.session.get('pong').then(o => JSON.stringify(o.pong || null))`) } catch (e) { return 'ERR ' + e.message.slice(0, 80) } }
     const wpage = () => require('electron').webContents.getAllWebContents().find(w => w.getURL() === `chrome-extension://${r3.id}/w.html`)
     ok('a worker hears storage changes made by an extension page', await until(async () => await pong() === '["local",7]'), await pong())
+    // what a password manager leans on (found with Bitwarden): its own errors must not restart it, its desktop app may be missing, it can become the default manager, and it closes its own pop-out
+    const ask = m => wpage().executeJavaScript(`chrome.runtime.sendMessage(${JSON.stringify(m)})`).catch(e => ({ error: e.message }))
+    const c1 = (await ask({ count: 1 })).n; await open('/second'); await sleep(500)
+    ok('an extension listener that throws does not restart the extension', (await ask({ count: 1 })).n === c1 + 1, String(c1))
+    const gone = await ask({ native: 1 })
+    ok('a missing desktop app ends the connection with a reason', gone.why === 'Native host has exited.', JSON.stringify(gone))
+    ok('and the extension is still running after it', (await ask({ count: 1 })).n === c1 + 2)
+    const took = await ask({ takeover: 1 })
+    ok('an extension can become the default password manager', took.value === false && took.levelOfControl === 'controlled_by_this_extension' && S.settings().extPrivacy.passwordSavingEnabled?.name === 'Injector', JSON.stringify([took, S.settings().extPrivacy]))
+    S.openPanel('passwords'); await sleep(700)
+    ok('the Passwords page says who manages them', await js(panel(), `document.body.innerText.includes('Injector is your password manager')`)); await snap(S.panel(), 'panel-passwords-extension')
+    await js(panel(), `document.querySelector('[data-a=pwOfferAgain]').click()`)
+    ok('and Heliarc can take the offer to save passwords back', await until(async () => !S.settings().extPrivacy.passwordSavingEnabled && !await js(panel(), `document.body.innerText.includes('is your password manager')`)))
+    await ask({ takeover: 1 }); await ask({ closePop: 1 })
+    ok('an extension finds its pop-out among the tabs and closes it', await until(async () => !wpage()))
     require('electron').BaseWindow.getAllWindows().forEach(w => w.getTitle() === 'Heliarc' && w !== a.win() && w.close())
-    await S.ext.remove(r3.id, S.extSessions())
+    await js(panel(), `api.call('removeExtension', '${r3.id}')`)
+    ok('removing the extension gives password saving back to Heliarc', await until(async () => !S.settings().extPrivacy.passwordSavingEnabled && !S.ext.list(S.spaceSessions()[0]).some(x => x.id === r3.id)), JSON.stringify(S.settings().extPrivacy))
     S.openPanel('extensions'); await sleep(700)
     ok('extensions panel lists it', await js(panel(), `document.body.innerText.includes('Heliarc test extension')`)); await snap(S.panel(), 'panel-extensions')
     await js(panel(), `document.querySelector('#extin').value = 'not an id'; document.querySelector('[data-a=installExt]').click()`)

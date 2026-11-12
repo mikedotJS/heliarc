@@ -730,7 +730,10 @@ async function loadBlocker() { // (re)loads the filter lists picked in Settings,
       privacy.filterRequests(ses, () => settings, () => blocker)
     }
     unhandle()
-    ipcMain.handle(cosmetic + 'inject-cosmetic-filters', (e, ...a) => adsAllowed(e.sender.getURL()) ? undefined : b.onInjectCosmeticFilters(e, ...a))
+    // its scriptlets go through webContents.executeJavaScript, which Electron holds until the page has finished loading: on YouTube they then landed on a running page and broke it
+    // (the next video clicked showed no player until a reload). The frame that asked runs them at once, each in its own block (several declare the same class, and all but the first failed)
+    const early = e => ({ frameId: e.frameId, processId: e.processId, sender: { insertCSS: (...c) => e.sender.insertCSS(...c), executeJavaScript: (c, g) => e.senderFrame?.executeJavaScript(`{${c}\n}`, g).catch(() => {}) } })
+    ipcMain.handle(cosmetic + 'inject-cosmetic-filters', (e, ...a) => adsAllowed(e.sender.getURL()) ? undefined : b.onInjectCosmeticFilters(early(e), ...a))
     ipcMain.handle(cosmetic + 'is-mutation-observer-enabled', e => adsAllowed(e.sender.getURL()) ? false : b.onIsMutationObserverEnabled(e))
     blocker = b; blockerState = 'on'; blockerList = want
   } catch (e) { console.warn('ad blocker:', e.message); blockerState = blocker ? 'on' : 'error' } finally {

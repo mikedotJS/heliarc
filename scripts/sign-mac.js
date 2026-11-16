@@ -9,7 +9,9 @@ const { APPLE_ID: appleId, APPLE_APP_PASSWORD: appleIdPassword, APPLE_TEAM_ID: t
   await sign({
     app: appPath,
     identity: `Developer ID Application`,
-    optionsForFile: () => ({ hardenedRuntime: true, entitlements: require('path').join(__dirname, 'entitlements.plist') }),
+    // the app itself also gets its keychain group (Touch ID passkeys), granted by the Developer ID profile; the helpers inside must not carry it
+    provisioningProfile: require('path').join(__dirname, 'embedded.provisionprofile'),
+    optionsForFile: f => ({ hardenedRuntime: true, entitlements: require('path').join(__dirname, f.includes('.app/') ? 'entitlements.plist' : 'entitlements-app.plist') }),
   })
   await notarize({ appPath, appleId, appleIdPassword, teamId }) // also staples the ticket
   console.log('signed and notarized:', appPath)

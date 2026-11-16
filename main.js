@@ -13,6 +13,8 @@ const updates = require('./lib/updates')
 const autoupdate = require('./lib/autoupdate')
 const mcpLib = require('./lib/mcp')
 const assistant = require('./lib/assistant')
+const git = require('./lib/git')
+try { const tls = require('tls'); tls.setDefaultCACertificates([...tls.getCACertificates('default'), ...tls.getCACertificates('system')]) } catch (e) { console.warn('system certificates:', e.message) } // Node's own fetch (GitLab, GitHub, filter lists) also trusts what the system trusts: a company's private authority
 const { Client: McpClient } = require('@modelcontextprotocol/sdk/client/index.js')
 const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js')
 
@@ -75,7 +77,7 @@ const push = () => {
   const c = listed(active) ? cur() : null, nav = c?.view?.webContents?.navigationHistory
   const s = {
     active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), siteOff: Object.values(SITE_OFF).filter(f => settings[f].includes(privacy.host(c?.url || ''))).length, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
-    askReady: !!assistantCfgRaw().key,
+    askReady: !!assistantCfgRaw().key, git: gitPublic(),
     sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.filter(d => !d.private || space === PRIVATE).slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
     media: listed(mediaTab) ? { id: mediaTab, playing: !!byId(mediaTab).playing } : null,
@@ -590,7 +592,9 @@ async function installExtension(input) {
 const crx = new Map()
 const crxOf = tab => crx.get(session.fromPartition(SPACES[tab.space].partition))
 const EXT_PRIVACY = ['passwordSavingEnabled', 'autofillAddressEnabled', 'autofillCreditCardEnabled'] // the chrome.privacy settings an extension may switch off (Heliarc has no card filling: that one is only remembered)
-const applyUserAgent = ses => ses.setUserAgent(settings.fingerprint ? app.userAgentFallback.replace(/ (Electron|Heliarc)\/\S+/g, '') : app.userAgentFallback) // on: sites see a plain Chrome, not an Electron app
+const ELECTRON_UA = app.userAgentFallback, CHROME_UA = ELECTRON_UA.replace(/ (Electron|Heliarc)\/\S+/gi, '')
+// on: sites see a plain Chrome, not an Electron app. The app-wide one counts too: a frame from another site (Cloudflare's check) reads it, and a mismatch fails the check
+const applyUserAgent = ses => { app.userAgentFallback = settings.fingerprint ? CHROME_UA : ELECTRON_UA; ses.setUserAgent(app.userAgentFallback) }
 function setupSession(ses) {
   if (configured.has(ses)) return; configured.add(ses)
   const priv = ses === session.fromPartition(SPACES[PRIVATE].partition)
@@ -611,6 +615,7 @@ function setupSession(ses) {
   const deviceBox = (kind, d, names) => choose(`${privacy.host(d.frame?.url || '')} wants to connect to a ${kind} device`, names, { detail: 'Choose a device.' }) // WebUSB, WebHID, Web Serial
   ses.on('select-usb-device', async (e, d, cb) => { e.preventDefault(); const i = await deviceBox('USB', d, d.deviceList.map(x => x.productName || 'Unknown device')); i < 0 ? cb() : cb(d.deviceList[i].deviceId) })
   ses.on('select-hid-device', async (e, d, cb) => { e.preventDefault(); const i = await deviceBox('HID', d, d.deviceList.map(x => x.name || 'Unknown device')); i < 0 ? cb() : cb(d.deviceList[i].deviceId) })
+  ses.on('select-webauthn-account', async (e, d, cb) => { let i = -1; try { i = await choose(`Sign in to ${d.relyingPartyId} with which passkey?`, d.accounts.map(a => a.name || a.displayName || 'Passkey')) } finally { cb(d.accounts[i]?.credentialId) } }) // Touch ID passkeys: several accounts on one site
   ses.on('select-serial-port', async (e, ports, wc, cb) => { e.preventDefault(); const i = await deviceBox('serial', { frame: { url: wc.getURL() } }, ports.map(x => x.displayName || x.portName)); cb(i < 0 ? '' : ports[i].portId) })
   ses.setPermissionCheckHandler((wc, permission, origin, d) => { // what a page reads with navigator.permissions.query: only yes or no, so camera and microphone not yet asked read as yes (Chrome's "ask"), else Meet says "blocked" and never asks
     if (SILENT.has(permission)) return true
@@ -842,6 +847,42 @@ let assistantData = null // what is saved: { key (encrypted), model }, read once
 const assistantSave = patch => { assistantData = { ...assistantCfgRaw(), ...patch }; store.save('assistant', assistantData) }
 const assistantCfgRaw = () => assistantData ??= store.load('assistant', {})
 const assistantCfg = () => { const c = assistantCfgRaw(); let key = null; try { key = c.key ? safeStorage.decryptString(Buffer.from(c.key, 'base64')) : null } catch {} return { key, model: assistant.MODELS[c.model] ? c.model : 'haiku' } }
+// ---- code hosts: GitHub and GitLab (lib/git.js). A token is kept encrypted by the system, like the passwords; the screens only get who is connected and how the last read went. ----
+let gitData = null, gitBusy = false, gitLast = 0 // gitData: [{ id, kind, host, login, token (encrypted) }], read once
+const gitAccounts = () => gitData ??= store.load('git', [])
+let gitState = { loading: false, items: [], errors: {}, at: 0 } // errors: account id -> failure code of the last read
+const gitPublic = () => {
+  const accounts = gitAccounts().map(({ token, ...a }) => ({ ...a, error: gitState.errors[a.id] || null }))
+  return { accounts, loading: gitState.loading, at: gitState.at, items: gitState.items.slice(0, 40), count: gitState.items.filter(i => i.kind !== 'mine' || i.ci === 'fail').length }
+}
+async function gitRefresh(force) {
+  const accs = gitAccounts()
+  if (!accs.length) { gitState = { loading: false, items: [], errors: {}, at: 0 }; return push() }
+  if (gitBusy || (force && Date.now() - gitLast < 5000)) return // a button pressed twice, or a read already under way
+  gitBusy = true; gitLast = Date.now(); gitState.loading = true; push()
+  const errors = {}, items = []
+  await Promise.all(accs.map(async a => {
+    const token = decrypt(a.token), r = token ? await git.fetchItems({ kind: a.kind, host: a.host, token }) : { error: 'invalid' }
+    if (r.error) errors[a.id] = r.error; else { a.login = r.login; items.push(...r.items.map(i => ({ ...i, account: a.id, source: a.kind }))) }
+  }))
+  const kept = accs.filter(a => errors[a.id]).flatMap(a => gitState.items.filter(i => i.account === a.id)) // an account that failed keeps what it showed last time
+  gitState = { loading: false, items: [...items, ...kept].sort((x, y) => git.rank(x) - git.rank(y) || new Date(y.at) - new Date(x.at)), errors, at: Date.now() }
+  gitBusy = false; store.save('git', gitAccounts()); push()
+}
+const gitText = { invalid: 'This token was refused: check it is right and has not expired.', forbidden: 'This token lacks the permissions to read your data.', offline: 'No connection: check your network and try again.', timeout: 'The service took too long to answer: try again.' }
+async function gitAdd({ id, kind, host, token }) { // the token is checked against the service before it is kept; with an id it replaces the token of that account (reconnect)
+  token = String(token || '').trim(); kind = git.KINDS.includes(kind) ? kind : null
+  const base = kind && git.normalizeHost(kind, host, TEST)
+  if (!kind || !base) return { error: 'This address doesn’t look right: use something like https://gitlab.example.com.' }
+  if (!/^\S{10,}$/.test(token)) return { error: 'Paste a personal access token (no spaces).' }
+  if (!safeStorage.isEncryptionAvailable()) return { error: 'This system can’t encrypt the token, so Heliarc won’t keep it.' }
+  const r = await git.fetchItems({ kind, host: base, token }); if (r.error) return { error: gitText[r.error] || r.error }
+  const old = gitAccounts().find(a => a.id === id || a.kind === kind && a.host === base && a.login === r.login), enc = safeStorage.encryptString(token).toString('base64')
+  const acc = old || { id: Date.now().toString(36), kind, host: base }
+  Object.assign(acc, { login: r.login, token: enc }); if (!old) gitAccounts().push(acc)
+  delete gitState.errors[acc.id] // the row stops saying "expired" now, not when the next read ends
+  store.save('git', gitAccounts()); gitRefresh(); return { ok: true, login: r.login }
+}
 const askSend = () => { if (!askUi || askUi.webContents.isDestroyed()) return; const { ctl, confirm, ...r } = askRun || {}; askUi.webContents.send('ask', askRun && { ...r, confirm: confirm && { label: confirm.label, site: confirm.site } }); layout() } // only what the card shows: a function (ctl, confirm.resolve) cannot cross to the screen
 const askEnd = patch => { if (!askRun || askRun.status === 'done' || askRun.status === 'error') return; Object.assign(askRun, { confirm: null }, patch); askSend() }
 function askConfirm({ label, site }) { // the click would send, pay, delete or publish: nothing happens until the user says so (no answer in 2 minutes = no)
@@ -900,6 +941,7 @@ app.whenReady().then(async () => {
   if (!gotLock) return // another instance is running: it handles this launch
   await components?.whenReady() // Widevine DRM (castlabs Electron): TF1+, Netflix, Disney+ …
   if (process.platform === 'darwin') app.dock?.setIcon(ICON)
+  if (process.platform === 'darwin' && app.isPackaged) app.configureWebAuthn({ touchID: { keychainAccessGroup: 'D7F9KXB7PH.app.heliarc.browser.webauthn', promptReason: 'sign in to $1' } }) // passkeys with Touch ID, kept in this Mac's keychain (needs the signed build: scripts/entitlements-app.plist)
   const saved = store.load('session', {})
   settings = { ...structuredClone(DEFAULTS), ...saved.settings }; for (const [i, o] of Object.entries(settings.spaces)) SPACES[i] && !SPACES[i].private && Object.assign(SPACES[i], o); history = store.load('history', []); vault = store.load('vault', []); profile = store.load('profile', {})
   downloads = store.load('downloads', []).map(d => d.state === 'progressing' || d.state === 'paused' ? { ...d, state: 'interrupted' } : d)
@@ -1055,6 +1097,9 @@ app.whenReady().then(async () => {
     const r = await assistant.checkKey(key); if (r.error) return r
     assistantSave({ key: safeStorage.encryptString(key).toString('base64') }); push(); return { ok: true }
   })
+  h('gitAdd', gitAdd); h('gitRefresh', () => gitRefresh(true))
+  h('gitRemove', id => { gitData = gitAccounts().filter(a => a.id !== id); store.save('git', gitData); gitState.items = gitState.items.filter(i => i.account !== id); delete gitState.errors[id]; gitRefresh() })
+  h('gitOpen', url => { try { const u = new URL(url); if (gitAccounts().some(a => u.origin === new URL(a.host).origin)) newTab(url) } catch {} }) // only addresses of a connected host
   h('mcpInfo', () => ({ ...mcp.status(), token: settings.mcp ? mcpToken : null }))
   h('mcpNewToken', async () => { mcpToken = mcp.newToken(); store.save('mcp', { token: mcpToken }); await mcpSync() }) // the old token stops working at once
   h('defaultBrowser', () => {
@@ -1108,6 +1153,7 @@ app.whenReady().then(async () => {
   edge.setVisible(!sidebar); restored = true
   tabs.length ? activate(byId(saved.active)?.id ?? tabs[0].id) : newTab()
   layout(); stack(); sweep(); setInterval(sweep, 5 * 60e3).unref()
+  gitRefresh(); setInterval(gitRefresh, 5 * 60e3).unref()
   if (!TEST && app.isPackaged) { const autoCheck = () => settings.autoUpdateCheck && checkUpdate(); setTimeout(autoCheck, 20e3).unref(); setInterval(autoCheck, 6 * 3600e3).unref() }
   if (!app.isPackaged && !TEST) for (const ses of spaceSessions()) ses.serviceWorkers.on('console-message', (_, d) => console.log('extension worker:', d.level, d.message.slice(0, 300))) // dev: surface extension worker warnings and errors
   if (!app.isPackaged && !TEST) { // dev only: reload the UI when ui/* changes, restart when the main process or the page preload changes
@@ -1129,7 +1175,7 @@ app.whenReady().then(async () => {
     tabs: () => tabs, newTab, closeTab, sleep, activate, go, resolve, cur, switchSpace, openCmd, closeCmd, cmdOpen: () => cmdOpen,
     pin: id => { const t = byId(id); t.pinned = !t.pinned; push() }, stats: () => ({ blocked, blockerState }), win: () => win, ui: () => ui, cmd: () => cmd,
     // library of hooks for the feature tests
-    S: { mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
+    S: { gitRefresh: () => gitRefresh(), mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
       ext, crx, extCommand, SYSTEM, realUrl, hungUi: () => hungUi, hungTab: () => hungTab, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },

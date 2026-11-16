@@ -53,7 +53,7 @@ module.exports = async (a, ok) => {
   const open = async (p, sp) => { const t = a.newTab(base + p, sp); await until(async () => t.view && t.title !== 'New tab' && !t.loading && t.url.startsWith(base)); return t }
   const reset = () => { a.switchSpace(0); S.folders().slice().forEach(f => S.delFolder(f.id)); for (const t of [...a.tabs()]) a.closeTab(t.id) }
   const uiN = sel => js(ui(), `document.querySelectorAll(${JSON.stringify(sel)}).length`)
-  const section = async (name, fn) => { try { await fn() } catch (e) { ok(name + ' (exception)', false, e.stack.split('\n').slice(0, 3).join(' | ')) } }
+  const section = async (name, fn) => { if (process.env.HELIARC_ONLY && !process.env.HELIARC_ONLY.split(',').some(w => name.includes(w))) return; try { await fn() } catch (e) { ok(name + ' (exception)', false, e.stack.split('\n').slice(0, 3).join(' | ')) } }
   reset(); await sleep(500)
 
   await section('browser basics', async () => {
@@ -240,6 +240,8 @@ module.exports = async (a, ok) => {
     ok('the engine chosen in the settings is the one used for a search', a.resolve('cats') === 'https://www.google.com/search?q=cats', a.resolve('cats'))
     await js(ui(), "api.call('setSetting', 'searchEngine', 'brave')"); await sleep(300)
     ok('your own bangs work and win over built-in ones', bg.resolve('!npm left pad', { bangs: mine }) === 'https://www.npmjs.com/search?q=left%20pad' && bg.resolve('!g x', { bangs: [{ trigger: 'g', url: 'https://example.com/?q=%s' }] }) === 'https://example.com/?q=x')
+    ok('!gh and !gl jump to a repository, an issue or a merge request', bg.resolve('!gh mikedotJS/heliarc') === 'https://github.com/mikedotJS/heliarc' && bg.resolve('!gh mikedotJS/heliarc#12') === 'https://github.com/mikedotJS/heliarc/issues/12' && bg.resolve('!gh o/r!3') === 'https://github.com/o/r/pull/3' && bg.resolve('!gl grp/sub/proj!7') === 'https://gitlab.com/grp/sub/proj/-/merge_requests/7' && bg.resolve('!gl grp/proj#4') === 'https://gitlab.com/grp/proj/-/issues/4')
+    ok('and still search when it is not a repository', bg.resolve('!gh react hooks') === 'https://github.com/search?q=react%20hooks' && bg.resolve('!gl runner') === 'https://gitlab.com/search?search=runner' && bg.resolve('!gh x/y', { bangs: [{ trigger: 'gh', url: 'https://git.example/s?q=%s' }] }) === 'https://git.example/s?q=x%2Fy')
     ok('built-in bangs work in capitals too', bg.resolve('!W cats') === 'https://en.wikipedia.org/w/index.php?search=cats')
     ok('names that only exist on every object are not bangs', bg.resolve('!constructor cats').startsWith('https://search.brave.com/') && bg.resolve('!__proto__ cats').startsWith('https://search.brave.com/'))
     await js(ui(), "api.call('setSetting', 'searchEngine', 'constructor')"); await sleep(300)
@@ -903,6 +905,62 @@ module.exports = async (a, ok) => {
     show({ ...done, status: 'run' }); await sleep(300)
     ok('no follow-up field while the assistant is working', await dom(`!document.querySelector('#fu')`))
     show(null); reset()
+  })
+
+  await section('code hosts: GitHub and GitLab reduced to one list in the sidebar', async () => {
+    if (!await js(panel(), 'state.canSavePw')) return ok('code hosts: skipped, this system cannot encrypt tokens', true)
+    const TOKEN = 'ghp_valid_token_1234567890'; let gone = false
+    const fake = http.createServer((q, r) => { // a tiny GitHub (GraphQL + notifications) and GitLab (REST), one token for both
+      const send = (code, body) => { r.writeHead(code, { 'Content-Type': 'application/json' }); r.end(JSON.stringify(body)) }
+      const u = new URL(q.url, 'http://x'), host = 'http://' + q.headers.host, auth = (q.headers.authorization || '') + ' ' + (q.headers['private-token'] || '')
+      if (!auth.includes(TOKEN) || gone) return send(401, { message: 'Bad credentials' })
+      const now = new Date().toISOString()
+      const pr = (title, state) => ({ title, url: host + '/o/r/pull/1', updatedAt: now, repository: { nameWithOwner: 'o/r' }, commits: { nodes: [{ commit: { statusCheckRollup: state && { state } } }] } })
+      if (u.pathname === '/api/graphql') return send(200, { data: { viewer: { login: 'tester' }, review: { nodes: [pr('Please review me')] }, mine: { nodes: [pr('My broken PR', 'FAILURE'), pr('My green PR', 'SUCCESS')] }, issue: { nodes: [{ title: 'A bug for me', url: host + '/o/r/issues/2', updatedAt: now, repository: { nameWithOwner: 'o/r' } }] } } })
+      if (u.pathname === '/api/v3/notifications') return send(200, [{ subject: { title: 'Build broke', url: host + '/api/v3/repos/o/r/issues/7' }, repository: { full_name: 'o/r' }, updated_at: now }])
+      const mr = (title, status) => ({ title, web_url: host + '/g/p/-/merge_requests/3', updated_at: now, references: { full: 'g/p!3' }, head_pipeline: status && { status } })
+      if (u.pathname === '/api/v4/user') return send(200, { username: 'gltester' })
+      if (u.pathname === '/api/v4/merge_requests') return send(200, u.searchParams.get('scope') === 'created_by_me' ? [mr('GitLab failing MR', 'failed')] : [mr('GitLab review me')])
+      if (u.pathname === '/api/v4/issues') return send(200, [{ title: 'GitLab issue', web_url: host + '/g/p/-/issues/4', updated_at: now, references: { full: 'g/p#4' } }])
+      if (u.pathname === '/api/v4/todos') return send(200, [{ body: 'GitLab todo', target_url: host + '/g/p/-/issues/5', updated_at: now, project: { path_with_namespace: 'g/p' } }])
+      send(404, { message: 'nope' })
+    })
+    await new Promise(r => fake.listen(0, '127.0.0.1', r)); const hbase = 'http://127.0.0.1:' + fake.address().port
+    const add = o => js(panel(), `api.call('gitAdd', ${JSON.stringify(o)})`), git = code => js(panel(), 'state.git.' + code), card = () => js(ui(), "document.querySelector('#git')?.innerText || ''")
+    const refused = await add({ kind: 'github', host: hbase, token: 'ghp_wrong_token_999999' })
+    ok('a refused token is explained and nothing is kept', /refused/.test(refused.error) && await git('accounts.length') === 0 && await card() === '', JSON.stringify(refused))
+    ok('an address that is not a web address is refused', /address/.test((await add({ kind: 'gitlab', host: 'ftp://x.example', token: TOKEN })).error))
+    const gh = await add({ kind: 'github', host: hbase, token: TOKEN })
+    ok('a valid token connects GitHub', gh.ok && gh.login === 'tester', JSON.stringify(gh))
+    await sleep(800); ok('the token is stored encrypted, not in clear', !fs.readFileSync(path.join(require('electron').app.getPath('userData'), 'git.json'), 'utf8').includes(TOKEN))
+    ok('the sidebar card counts what waits for you (review, issue, notification, failing CI)', await until(async () => /4 waiting for you/.test(await card())), await card())
+    await js(ui(), "document.querySelector('#git .card .mt').click()"); await sleep(300)
+    ok('opening the card lists the items and marks the CI', await uiN('#git .gi[data-url]') === 5 && await uiN('#git .ci.fail') === 1 && await uiN('#git .ci.ok') === 1, await uiN('#git .gi[data-url]'))
+    await snap(a.ui(), 'git-card')
+    await js(ui(), "document.querySelector('#git .gi[data-url]').click()")
+    ok('a row opens the item in a tab', await until(async () => a.tabs().some(t => t.url.startsWith(hbase + '/o/r/'))))
+    const n = a.tabs().length; await js(panel(), "api.call('gitOpen', 'https://evil.example/x')"); await sleep(300)
+    ok('an address of another site is never opened', a.tabs().length === n)
+    const gl = await add({ kind: 'gitlab', host: hbase, token: TOKEN })
+    ok('GitLab connects the same way', gl.ok && gl.login === 'gltester', JSON.stringify(gl))
+    ok('its items join the same list, in the same format', await until(async () => await git("items.filter(i => i.source === 'gitlab').length") === 4) && await git('items.every(i => i.title && i.repo && i.url && i.at)'))
+    ok('the two services add up in the badge', await until(async () => /8 waiting for you/.test(await card())), await card())
+    gone = true; await S.gitRefresh()
+    ok('an expired token is shown, with a way to reconnect, and the last list stays', await until(async () => /token expired/.test(await card()) && await uiN('#git [data-g=fix]') === 1) && await uiN('#git .gi[data-url]') > 0)
+    await js(ui(), "document.querySelector('#git [data-g=fix]').click()")
+    ok('the reconnect button opens the settings on the integrations', await until(async () => await js(panel(), "!!document.querySelector('[data-a=gitReconnect]')")))
+    await js(panel(), "document.querySelector('[data-a=gitReconnect]').click()"); await sleep(200)
+    ok('reconnecting asks for a new token only', await js(panel(), "document.querySelector('#gtoken').placeholder.includes('New token') && document.querySelector('#gprov').disabled"))
+    gone = false; await js(panel(), `(() => { const i = document.querySelector('#gtoken'); i.value = '${TOKEN}'; i.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('[data-a=gitAdd]').click() })()`)
+    ok('a new token brings the account back', await until(async () => await git('accounts.every(a => !a.error)') && /8 waiting for you/.test(await card()), 10000), await card())
+    await snap(S.panel(), 'git-settings')
+    await js(panel(), "document.querySelector('[data-a=gitAsk]').click()"); await sleep(200)
+    ok('removing asks first, and can be cancelled', await js(panel(), "document.body.innerText.includes('Remove this account?')") && await git('accounts.length') === 2)
+    await js(panel(), "document.querySelector('[data-a=gitKeep]').click()"); await sleep(100)
+    ok('cancelling keeps the account', await git('accounts.length') === 2)
+    for (let i = 0; i < 2; i++) { await js(panel(), "document.querySelector('[data-a=gitAsk]').click()"); await sleep(150); await js(panel(), "document.querySelector('[data-a=gitRemove]').click()"); await sleep(400) }
+    ok('removed accounts take their items and the card away', await until(async () => await git('accounts.length') === 0 && await git('items.length') === 0 && await card() === ''), await card())
+    S.closePanel(); fake.close(); reset()
   })
 
   await section('security: the app\'s own screens are locked down', async () => {

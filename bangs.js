@@ -2,7 +2,7 @@ const fs = require('fs'), os = require('os'), path = require('path'), { pathToFi
 // Bangs: "!w cats" -> direct site search (same idea as Helium's native bangs).
 const BANGS = { // trigger: [name, search address, the site's brand colour]
   g: ['Google', 'https://www.google.com/search?q=%s', '#4285f4'], w: ['Wikipedia', 'https://en.wikipedia.org/w/index.php?search=%s', '#3a3a3a'],
-  yt: ['YouTube', 'https://www.youtube.com/results?search_query=%s', '#ff0033'], gh: ['GitHub', 'https://github.com/search?q=%s', '#24292f'],
+  yt: ['YouTube', 'https://www.youtube.com/results?search_query=%s', '#ff0033'], gh: ['GitHub', 'https://github.com/search?q=%s', '#24292f'], gl: ['GitLab', 'https://gitlab.com/search?search=%s', '#fc6d26'],
   ddg: ['DuckDuckGo', 'https://duckduckgo.com/?q=%s', '#de5833'], a: ['Amazon', 'https://www.amazon.com/s?k=%s', '#ff9900'], r: ['Reddit', 'https://www.reddit.com/search/?q=%s', '#ff4500'],
   b: ['Bing', 'https://www.bing.com/search?q=%s', '#008373'], br: ['Brave Search', 'https://search.brave.com/search?q=%s', '#fb542b'],
   gi: ['Google Images', 'https://www.google.com/search?tbm=isch&q=%s', '#4285f4'], gm: ['Google Maps', 'https://www.google.com/maps/search/%s', '#34a853'],
@@ -31,12 +31,16 @@ function localFile(input, pagesOnly = false) {
 }
 
 // opts.searchEngine picks the search engine, opts.bangs are the user's own "!trigger" shortcuts (they win over the built-in ones)
+// "!gh owner/repo", "!gh owner/repo#12" (issue or pull request), "!gl group/project!7" (merge request): straight to the page instead of a search
+const JUMPS = { gh: ['https://github.com', 'issues', 'pull'], gl: ['https://gitlab.com', '-/issues', '-/merge_requests'] }
+const jump = (k, q) => { const j = JUMPS[k], m = j && q.trim().match(/^([\w.-]+(?:\/[\w.-]+)+)(?:([#!])(\d+))?$/); return m && `${j[0]}/${m[1]}${m[2] ? '/' + (m[2] === '#' ? j[1] : j[2]) + '/' + m[3] : ''}` }
 function resolve(input, { searchEngine = 'brave', bangs = [] } = {}) {
   const t = input.trim()
   if (!t) return 'about:blank'
   const m = t.match(/^!(\w+)\s+(.+)$/)
   const k = m?.[1].toLowerCase()
   const url = m && (bangs.find(x => x.trigger === k && hostOf(x))?.url || (Object.hasOwn(BANGS, k) && BANGS[k][1]))
+  const to = m && !bangs.some(x => x.trigger === k) && jump(k, m[2]); if (to) return to // your own !gh still wins
   if (url) return url.replace('%s', encodeURIComponent(m[2]))
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t
   const file = localFile(t); if (file) return file

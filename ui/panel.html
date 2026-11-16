@@ -46,7 +46,7 @@ const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 const ago = at => { const m = Math.round((at - Date.now()) / 6e4); return Math.abs(m) < 60 ? rtf.format(m, 'minute') : Math.abs(m) < 1440 ? rtf.format(Math.round(m / 60), 'hour') : rtf.format(Math.round(m / 1440), 'day') }
 const SECTIONS = [['downloads', 'Downloads', 'download'], ['media', 'Media', 'image'], ['archive', 'Archive', 'archive'], ['history', 'History', 'history'], ['passwords', 'Passwords', 'key-round'], ['extensions', 'Extensions', 'puzzle'], ['protections', 'Site protections', 'shield-check'], ['settings', 'Settings', 'settings']]
 const MEDIA = /^(image|video|audio)\//, MEDIAEXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|mp4|webm|mov|mkv|mp3|wav|ogg|m4a|flac)$/i
-const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0', akey: '' } // what is typed in the add forms survives a redraw
+const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0', akey: '', gprov: 'github', ghost: '', gtoken: '', gid: '' } // what is typed in the add forms survives a redraw
 let qt, shown = {}, state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, working = null, mcpData = null, asData = null, detected = [] // working: the import or update check in progress, its buttons wait for the answer
 const fileUrl = p => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '').split('/').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:')
 
@@ -144,6 +144,23 @@ function mcpBlock(st) { // the server starts a moment after the switch: waiting,
     <div class="line"><input class="ds-field" readonly value="${esc(mcpCmd(m))}" style="flex:1" spellcheck="false" onfocus="this.select()"><button class="ds-btn sm" data-a="mcpCopy">Copy</button><button class="ds-btn sm" data-a="mcpNewToken">New token</button></div>
     <div class="msg ${note?.mcp ? 'ok' : ''}">${esc(note?.mcp || 'Other apps: address http://127.0.0.1:' + m.port + '/mcp, header Authorization: Bearer plus the token above. A new token cuts off every app that used the old one.')}</div>`
 }
+const GIT_NAMES = { github: 'GitHub', gitlab: 'GitLab' }, GIT_STATUS = { invalid: 'Token expired or revoked', forbidden: 'Missing permissions', offline: 'Offline', timeout: 'Too slow to answer' }
+let sure = null // the account whose removal is waiting for a yes
+function gitBlock(S) { // tokens are never shown again once saved; an account that failed offers to reconnect
+  if (!S.canSavePw) return '<div class="msg bad">This system can’t encrypt tokens, so Heliarc doesn’t keep them.</div>'
+  const wait = working === 'git', g = S.git, n = note?.git
+  const rows = g.accounts.map(a => {
+    const bad = a.error ? `<span class="bad">${esc(GIT_STATUS[a.error] || a.error)}</span>` : g.loading ? 'Checking…' : 'Connected'
+    return `<div class="line"><label>${GIT_NAMES[a.kind]} · ${esc(a.login)}<small>${esc(host(a.host))} · ${bad}</small></label>${sure === a.id ? `<span>Remove this account?</span><button class="ds-btn sm" data-a="gitRemove" data-id="${a.id}">Yes, remove</button><button class="ds-btn sm" data-a="gitKeep">Cancel</button>`
+      : `${a.error === 'invalid' || a.error === 'forbidden' ? `<button class="ds-btn sm" data-a="gitReconnect" data-id="${a.id}">Reconnect</button>` : ''}<button class="ds-btn sm" data-a="gitAsk" data-id="${a.id}">Remove</button>`}</div>`
+  }).join('')
+  const re = g.accounts.find(a => a.id === draft.gid), tip = draft.gprov === 'gitlab' ? 'a token with the read_api permission' : 'a classic token with repo and notifications, or a fine-grained read-only one'
+  return rows + `<div class="line"><select class="ds-select" id="gprov" data-gprov ${wait || re ? 'disabled' : ''}>${Object.entries(GIT_NAMES).map(([k, v]) => `<option value="${k}" ${k === draft.gprov ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    <input class="ds-field" id="ghost" placeholder="${draft.gprov === 'gitlab' ? 'gitlab.com, or your own server' : 'github.com, or your Enterprise server'}" value="${esc(draft.ghost)}" style="flex:1" spellcheck="false" ${wait || re ? 'disabled' : ''}></div>
+    <div class="line"><input class="ds-field" id="gtoken" type="password" placeholder="${re ? 'New token for ' + esc(re.login) : 'Personal access token'}" value="${esc(draft.gtoken)}" style="flex:1" spellcheck="false" autocomplete="off" ${wait ? 'disabled' : ''}>
+    <button class="ds-btn sm${wait ? ' is-loading' : ''}" data-a="gitAdd" ${wait ? 'disabled' : ''}>${wait ? '<span class="spin"></span>Checking…' : re ? 'Reconnect' : 'Connect'}</button>${re && !wait ? '<button class="ds-btn sm" data-a="gitCancelReconnect">Cancel</button>' : ''}</div>
+    <div class="msg ${n?.error ? 'bad' : n?.text && !wait ? 'ok' : ''}">${esc(n?.error || n?.text || 'Use ' + tip + '. It is checked, then kept encrypted by your system. Heliarc only reads: your reviews, issues, notifications and CI.')}</div>`
+}
 const MODEL_NAMES = { haiku: 'Haiku (fastest, cheapest)', sonnet: 'Sonnet (balanced)', opus: 'Opus (most careful)' }
 function assistantBlock(st) { // the key is never shown again once saved: only whether there is one
   if (!st.assistant || !asData) return ''
@@ -184,6 +201,7 @@ function settings(S) {
     ${mcpBlock(st)}
     ${toggle('assistant', 'Ask Heliarc, in the command bar', 'Type a sentence (or start with ?) and Heliarc does it in your browser. Uses your own Claude API key, kept encrypted by your system. Your sentence and the pages it reads for that request are sent to Claude, nothing else')}
     ${assistantBlock(st)}</section>
+  <section><h3>Integrations</h3>${gitBlock(S)}</section>
   <section><h3>Search</h3>
     <div class="line"><label>Search engine<small>Used when you type something that isn’t an address</small></label><select class="ds-select" data-engine>${Object.entries(S.engines).map(([k, n]) => `<option value="${k}" ${k === st.searchEngine ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
     <div class="msg">Bangs jump straight to a site: type <b>!w cats</b> or <b>!yt lofi</b>. Type <b>!</b> in the command bar to see them all. Add your own:</div>
@@ -249,6 +267,11 @@ const ACT = {
   defaultBrowser: async () => { const ok = await api.call('defaultBrowser'); note = { text: ok ? 'Heliarc is now the default browser.' : 'Choose Heliarc in the system settings window that just opened.', cls: ok ? 'ok' : '' }; render() },
   saveProfile: async () => { const p = {}; document.querySelectorAll('[data-pf]').forEach(i => p[i.dataset.pf] = i.value.trim()); await api.call('setProfile', p); data = p; const mine = note = { profile: 'Saved ✓' }; render(); setTimeout(() => { if (note === mine) { note = null; section === 'settings' && paint() } }, 2500) },
   assistantSave: () => work('akey', 'akey', 'Checking…', async () => { const r = await api.call('assistantSetKey', draft.akey); if (r.error) return r; draft.akey = ''; asData = await api.call('assistantInfo'); return { text: 'Key saved ✓' } }, 'Couldn’t check the key. Try again.'),
+  gitAdd: () => work('git', 'git', 'Checking…', async () => { const r = await api.call('gitAdd', { id: draft.gid || undefined, kind: draft.gprov, host: draft.ghost, token: draft.gtoken }); if (r.error) return r; Object.assign(draft, { gtoken: '', ghost: '', gid: '' }); return { text: `Connected as ${r.login} ✓` } }, 'Couldn’t reach the service. Try again.'),
+  gitAsk: el => { sure = el.dataset.id; render() }, gitKeep: () => { sure = null; render() },
+  gitRemove: async el => { sure = null; await api.call('gitRemove', el.dataset.id); note = null },
+  gitReconnect: el => { const a = state.git.accounts.find(x => x.id === el.dataset.id); if (a) { Object.assign(draft, { gid: a.id, gprov: a.kind, ghost: a.host, gtoken: '' }); note = null; render(); $('#gtoken')?.focus() } },
+  gitCancelReconnect: () => { Object.assign(draft, { gid: '', ghost: '', gtoken: '' }); note = null; render() },
   assistantRemove: async () => { await api.call('assistantRemoveKey'); asData = await api.call('assistantInfo'); note = null; render() },
   mcpCopy: async () => { await navigator.clipboard.writeText(mcpCmd(mcpData)); const mine = note = { mcp: 'Copied ✓' }; render(); setTimeout(() => { if (note === mine) { note = null; section === 'settings' && paint() } }, 2500) },
   mcpNewToken: async () => { await api.call('mcpNewToken'); mcpData = await api.call('mcpInfo'); const mine = note = { mcp: 'New token ready: copy the command again.' }; render(); setTimeout(() => { if (note === mine) { note = null; section === 'settings' && paint() } }, 4000) },
@@ -266,6 +289,7 @@ $('#body').onchange = async e => {
   try { if (t.dataset.perm) { const [h, k] = t.dataset.perm.split('|'); await api.call('setSitePerm', h, k, t.value === 'x' ? null : t.value === '1') }
   else if (t.matches('[data-list]')) await api.call('setSetting', 'adblockList', t.value)
   else if (t.matches('[data-engine]')) await api.call('setSetting', 'searchEngine', t.value)
+  else if (t.matches('[data-gprov]')) { draft.gprov = t.value; draft.ghost = ''; note = null; render() }
   else if (t.matches('[data-amodel]')) { await api.call('assistantModel', t.value); asData = await api.call('assistantInfo') }
   else if (t.matches('[data-side]')) await api.call('setSetting', 'sidebarSide', t.value)
   else if (t.matches('[data-hours]')) await api.call('setSetting', 'archiveHours', +t.value)

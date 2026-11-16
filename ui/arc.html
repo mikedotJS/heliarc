@@ -49,6 +49,9 @@
   .card { display: flex; align-items: center; gap: 8px; background: var(--shade-0); border-radius: var(--r-md); padding: 8px 10px; font-size: var(--fs-sm); cursor: pointer }
   .card .mt { flex: 1; min-width: 0; display: flex; flex-direction: column } .card b, .card small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap } .card small { opacity: .7 }
   .card button { padding: 3px 5px; color: var(--on-color) } .bar { height: 3px; background: var(--glass-2); border-radius: var(--r-xs); margin-top: 4px } .bar i { display: block; height: 100%; background: var(--on-color); border-radius: var(--r-xs); transition: width .25s }
+  #git .rows { display: flex; flex-direction: column; gap: 2px; margin-top: 4px } #git .gi { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--r-md); font-size: var(--fs-sm); cursor: pointer } #git .gi:hover, #git .gi:focus-visible { background: var(--glass-1) }
+  #git .gi .mt { flex: 1; min-width: 0; display: flex; flex-direction: column } #git .gi b, #git .gi small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: normal } #git .gi small { opacity: .7 } #git .gi .ic { flex: none; opacity: .8 } #git .gi.more { cursor: default; opacity: .7; font-size: var(--fs-xs) } #git .gi.more:hover { background: none }
+  #git .n { min-width: 18px; padding: 1px 6px; border-radius: var(--r-pill); background: var(--glass-3); font-size: var(--fs-xs); text-align: center } #git .ci { width: 8px; height: 8px; border-radius: var(--r-pill); flex: none; background: var(--warn) } #git .ci.ok { background: var(--ok) } #git .ci.fail { background: var(--err) }
   #foot { display: flex; align-items: center; gap: 4px; padding-top: 6px; border-top: 1px solid var(--glass-1) }
   #foot .sp { flex: 1 } #foot button { padding: 4px 7px; font-size: var(--fs-lg); opacity: .6; color: var(--on-color) } #foot button.on { opacity: 1; background: var(--glass-2) } #foot button:hover { opacity: 1 }
   #drag { position: fixed; top: 0; left: 0; right: 0; height: var(--top, 0); -webkit-app-region: drag } #nav .sp { align-self: stretch; -webkit-app-region: drag } /* the Mac window has no title bar: drag it by the strip behind the traffic lights */
@@ -64,7 +67,7 @@
   <div id="newrow"><button id="newbtn"><span id="plus"></span> New tab <small style="opacity:.6">Ctrl+T</small></button><button id="nf" title="New folder"></button></div>
   <div id="list" data-zone="list"></div>
   <browser-action-list id="exts" alignment="top right"></browser-action-list>
-  <div id="mini"></div><div id="dl"></div><div id="upd"></div>
+  <div id="git"></div><div id="mini"></div><div id="dl"></div><div id="upd"></div>
   <div id="shield"></div>
   <div id="foot"></div>
 </div>
@@ -111,6 +114,11 @@ $('#side').addEventListener('wheel', e => {
   const to = state.space + Math.sign(swipe)
   if (Math.abs(swipe) > 60 && to >= 0 && to < state.spaces.length) { swipeLock = now + 600; swipe = 0; api.call('space', to) }
 }, { passive: true })
+$('#git').onclick = e => {
+  const b = e.target.closest('[data-g]')?.dataset.g, row = e.target.closest('.gi[data-url]')
+  if (row) api.call('gitOpen', row.dataset.url); else if (b === 'refresh') api.call('gitRefresh'); else if (b === 'fix') api.call('openPanel', 'settings'); else if (!b && e.target.closest('.card')) { gitOpen = !gitOpen; render() }
+}
+$('#git').onkeydown = e => { if (e.key === 'Enter' && e.target.matches('.gi[data-url]')) api.call('gitOpen', e.target.dataset.url) }
 $('#upd').onclick = e => { const b = e.target.closest('[data-u]'); b && api.call(b.dataset.u === 'install' ? 'installUpdate' : 'openRelease') }
 $('#shield').onclick = () => api.call('openPanel', 'protections')
 $('#pwbar').onclick = e => { const a = e.target.dataset.pw; if (a) api.call(a) }
@@ -121,6 +129,19 @@ $('#dl').onclick = async e => {
   if (r?.error) { dlError = { id: +b.dataset.id, text: r.error }; render() } // the main process says why a retry can't start (no tab to start it from)
 }
 
+const GIT_KIND = { review: ['eye', 'Waiting for your review'], issue: ['circle-dot', 'Issue assigned to you'], todo: ['bell', 'Notification'], mine: ['git-pull-request', 'Your pull request'] }, GIT_NAME = { github: 'GitHub', gitlab: 'GitLab' }
+const GIT_ERR = { invalid: 'token expired', forbidden: 'missing permissions', offline: 'offline', timeout: 'too slow to answer' }, CI_NAME = { ok: 'CI passed', fail: 'CI failed', run: 'CI running' }
+const age = at => { const m = Math.max(1, Math.round((Date.now() - new Date(at)) / 6e4)); return m < 60 ? m + ' min' : m < 1440 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d' }
+let gitOpen = false // the list under the code card is folded until asked for
+function gitCard(s) { // loading -> list | nothing to do | some accounts failing (with a way out: reconnect or retry)
+  const g = s.git; if (!g?.accounts.length || s.spaces[s.space].private) return ''
+  const bad = g.accounts.filter(a => a.error), first = g.loading && !g.at, fix = bad.some(a => a.error === 'invalid' || a.error === 'forbidden')
+  const title = first ? 'Loading your code…' : g.items.length ? `${g.count} waiting for you` : bad.length ? 'Couldn’t update your code' : 'Nothing waiting for you ✓'
+  const sub = bad.length ? bad.map(a => `${GIT_NAME[a.kind]}: ${GIT_ERR[a.error] || a.error}`).join(' · ') : first ? 'GitHub / GitLab' : 'Updated ' + age(g.at) + ' ago'
+  const btns = fix ? '<button data-g="fix" title="Open the settings to reconnect">Reconnect</button>' : (g.count && !first ? `<span class="n">${g.count}</span>` : '') + `<button data-g="refresh" title="Refresh" ${g.loading ? 'disabled' : ''}>${g.loading ? '<span class="spin"></span>' : icon('refresh-cw', 14)}</button>` // a token that no longer works has nothing to refresh: only the way out is offered
+  const shown = g.items.slice(0, 8), rows = gitOpen ? shown.map(i => `<div class="gi" tabindex="0" role="link" data-url="${esc(i.url)}" title="${esc(GIT_KIND[i.kind][1] + ': ' + i.title)}">${icon(GIT_KIND[i.kind][0], 13)}<div class="mt"><b>${esc(i.title)}</b><small>${esc(i.repo)} · ${age(i.at)}</small></div>${i.ci ? `<span class="ci ${i.ci}" title="${CI_NAME[i.ci]}"></span>` : ''}</div>`).join('') + (g.items.length > shown.length ? `<div class="gi more">+ ${g.items.length - shown.length} more on the sites</div>` : '') : ''
+  return card('', bad.length && !g.items.length ? 'circle-alert' : 'git-pull-request', title, sub, btns) + (rows ? `<div class="rows">${rows}</div>` : '')
+}
 const seen = new Set(); let dlError = null, lastSpace = null, state = null, editing = null, drag = false, pressed = false, stale = false
 const sortables = []
 function mount() { // drag & drop between favorites, pinned, folders and today's tabs
@@ -170,7 +191,8 @@ function render() {
   $('#list').innerHTML = rest.map(t => row(t, s, n++, fresh)).join('') || (mine.length || s.tabs.some(t => t.fav) ? '' : '<div id="empty">No tabs in this space</div>')
   s.tabs.forEach(t => seen.add(t.id))
   const m = s.media && s.tabs.find(t => t.id === s.media.id)
-  const had = ['mini', 'upd', 'dl'].map(k => !!$('#' + k).firstElementChild) // a card that is already there is updated, not shown again: no new entrance animation
+  $('#git').innerHTML = gitCard(s)
+  const had = ['git', 'mini', 'upd', 'dl'].map(k => !!$('#' + k).firstElementChild) // a card that is already there is updated, not shown again: no new entrance animation
   $('#mini').innerHTML = m && m.id !== s.active ? card('', 'music', m.title || m.url, host(m.url), `<button data-m="toggle" title="${s.media.playing ? 'Pause' : 'Play'}">${icon(s.media.playing ? 'pause' : 'play', 14)}</button><button data-m="mute" title="Mute">${icon(m.muted ? 'volume-x' : 'volume-2', 14)}</button><button data-m="go" title="Go to tab">${icon('external-link', 14)}</button>`) : ''
   const d = s.downloads.find(x => x.state === 'progressing' || x.state === 'paused') || s.downloads.find(x => x.state === 'completed' && Date.now() - x.at < 8000) || s.downloads.find(x => x.state === 'interrupted' && Date.now() - x.at < 60000)
   const busy = s.downloads.filter(x => x.state === 'progressing').length
@@ -179,7 +201,7 @@ function render() {
     : u?.state === 'downloading' ? card('', 'download', 'Updating Heliarc' + (v ? ' to ' + v : ''), 'Downloading…', '', 5)
     : s.update ? card('', 'download', 'Heliarc ' + v + ' is available', 'You have ' + s.version, '<button data-u="open">Get it</button>') : ''
   $('#dl').innerHTML = d?.state === 'interrupted' ? card('', 'triangle-alert', d.name, dlError?.id === d.id ? dlError.text : 'Download failed: the connection was lost or the site refused it', `<button data-dl="retry" data-id="${d.id}">Retry</button><button data-dl="drop" data-id="${d.id}" title="Dismiss">${icon('x', 14)}</button>`) : d ? card('', d.state === 'completed' ? 'check' : 'download', d.name, d.state === 'completed' ? 'Download complete' : `${d.total ? Math.round(d.received / d.total * 100) + '%' : 'Downloading…'}${busy > 1 ? ` · ${busy} downloads` : ''}`, '', d.state === 'completed' ? null : d.total ? d.received / d.total * 100 : 5) : ''
-  ;['mini', 'upd', 'dl'].forEach((k, i) => $('#' + k).firstElementChild?.classList.toggle('still', had[i]))
+  ;['git', 'mini', 'upd', 'dl'].forEach((k, i) => $('#' + k).firstElementChild?.classList.toggle('still', had[i]))
   $('#shield').innerHTML = s.blockerState === 'loading' ? 'Loading ad blocker…' : s.blockerState === 'error' ? `${icon('shield-alert', 13)} Ad blocker offline (lists unreachable)` : `${icon('shield-check', 13)} ${s.blocked} ads & trackers blocked`
   $('#shield').classList.toggle('off', !!s.siteOff); $('#shield').title = 'Protections on this site: click to manage them'
   if (s.siteOff && s.adHost) $('#shield').innerHTML = `${icon('shield-off', 13)} ${s.siteOff} protection${s.siteOff > 1 ? 's' : ''} off on ${esc(s.adHost)}`

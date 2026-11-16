@@ -41,7 +41,7 @@ const SPACES = [ // one browser profile (cookies, logins) per space
 ]
 const PRIVATE = SPACES.findIndex(s => s.private)
 const ZOOMS = [.25, .33, .5, .67, .75, .8, .9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
-const DEFAULTS = { archiveHours: 12, routes: [], shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', antiAdblock: true, extPrivacy: {}, searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false, assistant: false }
+const DEFAULTS = { archiveHours: 12, routes: [], blockedSites: [], blockSchedules: {}, blockPauses: {}, shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', antiAdblock: true, extPrivacy: {}, searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false, assistant: false }
 // Picture-in-picture for the biggest playing, unmuted video (needs a user gesture, which executeJavaScript can claim)
 const PIP_ON = `(async () => { const v = [...document.querySelectorAll('video')].filter(v => !v.paused && !v.ended && !v.muted && v.readyState > 2 && v.videoWidth && !v.disablePictureInPicture).sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0]; if (!v || document.pictureInPictureElement) return false; await v.requestPictureInPicture(); return true })()`
 const PIP_OFF = `document.pictureInPictureElement && document.exitPictureInPicture()`
@@ -76,7 +76,7 @@ const push = () => {
   const listed = id => { const t = byId(id); return !!t && (!SPACES[t.space].private || space === PRIVATE) } // what the UI is sent must exist in the tab list it receives
   const c = listed(active) ? cur() : null, nav = c?.view?.webContents?.navigationHistory
   const s = {
-    active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), siteOff: Object.values(SITE_OFF).filter(f => settings[f].includes(privacy.host(c?.url || ''))).length, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
+    active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), blocksOn: privacy.activeBlocks(settings), siteOff: Object.values(SITE_OFF).filter(f => settings[f].includes(privacy.host(c?.url || ''))).length, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
     askReady: !!assistantCfgRaw().key, git: gitPublic(),
     sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.filter(d => !d.private || space === PRIVATE).slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
@@ -150,14 +150,17 @@ const hardenWc = wc => { wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc)); wc.on('
 // the protections the user can turn off for one site: name -> the setting listing the sites where it is off
 const SITE_OFF = { ads: 'adblockOff', cookies: 'cookiesOk', fingerprint: 'fingerprintOff', webrtc: 'webrtcOff' }
 // which system screen a failed load gets: Chromium's net error codes
-const sysKind = code => !net.isOnline() || code === -106 ? 'offline' : code === -105 ? 'notfound' : code === -102 || code === -101 ? 'refused' : code === -7 || code === -118 ? 'timeout' : code <= -200 && code > -300 ? 'cert' : 'load'
+const sysKind = (code, url) => code === -20 && privacy.blockedBy(privacy.activeBlocks(settings), url) ? 'blocked' : !net.isOnline() || code === -106 ? 'offline' : code === -105 ? 'notfound' : code === -102 || code === -101 ? 'refused' : code === -7 || code === -118 ? 'timeout' : code <= -200 && code > -300 ? 'cert' : 'load'
 function showSystem(tab, kind, { url, detail, msg }) {
   const wc = tab.view?.webContents; if (!wc || wc.isDestroyed()) return
   const tries = tab.sys?.url === url && tab.sys.kind === kind ? tab.sys.tries + 1 : 1
-  tab.sys = { kind, url, tries, detail, msg: msg || `${{ offline: 'You’re offline', notfound: 'Address not found', refused: 'Connection refused', timeout: 'The site took too long to answer', cert: 'Connection not private', load: 'Failed to load' }[kind]} — ${url}` }
+  if (kind === 'blocked') detail = blockNote(url)
+  tab.sys = { kind, url, tries, detail, msg: msg || `${{ blocked: 'You blocked this site', offline: 'You’re offline', notfound: 'Address not found', refused: 'Connection refused', timeout: 'The site took too long to answer', cert: 'Connection not private', load: 'Failed to load' }[kind]} — ${url}` }
   tab.loading = false
   wc.loadURL(SYSTEM + '#' + encodeURIComponent(JSON.stringify({ kind, url, host: hostOf(url), detail, tries })))
 }
+// a page that moves to a blocked address without loading a new one (a link inside a web app, like YouTube Shorts) gets the blocked screen too
+const blockInPage = (o, u) => privacy.blockedBy(privacy.activeBlocks(settings), u) && showSystem(o, 'blocked', { url: u })
 let hungTab = null, hungUi = null // the tab that stopped responding, and the card shown over it
 const endHung = () => { hungTab = null; layout() }
 // HTTPS only, for a tab, Peek or the Little window (o): http:// links are upgraded, and a site without HTTPS gets plain http for this host
@@ -166,9 +169,10 @@ const noHttps = (wc, o, code, url) => { if (url !== o.upgraded || !privacy.NO_HT
 const loadWeb = (wc, o, u, httpReferrer) => { const up = settings.httpsOnly && !o.httpOk?.has(hostOf(u)) && privacy.upgrade(u); if (up) o.upgraded = up; o.upN = 0; wc.loadURL(up || u, { httpReferrer }) }
 function watchSystem(wc, owner) { // Peek and the Little window get the same screens as a tab
   const up = toHttps(wc, owner); wc.on('will-navigate', up); wc.on('will-redirect', (e, u) => e.isMainFrame && up(e, u)); wc.on('did-finish-load', () => { owner.upN = 0 })
-  wc.on('did-fail-load', (_, code, desc, url, isMain) => { if (isMain && noHttps(wc, owner, code, url)) return; if (isMain && code !== -3 && !url.startsWith(SYSTEM)) showSystem(owner, sysKind(code), { url, detail: `${desc} (${code})` }) })
+  wc.on('did-fail-load', (_, code, desc, url, isMain) => { if (isMain && noHttps(wc, owner, code, url)) return; if (isMain && code !== -3 && !url.startsWith(SYSTEM)) showSystem(owner, sysKind(code, url), { url, detail: `${desc} (${code})` }) })
   wc.on('render-process-gone', (_, d) => { if (d.reason !== 'clean-exit') showSystem(owner, 'crash', { url: wc.getURL(), detail: d.reason }) })
   wc.on('did-navigate', (_, u) => { if (!u.startsWith(SYSTEM)) owner.sys = null })
+  wc.on('did-navigate-in-page', (_, u, isMain) => isMain && blockInPage(owner, u))
 }
 function makeView(tab, opened) { // opened: the window options Electron made for a tab the page asked for itself (window.open): that page then loads it, and keeps its link to it
   const view = new WebContentsView(opened ? { webContents: opened.webContents, webPreferences: opened.webPreferences } : { webPreferences: pagePrefs(SPACES[tab.space].partition) })
@@ -186,11 +190,11 @@ function makeView(tab, opened) { // opened: the window options Electron made for
   wc.on('did-stop-loading', () => { tab.loading = false; push() })
   wc.on('did-navigate', (_, u) => { if (hostOf(u) !== hostOf(tab.url)) tab.manual = false; tab.fitW = null; if (isShown(tab.id)) wc.setZoomFactor(tab.manual ? tab.zf : 1); if (u.startsWith(SYSTEM)) { tab.url = tab.sys?.url || ''; tab.error = tab.sys?.msg || null } else { tab.sys = null; tab.url = u.startsWith(UI) ? '' : u; visit(tab, u) } push() })
   wc.on('did-finish-load', () => { tab.upN = 0; setTimeout(() => fitSoon(tab), 500) })
-  wc.on('did-navigate-in-page', (_, u, isMainFrame) => { if (isMainFrame) { tab.url = u; push() } })
+  wc.on('did-navigate-in-page', (_, u, isMainFrame) => { if (isMainFrame && !blockInPage(tab, u)) { tab.url = u; push() } })
   const up = toHttps(wc, tab); wc.on('will-navigate', up); wc.on('will-redirect', (e, u) => e.isMainFrame && up(e, u))
   wc.on('did-fail-load', (_, code, desc, url, isMain) => {
     if (isMain && noHttps(wc, tab, code, url)) return
-    if (isMain && code !== -3 && !url.startsWith(SYSTEM)) showSystem(tab, sysKind(code), { url, detail: `${desc} (${code})` })
+    if (isMain && code !== -3 && !url.startsWith(SYSTEM)) showSystem(tab, sysKind(code, url), { url, detail: `${desc} (${code})` })
   })
   wc.on('before-input-event', (e, i) => { if (!extCommand(e, i, tab)) shortcut(e, i) })
   wc.on('focus', () => { if (split?.includes(tab.id) && active !== tab.id) { active = tab.id; push() } })
@@ -714,6 +718,48 @@ ipcMain.handle('sys:trust', e => { // "Continue anyway" on the invalid-certifica
   if (!t || t.sys?.kind !== 'cert' || !e.senderFrame?.url.startsWith(SYSTEM)) return
   trustedCerts.add(privacy.host(t.sys.url)); t.view.webContents.loadURL(t.sys.url)
 })
+ipcMain.handle('sys:unblock', e => { // "Unblock" on the blocked-site screen
+  const t = ownerOf(e.sender)
+  if (t?.sys?.kind === 'blocked' && e.senderFrame?.url.startsWith(SYSTEM)) unblock(privacy.blockedBy(settings.blockedSites, t.sys.url))
+})
+ipcMain.handle('sys:pause', e => { // "Pause 5 min" on the blocked-site screen
+  const t = ownerOf(e.sender)
+  if (t?.sys?.kind === 'blocked' && e.senderFrame?.url.startsWith(SYSTEM)) pauseBlock(privacy.blockedBy(settings.blockedSites, t.sys.url))
+})
+// pages that are open: tabs (awake), Peek and the Little window, with the address they show
+const openPages = () => [...tabs.filter(t => t.view), peek, little].filter(o => o && !o.view.webContents.isDestroyed()).map(o => [o, o.sys?.url || o.view.webContents.getURL()])
+const BLOCK_PAUSE = 5 * 6e4, omit = (o, k) => Object.fromEntries(Object.entries(o).filter(([x]) => x !== k))
+const blockNote = u => { const s = settings.blockSchedules[privacy.blockedBy(privacy.activeBlocks(settings), u)]; return s ? s.from === s.to ? 'Your schedule blocks it all day.' : `Your schedule blocks it until ${s.to}.` : '' }
+let blocksWere = null
+function applyBlocks() { // what is blocked right now may have changed (the list, a schedule starting or ending, a pause): open pages follow at once
+  const on = privacy.activeBlocks(settings)
+  for (const [o, u] of openPages()) { const b = privacy.blockedBy(on, u); if (b && o.sys?.kind !== 'blocked') showSystem(o, 'blocked', { url: u }); else if (!b && o.sys?.kind === 'blocked') o.view.webContents.loadURL(u) }
+  if (on.join('\n') !== blocksWere) { blocksWere = on.join('\n'); push() }
+}
+function blockSite(input) {
+  const e = privacy.blockEntry(input || '')
+  if (!e) return { error: 'Enter a site address, like example.com, or a precise address, like youtube.com/shorts.' }
+  if (settings.blockedSites.includes(e)) return { error: `${e} is already blocked.` }
+  settings.blockedSites = [...settings.blockedSites, e]
+  applyBlocks(); push(); return { ok: true, entry: e }
+}
+function unblock(e) {
+  if (!settings.blockedSites.includes(e)) return
+  settings.blockedSites = settings.blockedSites.filter(x => x !== e); settings.blockSchedules = omit(settings.blockSchedules, e); settings.blockPauses = omit(settings.blockPauses, e)
+  applyBlocks(); push()
+}
+function pauseBlock(e) { // the site opens for 5 minutes, then is blocked again, in the pages still on it too
+  if (!settings.blockedSites.includes(e)) return
+  settings.blockPauses = { ...Object.fromEntries(Object.entries(settings.blockPauses).filter(([, end]) => end > Date.now())), [e]: Date.now() + BLOCK_PAUSE }
+  setTimeout(applyBlocks, BLOCK_PAUSE + 100); applyBlocks(); push()
+}
+const resumeBlock = e => { settings.blockPauses = omit(settings.blockPauses, e); applyBlocks(); push() }
+function blockSchedule(e, s) { // s: { days, from, to } to block it only then, null to block it all the time
+  const hm = /^([01]\d|2[0-3]):[0-5]\d$/
+  if (!settings.blockedSites.includes(e) || s && (!hm.test(s.from) || !hm.test(s.to) || !Array.isArray(s.days))) return
+  settings.blockSchedules = s ? { ...settings.blockSchedules, [e]: { days: [...new Set(s.days)].filter(d => Number.isInteger(d) && d >= 0 && d < 7).sort(), from: s.from, to: s.to } } : omit(settings.blockSchedules, e)
+  applyBlocks(); push()
+}
 app.on('select-client-certificate', async (e, wc, url, list, cb) => {
   e.preventDefault()
   const i = await choose(`${privacy.host(url)} asks for a certificate to identify you`, list.map(c => c.subjectName), { safe: true })
@@ -777,6 +823,7 @@ function tabMenu(id) {
     { label: 'Open in split view', enabled: id !== active, click: () => openSplit(id) },
     { type: 'separator' },
     { label: h ? `Always open ${h} in…` : 'Always open site in…', enabled: !!h, submenu: SPACES.flatMap((s, i) => s.private ? [] : [{ label: s.name, click: () => setRoute(h, i) }]) },
+    { label: h ? `Block ${h}` : 'Block site', enabled: !!h, click: () => blockSite(h) },
     { label: t.muted ? 'Unmute' : 'Mute', click: () => mute(id) },
     { label: 'Reload', enabled: !!t.view, click: () => t.view.webContents.reload() },
     { label: 'Hibernate', enabled: !!t.view && !isShown(id), click: () => sleep(id) },
@@ -1077,6 +1124,8 @@ app.whenReady().then(async () => {
     settings[f] = settings[f].includes(h) ? settings[f].filter(x => x !== h) : [...settings[f], h]; siteChanged(h)
   })
   h('resetSite', host => { for (const f of Object.values(SITE_OFF)) settings[f] = settings[f].filter(x => x !== host); siteChanged(host) })
+  h('blockSite', blockSite); h('unblockSite', unblock); h('pauseBlock', pauseBlock); h('resumeBlock', resumeBlock); h('blockSchedule', blockSchedule)
+  setInterval(applyBlocks, 15e3) // schedules start and end on the minute
   h('delRoute', host => { settings.routes = settings.routes.filter(r => r.host !== host); push() })
   h('setShortcut', (action, c) => {
     if (!keys.ACTIONS[action]) return { error: 'Unknown action' }
@@ -1175,7 +1224,7 @@ app.whenReady().then(async () => {
     tabs: () => tabs, newTab, closeTab, sleep, activate, go, resolve, cur, switchSpace, openCmd, closeCmd, cmdOpen: () => cmdOpen,
     pin: id => { const t = byId(id); t.pinned = !t.pinned; push() }, stats: () => ({ blocked, blockerState }), win: () => win, ui: () => ui, cmd: () => cmd,
     // library of hooks for the feature tests
-    S: { gitRefresh: () => gitRefresh(), mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
+    S: { gitRefresh: () => gitRefresh(), applyBlocks, mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
       ext, crx, extCommand, SYSTEM, realUrl, hungUi: () => hungUi, hungTab: () => hungTab, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },

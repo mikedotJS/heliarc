@@ -30,6 +30,7 @@ const KINDS = {
   timeout:  { icon: 'timer-off', title: `${host} took too long to answer`, why: 'The site may be busy, or your connection may be slow.' },
   offline:  { icon: 'wifi-off', title: 'You’re offline', why: 'Heliarc will reload this page by itself as soon as your connection is back.' },
   crash:    { icon: 'bug', title: 'This tab crashed', why: `Something went wrong while showing ${host}. Reload the tab to try again.` },
+  blocked:  { icon: 'ban', title: `${host} is blocked`, why: I.detail ? `${I.detail} Pause it for 5 minutes, or change the schedule in Settings → Privacy.` : 'You blocked this site in Heliarc. Pause it for 5 minutes, unblock it, or change your list in Settings → Privacy.' },
   cert:     { icon: 'shield-alert', title: `Your connection to ${host} isn’t private`, why: 'Attackers might be trying to steal your information (passwords, messages, cards).', warn: true },
 }
 const K = KINDS[I.kind] || KINDS.load
@@ -57,6 +58,11 @@ const retry = b => run(b || $('.acts .primary'), I.kind === 'offline' ? 'Reconne
 if (I.kind === 'cert') {
   btn('Go back to safety', 'primary', () => history.length > 1 ? history.back() : (location.href = 'about:blank'))
   if (I.url) btn('Continue anyway (unsafe)', 'danger', function () { run(this, 'Opening…', () => window.sys?.trust()) })
+} else if (I.kind === 'blocked') {
+  btn('Go back', 'primary', () => history.length > 1 ? history.back() : (location.href = 'about:blank'))
+  btn('Pause 5 min', '', function () { run(this, 'Opening…', () => window.sys?.pause()) })
+  btn('Unblock', '', function () { run(this, 'Unblocking…', () => window.sys?.unblock()) })
+  $('details').hidden = true
 } else if (I.kind === 'crash') {
   btn('Reload tab', 'primary', function () { retry(this) })
   const a = document.createElement('a'); a.target = '_blank'; a.textContent = 'Report the problem'

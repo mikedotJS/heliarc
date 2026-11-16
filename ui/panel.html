@@ -30,6 +30,7 @@
   input[type=color] { width: 34px; height: 30px; padding: 2px; border: 1px solid var(--hover); border-radius: var(--r-md); background: var(--bg); cursor: pointer }
   .icons { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 4px } .ibtn { width: 32px; height: 32px; border-radius: var(--r-md); display: grid; place-items: center; color: var(--dim) } .ibtn:hover { background: var(--hover); color: var(--fg) } .ibtn.on { background: var(--sel); color: var(--fg); outline: 2px solid var(--acc) }
   section { padding: 6px 6px 16px } section h3 { font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 12px 4px 8px }
+  .sched { gap: 4px; flex-wrap: wrap } .sched .ibtn { width: auto; padding: 0 8px; font-size: var(--fs-sm) } .sched input { width: auto }
   .line { display: flex; align-items: center; gap: 10px; padding: 7px 4px } .line label { flex: 1 } .line small { color: var(--dim); display: block }
   kbd { background: var(--bg); border: 1px solid var(--hover); border-radius: var(--r-sm); padding: 2px 7px; font: var(--fs-sm) system-ui; min-width: 70px; text-align: center } kbd.rec { border-color: var(--acc); color: var(--acc) }
   .msg { font-size: var(--fs-sm); color: var(--dim); padding: 2px 4px } .msg.bad { color: var(--err) } .msg.ok { color: var(--ok) }
@@ -46,7 +47,7 @@ const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 const ago = at => { const m = Math.round((at - Date.now()) / 6e4); return Math.abs(m) < 60 ? rtf.format(m, 'minute') : Math.abs(m) < 1440 ? rtf.format(Math.round(m / 60), 'hour') : rtf.format(Math.round(m / 1440), 'day') }
 const SECTIONS = [['downloads', 'Downloads', 'download'], ['media', 'Media', 'image'], ['archive', 'Archive', 'archive'], ['history', 'History', 'history'], ['passwords', 'Passwords', 'key-round'], ['extensions', 'Extensions', 'puzzle'], ['protections', 'Site protections', 'shield-check'], ['settings', 'Settings', 'settings']]
 const MEDIA = /^(image|video|audio)\//, MEDIAEXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|mp4|webm|mov|mkv|mp3|wav|ogg|m4a|flac)$/i
-const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0', akey: '', gprov: 'github', ghost: '', gtoken: '', gid: '' } // what is typed in the add forms survives a redraw
+const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0', bsite: '', akey: '', gprov: 'github', ghost: '', gtoken: '', gid: '' } // what is typed in the add forms survives a redraw
 let qt, shown = {}, state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, working = null, mcpData = null, asData = null, detected = [] // working: the import or update check in progress, its buttons wait for the answer
 const fileUrl = p => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '').split('/').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:')
 
@@ -131,7 +132,9 @@ function protections(S) {
   const st = S.settings, h = S.adHost, global = p => p[2] && !st[p[2]]
   const here = h ? PROT.map(p => `<div class="line"><label>${p[3]}<small>${global(p) ? 'Turned off for every site in Settings' : p[4]}</small></label><input type="checkbox" class="ds-switch" data-a="prot" data-kind="${p[0]}" data-host="${esc(h)}" ${st[p[1]].includes(h) ? '' : 'checked'} ${global(p) ? 'disabled' : ''}></div>`).join('') : '<div class="empty">Open a website to see its protections.</div>'
   const hosts = [...new Set(PROT.flatMap(p => st[p[1]]))].sort()
-  return `<section><h3>${h ? esc(h) : 'This site'}</h3><div class="msg">On means protected. Changing one reloads the page.</div>${here}</section>
+  return `<section><h3>${h ? esc(h) : 'This site'}</h3><div class="msg">On means protected. Changing one reloads the page.</div>${here}${h ? (st.blockedSites.includes(h)
+      ? `<div class="line"><label>Blocked<small>This site shows the “blocked” screen in every space</small></label><button class="ds-btn sm" data-a="unblockSite" data-e="${esc(h)}">Unblock</button></div>`
+      : `<div class="line"><label>Block this site<small>It stops opening, in every space, until you unblock it here or in Settings → Privacy</small></label><button class="ds-btn sm" data-a="blockHere" data-host="${esc(h)}">Block</button></div>`) : ''}</section>
     <section><h3>Sites with something turned off</h3>${hosts.length ? hosts.map(x => `<div class="line"><label>${esc(x)}<small>Off: ${PROT.filter(p => st[p[1]].includes(x)).map(p => p[3].toLowerCase()).join(', ')}</small></label><button class="ds-btn sm" data-a="protReset" data-host="${esc(x)}">Turn all back on</button></div>`).join('') : '<div class="empty">None. Every protection is on everywhere.</div>'}</section>`
 }
 const mcpCmd = m => `claude mcp add --transport http heliarc http://127.0.0.1:${m.port}/mcp --header "Authorization: Bearer ${m.token}"`
@@ -172,6 +175,19 @@ function assistantBlock(st) { // the key is never shown again once saved: only w
     <div class="line"><label>Model<small>Faster is cheaper. Opus handles long, tricky requests best</small></label><select class="ds-select" data-amodel>${Object.entries(MODEL_NAMES).map(([k, n]) => `<option value="${k}" ${k === asData.model ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
     <div class="msg">Heliarc asks you before each click that sends, pays, deletes or publishes, and never types passwords.</div>${msg}`
 }
+// a blocked site: blocked all the time or on a schedule (days, from, to), with its 5-minute pause
+const DAYS = [1, 2, 3, 4, 5, 6, 0], dayName = d => new Intl.DateTimeFormat('en', { weekday: 'short' }).format(new Date(2026, 0, 4 + d)) // 4 January 2026 is a Sunday
+const hhmm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+function blockRow(S, e) {
+  const st = S.settings, s = st.blockSchedules[e], paused = st.blockPauses[e] > Date.now(), on = S.blocksOn.includes(e)
+  const now = paused ? `paused until ${hhmm(st.blockPauses[e])}` : on ? 'blocked now' : !s.days.length ? 'no day picked, so never blocked' : `not blocked right now (${s.from === s.to ? 'all day' : `${s.from} to ${s.to}`} on the days picked)`
+  return `<div class="line"><label>${esc(e)}<small>${e.includes('/') ? 'This address and the pages under it' : 'This site and its subdomains'}: ${now}</small></label>
+    ${paused ? `<button class="ds-btn sm" data-a="resumeBlock" data-e="${esc(e)}">Block again</button>` : on ? `<button class="ds-btn sm" data-a="pauseBlock" data-e="${esc(e)}">Pause 5 min</button>` : ''}
+    <select class="ds-select" data-bsched="${esc(e)}" aria-label="When ${esc(e)} is blocked"><option value="">All the time</option><option value="1" ${s ? 'selected' : ''}>On a schedule</option></select>
+    <button class="ds-btn sm" data-a="unblockSite" data-e="${esc(e)}" title="Unblock" aria-label="Unblock ${esc(e)}">${icon('trash-2', 14)}</button></div>
+    ${s ? `<div class="line sched">${DAYS.map(d => `<button class="ibtn ${s.days.includes(d) ? 'on' : ''}" data-a="blockDay" data-e="${esc(e)}" data-d="${d}" aria-pressed="${s.days.includes(d)}">${esc(dayName(d))}</button>`).join('')}
+      <input type="time" class="ds-field" data-btime="from" data-e="${esc(e)}" value="${s.from}" aria-label="Blocked from">to<input type="time" class="ds-field" data-btime="to" data-e="${esc(e)}" value="${s.to}" aria-label="Blocked until"></div>` : ''}`
+}
 function settings(S) {
   const st = S.settings, p = data || {}
   const hrs = [[0, 'Never'], [1, 'After 1 hour'], [12, 'After 12 hours'], [24, 'After 1 day'], [168, 'After 7 days'], [720, 'After 30 days']]
@@ -196,6 +212,10 @@ function settings(S) {
     ${toggle('clearOnQuit', 'Clear everything when I quit', 'Cookies and site data (you get logged out of sites), caches, history and the download list. Saved passwords and open tabs stay')}
     ${(st.pwNever || []).map(o => `<div class="line"><label>${esc(o)}<small>Heliarc never offers to save a password here</small></label><button class="ds-btn sm" data-a="allowPw" data-o="${esc(o)}">Allow again</button></div>`).join('')}
     <div class="msg">The Private space (${esc(fmt(S.keys.newPrivateTab))}) keeps nothing: no history, no saved tabs, no extensions, and it is wiped when its last tab closes. Pages are never preloaded in the background.</div></section>
+  <section><h3>Blocked sites</h3>
+    ${st.blockedSites.map(e => blockRow(S, e)).join('') ||'<div class="msg">No blocked sites. A blocked site shows a “blocked” screen instead of opening, in every space. You can also block the site you are on from the shield at the bottom of the sidebar, or by right-clicking its tab.</div>'}
+    <div class="line"><input class="ds-field" id="bsite" placeholder="example.com, or a precise address like youtube.com/shorts" value="${esc(draft.bsite)}" style="flex:1" spellcheck="false" ${working === 'block' ? 'disabled' : ''}><button class="ds-btn sm" data-a="addBlock" ${working === 'block' ? 'disabled' : ''}>Block</button></div>
+    <div class="msg ${note?.block ? note.ok ? 'ok' : 'bad' : ''}">${esc(note?.block || '')}</div></section>
   <section><h3>AI assistants</h3>
     ${toggle('mcp', 'Let an AI assistant control Heliarc', 'Claude, Cursor and other MCP apps can open tabs, read pages, click and type, on this computer only. They never see the Private space')}
     ${mcpBlock(st)}
@@ -259,6 +279,14 @@ const ACT = {
     note = r.error ? { text: r.error, cls: 'bad' } : { text: `Installed “${r.name}”.`, cls: 'ok' }; if (!r.error) draft.extin = ''; load()
   },
   removeExt: async el => { await api.call('removeExtension', el.dataset.eid); note = null; load() },
+  addBlock: async () => {
+    working = 'block'; render()
+    try { const r = await api.call('blockSite', draft.bsite); note = r?.error ? { block: r.error } : { block: `${r.entry} is blocked. Tabs open on it now show the blocked screen.`, ok: true }; if (!r?.error) draft.bsite = '' }
+    finally { working = null; render(); $('#bsite')?.focus() }
+  },
+  blockHere: el => api.call('blockSite', el.dataset.host), unblockSite: el => { note = null; api.call('unblockSite', el.dataset.e) },
+  pauseBlock: el => api.call('pauseBlock', el.dataset.e), resumeBlock: el => api.call('resumeBlock', el.dataset.e),
+  blockDay: el => { const s = state.settings.blockSchedules[el.dataset.e], d = +el.dataset.d; api.call('blockSchedule', el.dataset.e, { ...s, days: s.days.includes(d) ? s.days.filter(x => x !== d) : [...s.days, d] }) },
   addRoute: async () => {
     const h = $('#rhost').value, ok = (() => { try { return /^[\w.-]+$/.test(new URL('https://' + h.trim().replace(/^https?:\/\//i, '')).hostname) } catch {} })() // a plain host name, as the main process reads it
     if (!ok) { note = { route: 'Enter a site address, like example.com.' }; return render() }
@@ -282,7 +310,7 @@ $('#body').onclick = $('#head').onclick = e => {
   const el = e.target.closest('[data-a]'); if (!el) return
   e.stopPropagation(); ACT[el.dataset.a]?.(el)
 }
-$('#body').onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ' && e.target.matches('[role=button]')) && e.target.matches('.row[data-a], .thumb[data-a]')) { e.preventDefault(); e.target.click() } } // Enter opens a row or a thumbnail, Space too when it is a button (not a link)
+$('#body').onkeydown = e => { if (e.key === 'Enter' && e.target.id === 'bsite') return ACT.addBlock(); if ((e.key === 'Enter' || e.key === ' ' && e.target.matches('[role=button]')) && e.target.matches('.row[data-a], .thumb[data-a]')) { e.preventDefault(); e.target.click() } } // Enter opens a row or a thumbnail, Space too when it is a button (not a link)
 $('#body').oninput = e => { if (e.target.dataset.pf) (data ??= {})[e.target.dataset.pf] = e.target.value; else if (Object.hasOwn(draft, e.target.id)) draft[e.target.id] = e.target.value } // keep unsaved autofill edits across re-renders
 $('#body').onchange = async e => {
   const t = e.target
@@ -293,6 +321,8 @@ $('#body').onchange = async e => {
   else if (t.matches('[data-amodel]')) { await api.call('assistantModel', t.value); asData = await api.call('assistantInfo') }
   else if (t.matches('[data-side]')) await api.call('setSetting', 'sidebarSide', t.value)
   else if (t.matches('[data-hours]')) await api.call('setSetting', 'archiveHours', +t.value)
+  else if (t.matches('[data-bsched]')) await api.call('blockSchedule', t.dataset.bsched, t.value ? { days: [1, 2, 3, 4, 5], from: '09:00', to: '18:00' } : null) // a schedule starts as weekdays, 9 to 6
+  else if (t.matches('[data-btime]')) { if (t.value) await api.call('blockSchedule', t.dataset.e, { ...state.settings.blockSchedules[t.dataset.e], [t.dataset.btime]: t.value }) }
   else if (t.dataset.f) await api.call('editSpace', +t.dataset.sp, { [t.dataset.f]: t.value })
   else if (t.dataset.set) { await api.call('setSetting', t.dataset.set, t.checked); if (t.dataset.set === 'mcp') { mcpData = null; for (let i = 0; i < 20 && !(mcpData?.running || mcpData?.error) && t.checked; i++) { await new Promise(r => setTimeout(r, 150)); mcpData = await api.call('mcpInfo') } paint() } } }
   finally { if (t.matches('select, input[type=color]')) { idle = true; stale && paint() } } // a choice is made: its list or picker is closed, so the redraw it was holding back can happen

@@ -1,6 +1,6 @@
 // Runs inside every web page (isolated world): detects logins to offer saving them, and fills saved logins / profile on focus.
 const { ipcRenderer, contextBridge } = require('electron')
-if (location.protocol === 'file:' && location.pathname.endsWith('/ui/system.html')) contextBridge.exposeInMainWorld('sys', { trust: () => ipcRenderer.invoke('sys:trust') }) // the invalid-certificate screen's "Continue anyway"
+if (location.protocol === 'file:' && location.pathname.endsWith('/ui/system.html')) contextBridge.exposeInMainWorld('sys', { trust: () => ipcRenderer.invoke('sys:trust'), unblock: () => ipcRenderer.invoke('sys:unblock'), pause: () => ipcRenderer.invoke('sys:pause') }) // the invalid-certificate screen's "Continue anyway", the blocked-site screen's "Unblock" and "Pause 5 min"
 const PROFILE = { email: 'email', tel: 'phone', 'given-name': 'first', 'family-name': 'last', name: 'name', organization: 'org', 'street-address': 'street', 'address-line1': 'street', 'postal-code': 'zip', 'address-level2': 'city', 'country-name': 'country' }
 const LOGIN = /log ?in|sign ?in|sign ?up|continue|submit|next|connexion|connecter|identifier|valider/i
 const visible = el => { // what the user can really see: shown, opaque, not clipped away, and on screen (a trap form hides fields off screen)

@@ -588,7 +588,17 @@ const extSessions = () => SPACES.filter(s => !s.private).map(s => session.fromPa
 
 // the toolbar only learns about extensions when asked
 const refreshExts = () => ui?.webContents.executeJavaScript("document.querySelector('#exts')?.fetchState?.()").catch(() => {})
+// chrome.runtime.onInstalled / onStartup, which Electron never sends: an extension's worker asks when it starts (see swpreload.js).
+// The first start of this run hears onStartup; after an install it hears onInstalled instead, in the space it came from only (one welcome page, not one per space); an update, everywhere
+const extHeard = new WeakMap() // session -> Map(extension id -> what its next start hears, null once told)
+const heard = ses => extHeard.get(ses) || extHeard.set(ses, new Map()).get(ses)
+const expectInstall = (id, previousVersion) => extSessions().forEach(s => heard(s).set(id, previousVersion ? [['onInstalled', { reason: 'update', previousVersion }]] : s === session.fromPartition(SPACES[SPACES[space].private ? 0 : space].partition) ? [['onInstalled', { reason: 'install' }]] : null))
+function hearRuntime(ses, w) {
+  const id = w.scope.match(/^chrome-extension:\/\/([a-p]{32})\//)?.[1]; if (!id) return
+  w.ipc.handle('ext:runtime', () => { const h = heard(ses), evs = h.has(id) ? h.get(id) || [] : [['onStartup']]; h.set(id, null); return evs })
+}
 async function installExtension(input) {
+  const id = ext.parseId(String(input)); if (id) expectInstall(id, extSessions()[0].extensions.getExtension(id)?.version)
   try { const r = { ok: true, ...await ext.installFromStore(String(input), extSessions()) }; push(); refreshExts(); return r } catch (e) { return { error: e.message } }
 }
 
@@ -604,6 +614,8 @@ function setupSession(ses) {
   const priv = ses === session.fromPartition(SPACES[PRIVATE].partition)
   privacy.filterRequests(ses, () => settings, () => blocker) // Global Privacy Control, Do Not Track, third-party cookies, ad blocker
   applyUserAgent(ses)
+  ses.registerPreloadScript({ type: 'service-worker', filePath: path.join(__dirname, 'swpreload.js') })
+  ses.serviceWorkers.on('running-status-changed', ({ runningStatus, versionId }) => { const w = runningStatus === 'starting' && ses.serviceWorkers.getWorkerFromVersionID(versionId); if (w) { w.ipc.removeHandler('ext:runtime'); hearRuntime(ses, w) } })
   ses.setPermissionRequestHandler(async (wc, permission, cb, d) => { // camera, microphone, location, notifications, clipboard: ask once per site, then remember
     if (permission === 'fullscreen' && !fsTab) fsWinWas = win.isFullScreen()
     if (SILENT.has(permission) || permission === 'display-capture') return cb(true) // screen sharing asks through the picker below
@@ -1224,7 +1236,7 @@ app.whenReady().then(async () => {
     tabs: () => tabs, newTab, closeTab, sleep, activate, go, resolve, cur, switchSpace, openCmd, closeCmd, cmdOpen: () => cmdOpen,
     pin: id => { const t = byId(id); t.pinned = !t.pinned; push() }, stats: () => ({ blocked, blockerState }), win: () => win, ui: () => ui, cmd: () => cmd,
     // library of hooks for the feature tests
-    S: { gitRefresh: () => gitRefresh(), applyBlocks, mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
+    S: { gitRefresh: () => gitRefresh(), expectInstall, applyBlocks, mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
       ext, crx, extCommand, SYSTEM, realUrl, hungUi: () => hungUi, hungTab: () => hungTab, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },

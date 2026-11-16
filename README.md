@@ -34,7 +34,7 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 
 **Arc-style**
 - Vertical sidebar: favorites on top (shared by every space), pinned tabs, folders, then today's tabs; drag & drop between all of them
-- Spaces (Home / Work / Fun), each with its own cookies and logins; links can be routed to a space (Settings, or right-click a tab → *Always open … in*): new tabs, typed addresses and links from other apps follow the route
+- Spaces (Home / Work / Fun): like Arc, they share one profile (logins, extensions: one password manager to unlock), or a space keeps its own cookies and logins (Settings → *Spaces*); links can be routed to a space (Settings, or right-click a tab → *Always open … in*): new tabs, typed addresses and links from other apps follow the route
 - Split view (two pages side by side), Peek (Shift+click a link), Little window for links from other apps (set Heliarc as default browser in Settings), automatic archive of unused tabs (12 h by default, see Library → Archive)
 - Automatic picture-in-picture when you leave a playing video tab, mini player in the sidebar, collapsible sidebar (hover its edge to peek at it), on the left or the right; rename spaces and pick their icon and colours in Settings
 - Every shortcut can be changed in Settings

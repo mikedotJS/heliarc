@@ -591,7 +591,14 @@ module.exports = async (a, ok) => {
   await section('spaces, routing, peek, little', async () => {
     reset(); await sleep(300)
     const h = await open('/cookie'); const w = await open('/whoami', 1)
-    ok('spaces have separate profiles', await js(w.view.webContents, `document.getElementById('c').textContent`) === 'none' && w.space === 1)
+    const who = t => js(t.view.webContents, `document.getElementById('c').textContent`)
+    ok('a new install shares the Home profile with the other spaces, as in Arc', await who(w) === 'who=someone' && w.space === 1, await who(w))
+    ok('so they run each extension once', S.extSessions().length === 1, String(S.extSessions().length))
+    await js(panel(), "api.call('shareSpace', 1, false)")
+    ok('a space can have its own profile again: its open tabs reload in it', await until(async () => w.view && await who(w) === 'none'), w.view ? await who(w) : 'asleep')
+    ok('and its extensions run there too', S.extSessions().length === 2 && S.extSessions().includes(w.view.webContents.session))
+    ok('the choice is remembered', S.settings().spaces[1].shared === false)
+    await js(panel(), "api.call('shareSpace', 2, false)"); ok('spaces have separate profiles when asked', S.extSessions().length === 3)
     const h2 = await open('/whoami', 0); ok('same space keeps its cookies', await js(h2.view.webContents, `document.getElementById('c').textContent`) === 'who=someone')
     a.switchSpace(0)
     S.setRoute('127.0.0.1', 2); const r = a.newTab(base + '/second'); await sleep(300)
@@ -736,6 +743,7 @@ module.exports = async (a, ok) => {
     ok('an extension keyboard command runs from its suggested key', press('K') && sent.length === 1 && sent[0][2] === 'do-it', JSON.stringify(sent)); ok('other keys are left alone', !press('J') && sent.length === 1)
     router.sendEvent = realSend
     const actions = () => js(ui(), `document.querySelector('#exts').shadowRoot?.querySelectorAll('[part~=action]').length`)
+    await js(ui(), "document.querySelector('#exts').fetchState?.()") // what a Web Store install does (refreshExts); switching spaces no longer does it when they share a profile
     ok('extension shows in the sidebar toolbar', await until(async () => await actions() === 1), String(await actions()))
     await js(ui(), `document.querySelector('#exts').shadowRoot.querySelector('[part~=action]').click()`)
     const popup = () => webContents.getAllWebContents().find(w => w.getURL() === `chrome-extension://${r.id}/p.html`)

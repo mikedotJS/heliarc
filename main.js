@@ -33,13 +33,15 @@ const SYSTEM = require('url').pathToFileURL(path.join(__dirname, 'ui', 'system.h
 const UI = require('url').pathToFileURL(path.join(__dirname, 'ui')).href + '/' // Heliarc's own screens; other file: pages are the user's
 const NEWTAB = 'file://' + path.join(__dirname, 'ui', 'newtab.html').replace(/\\/g, '/')
 const TABPRELOAD = path.join(__dirname, 'tabpreload.js')
-const SPACES = [ // one browser profile (cookies, logins) per space
+const SPACES = [ // each space has its own browser profile (cookies, logins, extensions), or shares Home's (shared: true), as Arc's spaces share a profile
   { name: 'Home', icon: 'house', c1: '#5b4bff', c2: '#c04bff', partition: 'persist:main' },
   { name: 'Work', icon: 'briefcase', c1: '#0aa6a6', c2: '#2b6fff', partition: 'persist:work' },
   { name: 'Fun', icon: 'gamepad-2', c1: '#ff7a3d', c2: '#ff3d77', partition: 'persist:fun' },
   { name: 'Private', icon: 'eye-off', c1: '#3b3b4a', c2: '#101018', partition: 'private', private: true }, // in memory only: no history, no saved tabs, wiped when its last tab closes
 ]
 const PRIVATE = SPACES.findIndex(s => s.private)
+for (const s of SPACES) s.own = s.partition // the space's own profile, kept on disk while it shares Home's
+const shareSpace = (sp, shared) => { sp.shared = !!shared && sp !== SPACES[0] && !sp.private; sp.partition = sp.shared ? SPACES[0].own : sp.own }
 const ZOOMS = [.25, .33, .5, .67, .75, .8, .9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
 const DEFAULTS = { archiveHours: 12, routes: [], blockedSites: [], blockSchedules: {}, blockPauses: {}, shortcuts: {}, autoPip: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', antiAdblock: true, extPrivacy: {}, searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false, assistant: false }
 // Picture-in-picture for the biggest playing, unmuted video (needs a user gesture, which executeJavaScript can claim)
@@ -372,8 +374,8 @@ function switchSpace(i) {
   const mine = tabs.filter(t => t.space === i && !t.fav)
   mine.length ? activate((mine.find(t => !t.asleep) || mine[0]).id) : newTab(null, i)
 }
-function sleep(id) { // hibernate: free the page, keep the tab in the list
-  const t = byId(id); if (!t?.view || isShown(id)) return
+function sleep(id, evenShown) { // hibernate: free the page, keep the tab in the list
+  const t = byId(id); if (!t?.view || (isShown(id) && !evenShown)) return
   if (hungTab === t) endHung()
   if (fsTab === t) { fsTab = null; if (!fsWinWas) win.setFullScreen(false) }
   win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; t.asleep = true; t.loading = false; t.playing = false
@@ -583,8 +585,9 @@ function savePw(p, index = vaultIndex()) { // -> true when something was added o
 }
 
 // ---- spaces / privacy ----
-const spaceSessions = () => SPACES.map(s => session.fromPartition(s.partition))
-const extSessions = () => SPACES.filter(s => !s.private).map(s => session.fromPartition(s.partition)) // extensions aren't loaded in the private space, like in Chrome's incognito
+const spaceSessions = () => SPACES.map(s => session.fromPartition(s.partition)) // one per space: spaces sharing a profile give the same session
+const extSessions = () => [...new Set(SPACES.filter(s => !s.private).map(s => session.fromPartition(s.partition)))] // once per profile, so a shared one runs one Bitwarden. Not in the private space, like in Chrome's incognito
+const spaceOf = ses => session.fromPartition(SPACES[space].partition) === ses ? space : SPACES.findIndex(sp => session.fromPartition(sp.partition) === ses) // the space in front when it uses that profile
 
 // the toolbar only learns about extensions when asked
 const refreshExts = () => ui?.webContents.executeJavaScript("document.querySelector('#exts')?.fetchState?.()").catch(() => {})
@@ -641,7 +644,7 @@ function setupSession(ses) {
   ses.on('will-download', (e, item) => onDownload(e, item, priv))
   const api = new ElectronChromeExtensions({
     license: 'GPL-3.0', session: ses,
-    createTab: async d => { const t = newTab(d.url, SPACES.findIndex(sp => session.fromPartition(sp.partition) === ses)); return [t.view.webContents, win] },
+    createTab: async d => { const t = newTab(d.url, spaceOf(ses)); return [t.view.webContents, win] },
     selectTab: wc => { const t = tabOf(wc); if (t) activate(t.id) },
     removeTab: wc => { const t = tabOf(wc); if (t) closeTab(t.id) },
     createWindow: async d => { // chrome.windows.create: pop-out windows (Bitwarden's unlock / login window)
@@ -820,7 +823,7 @@ async function loadBlocker() { // (re)loads the filter lists picked in Settings,
   }
 }
 async function setupPrivacy() {
-  spaceSessions().forEach(setupSession)
+  new Set(spaceSessions()).forEach(setupSession)
   await loadBlocker()
 }
 
@@ -988,7 +991,7 @@ app.on('open-url', (e, u) => { e.preventDefault(); whenReady.then(() => openExte
 app.on('open-file', (e, f) => { e.preventDefault(); whenReady.then(() => openExternal(require('url').pathToFileURL(f).href)) }) // macOS: a file opened with Heliarc, or dropped on its icon
 let cleaned = false, clearing = false
 const dropRecords = () => { history = []; downloads = []; store.save('history', history); store.save('downloads', downloads); store.flushAll() } // on disk right away: the exit may come before the slower cleaning is done
-const clearAll = () => { dropRecords(); return Promise.all(spaceSessions().map(wipe)) }
+const clearAll = () => { dropRecords(); return Promise.all(SPACES.map(s => wipe(session.fromPartition(s.own)))) } // every profile, the ones set aside by a shared space too
 app.on('before-quit', e => { // "clear everything when I quit": cookies, logins, caches, history, download list
   if (clearing) return e.preventDefault() // closing the window with the X asks to quit twice: the second must not end the app before the cleaning is done
   if (installing || !settings.clearOnQuit || cleaned) return store.flushAll()
@@ -1002,7 +1005,8 @@ app.whenReady().then(async () => {
   if (process.platform === 'darwin') app.dock?.setIcon(ICON)
   if (process.platform === 'darwin' && app.isPackaged) app.configureWebAuthn({ touchID: { keychainAccessGroup: 'D7F9KXB7PH.app.heliarc.browser.webauthn', promptReason: 'sign in to $1' } }) // passkeys with Touch ID, kept in this Mac's keychain (needs the signed build: scripts/entitlements-app.plist)
   const saved = store.load('session', {})
-  settings = { ...structuredClone(DEFAULTS), ...saved.settings }; for (const [i, o] of Object.entries(settings.spaces)) SPACES[i] && !SPACES[i].private && Object.assign(SPACES[i], o); history = store.load('history', []); vault = store.load('vault', []); profile = store.load('profile', {})
+  settings = { ...structuredClone(DEFAULTS), ...saved.settings, ...(!saved.settings && { spaces: { 1: { shared: true }, 2: { shared: true } } }) } // a new install: Work and Fun share Home's profile, as in Arc; an existing one keeps its profiles until the user shares them
+  for (const [i, o] of Object.entries(settings.spaces)) if (SPACES[i] && !SPACES[i].private) { Object.assign(SPACES[i], o); shareSpace(SPACES[i], o.shared) } history = store.load('history', []); vault = store.load('vault', []); profile = store.load('profile', {})
   downloads = store.load('downloads', []).map(d => d.state === 'progressing' || d.state === 'paused' ? { ...d, state: 'interrupted' } : d)
   win = new BaseWindow({ width: 1280, height: 820, title: 'Heliarc', icon: ICON, backgroundColor: '#2a2a33', ...(process.platform === 'darwin' && { titleBarStyle: 'hidden', trafficLightPosition: { x: 16, y: 16 } }) })
   const prefs = { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true }
@@ -1099,6 +1103,17 @@ app.whenReady().then(async () => {
     const sp = SPACES[i]; if (!sp || sp.private || !o) return
     const edit = { ...(typeof o.name === 'string' && o.name.trim() && { name: o.name.trim().slice(0, 20) }), ...(/^[a-z0-9-]{1,30}$/.test(o.icon) && { icon: o.icon }), ...(/^#[0-9a-f]{6}$/i.test(o.c1) && { c1: o.c1 }), ...(/^#[0-9a-f]{6}$/i.test(o.c2) && { c2: o.c2 }) }
     Object.assign(sp, edit); settings.spaces = { ...settings.spaces, [i]: { ...settings.spaces[i], ...edit } }; push()
+  })
+  h('shareSpace', async (i, shared) => { // a space uses Home's profile, or its own again: its extensions follow, and its open tabs reload in the profile it now uses
+    const sp = SPACES[i]; if (!sp || sp.private || i === 0 || !!shared === !!sp.shared) return
+    const before = session.fromPartition(sp.partition); shareSpace(sp, shared); settings.spaces = { ...settings.spaces, [i]: { ...settings.spaces[i], shared: sp.shared } }
+    const now = session.fromPartition(sp.partition); setupSession(now)
+    if (!now.extensions.getAllExtensions().length) await ext.loadInstalled([now]) // its own profile wasn't running: its extensions start now
+    if (!spaceSessions().includes(before)) for (const e of before.extensions.getAllExtensions()) before.extensions.removeExtension(e.id) // no space uses that profile any more: its extensions stop
+    const mine = tabs.filter(t => t.space === i && t.view), front = mine.find(t => isShown(t.id))
+    for (const t of mine) sleep(t.id, true)
+    if (front) activate(front.id)
+    push(); refreshExts()
   })
   h('addBang', (trigger, url) => { // a bang is "!trigger some words" -> the URL, where %s stands for the words
     trigger = String(trigger).trim().replace(/^!/, '').toLowerCase(); url = String(url).trim()

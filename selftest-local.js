@@ -915,6 +915,31 @@ module.exports = async (a, ok) => {
     ok('search_history finds a visited page', JSON.parse((await call(c, 'search_history', { query: 'Second page' })).text).some(h => h.url === base + '/second'))
     const dl = JSON.parse((await call(c, 'list_downloads')).text)
     ok('list_downloads lists the files', Array.isArray(dl) && dl.every(d => d.path && d.state), JSON.stringify(dl).slice(0, 120))
+    // DevTools: console, network, scripts, styles, storage, emulation, performance
+    ok('DevTools tools are listed', ['list_console_messages', 'list_network_requests', 'get_network_request', 'evaluate_script', 'inspect_element', 'list_storage', 'edit_storage', 'emulate', 'performance_report', 'open_devtools'].every(n => tools.includes(n)))
+    const dv = JSON.parse((await call(c, 'open_tab', { url: base + '/' })).text), dwc = () => a.tabs().find(t => t.id === dv.id).view.webContents
+    const ev = JSON.parse((await call(c, 'evaluate_script', { code: 'console.error("selftest oops"); const n = 20; await new Promise(r => setTimeout(r, 10)); n + 1' })).text)
+    ok('evaluate_script runs statements and top-level await, like the console', ev.result === 21, JSON.stringify(ev))
+    ok('evaluate_script calls a function, and gives an error back with its message', JSON.parse((await call(c, 'evaluate_script', { code: 'async () => ({ t: document.title })' })).text).result.t === 'Local home' && /nope is not defined/.test((await call(c, 'evaluate_script', { code: 'nope()' })).text))
+    const cm = JSON.parse((await call(c, 'list_console_messages', { level: 'error' })).text)
+    ok('list_console_messages has what the page logged', cm.messages.some(m => m.text === 'selftest oops'), JSON.stringify(cm).slice(0, 300))
+    const nr = JSON.parse((await call(c, 'list_network_requests', { reload: true })).text), doc = nr.requests.find(q => q.type === 'Document')
+    ok('list_network_requests records the page from the start when asked to reload', doc?.url === base + '/' && doc.status === 200, JSON.stringify(nr).slice(0, 300))
+    ok('get_network_request gives the headers and the body', /hello/.test(JSON.parse((await call(c, 'get_network_request', { id: doc?.id || '' })).text).body || ''))
+    const ie = JSON.parse((await call(c, 'inspect_element', { selector: '#l' })).text)
+    ok('inspect_element gives the HTML, the box and the computed styles', ie.tag === 'a' && ie.box.width > 0 && !!ie.styles.display && /second/.test(ie.html), JSON.stringify(ie).slice(0, 200))
+    const screen = async () => JSON.parse((await call(c, 'evaluate_script', { code: '[screen.width, matchMedia("(prefers-color-scheme: dark)").matches, navigator.maxTouchPoints]' })).text).result
+    await call(c, 'emulate', { device: 'iphone', color_scheme: 'dark' }); const phone = await screen()
+    await call(c, 'emulate', { reset: true }); const back = await screen()
+    ok('emulate turns the tab into a phone in dark mode, and reset brings it back', phone[0] === 390 && phone[1] === true && phone[2] === 5 && back[0] !== 390 && back[2] !== 5, JSON.stringify([phone, back]))
+    ok('edit_storage and list_storage reach localStorage', !(await call(c, 'edit_storage', { kind: 'local', action: 'set', key: 'k', value: 'v' })).err && JSON.parse((await call(c, 'list_storage', { kind: 'local' })).text).k === 'v')
+    const secrets = S.mcpHost.allowSecrets; S.mcpHost.allowSecrets = async () => false
+    ok('cookies are only read once the user allows it', /declined/.test((await call(c, 'list_storage', { kind: 'cookies' })).text))
+    S.mcpHost.allowSecrets = async () => true; ok('then they are listed', Array.isArray(JSON.parse((await call(c, 'list_storage', { kind: 'cookies' })).text))); S.mcpHost.allowSecrets = secrets
+    ok('screenshot takes one element, or the whole page', (await call(c, 'screenshot', { selector: '#l' })).img > 100 && (await call(c, 'screenshot', { full_page: true })).img > 1000)
+    const pr = JSON.parse((await call(c, 'performance_report')).text)
+    ok('performance_report gives the Web Vitals and load times', pr.vitals.TTFB?.rating && pr.vitals.FCP?.value >= 0 && pr.navigation.loadMs >= 0 && pr.browser.domNodes > 0, JSON.stringify(pr).slice(0, 300))
+    ok('open_devtools opens the DevTools window of the tab', !(await call(c, 'open_devtools')).err && await until(async () => dwc().isDevToolsOpened())); dwc().closeDevTools()
     await c.close()
     await js(panel(), `api.call('mcpNewToken')`)
     ok('a new token cuts off the old one', await until(async () => (await info()).token && (await info()).token !== token && await post({ Authorization: 'Bearer ' + token }) === 401))
@@ -928,6 +953,7 @@ module.exports = async (a, ok) => {
     let asked = [], answer = false
     const connect = async () => { const [x, y] = InMemoryTransport.createLinkedPair(), srv = S.mcpLib.build(S.mcpHost, { confirm: async q => (asked.push(q), answer) }), c = new Client({ name: 't', version: '1' }); await Promise.all([srv.connect(y), c.connect(x)]); return c }
     const c = await connect(), t = await open('/risky'), wc = t.view.webContents, call = async (name, args) => (await c.callTool({ name, arguments: args })).isError ? 'error' : 'ok'
+    ok('the in-app assistant has no DevTools tools (they act on the page without asking)', !(await c.listTools()).tools.some(x => x.name === 'evaluate_script'))
     ok('a harmless click goes through without a question', await call('click', { text: 'Save draft' }) === 'ok' && await js(wc, 'window.safe') === 1 && asked.length === 0)
     ok('a risky click is held, with what it is and where', await call('click', { text: 'Delete account' }) === 'error' && asked.length === 1 && asked[0].label === 'Delete account' && asked[0].site === '127.0.0.1')
     ok('and does not happen when the user says no', await js(wc, 'window.hit') === undefined)

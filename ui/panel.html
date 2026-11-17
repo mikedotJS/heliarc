@@ -217,7 +217,7 @@ function settings(S) {
     <div class="line"><input class="ds-field" id="bsite" placeholder="example.com, or a precise address like youtube.com/shorts" value="${esc(draft.bsite)}" style="flex:1" spellcheck="false" ${working === 'block' ? 'disabled' : ''}><button class="ds-btn sm" data-a="addBlock" ${working === 'block' ? 'disabled' : ''}>Block</button></div>
     <div class="msg ${note?.block ? note.ok ? 'ok' : 'bad' : ''}">${esc(note?.block || '')}</div></section>
   <section><h3>AI assistants</h3>
-    ${toggle('mcp', 'Let an AI assistant control Heliarc', 'Claude, Cursor and other MCP apps can open tabs, read pages, click and type, on this computer only. They never see the Private space')}
+    ${toggle('mcp', 'Let an AI assistant control Heliarc', 'Claude, Cursor and other MCP apps can open tabs, read pages, click and type, and use DevTools (console, network, styles, storage, device mode, performance), on this computer only. Cookies are only read after you allow it, site by site. They never see the Private space')}
     ${mcpBlock(st)}
     ${toggle('assistant', 'Ask Heliarc, in the command bar', 'Type a sentence (or start with ?) and Heliarc does it in your browser. Uses your own Claude API key, kept encrypted by your system. Your sentence and the pages it reads for that request are sent to Claude, nothing else')}
     ${assistantBlock(st)}</section>

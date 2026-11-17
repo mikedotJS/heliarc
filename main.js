@@ -865,11 +865,15 @@ function setRoute(host, sp) { settings.routes = [...settings.routes.filter(r => 
 // ---- app lifecycle ----
 const urlArg = argv => { for (const a of argv) { const u = /^https?:\/\//i.test(a) ? a : bangs.localFile(a, true); if (u) return u } } // a web address, or a web page file (Open with… / default browser)
 // MCP: lets an AI assistant drive the browser (lib/mcp.js). Off until the user turns it on in Settings; never sees the Private space
+const mcpSecrets = new Set() // sites whose cookies the user let an AI assistant read, until Heliarc quits
 const mcpHost = {
   version: app.getVersion(),
   tabs: () => tabs.filter(t => !SPACES[t.space].private).map(t => ({ id: t.id, title: t.title, url: t.url, space: SPACES[t.space].name, active: t.id === active, pinned: t.pinned, loading: t.loading, asleep: t.asleep, error: t.error })),
   spaces: () => SPACES.filter(s => !s.private).map(s => s.name),
   page: id => { const t = byId(id); return t?.view && isShown(id) ? t.view.webContents : null },
+  awake: id => { const t = byId(id); return t?.view && !SPACES[t.space].private ? t.view.webContents : null }, // DevTools tools: a tab awake, in front or not
+  devtools: id => { const wc = byId(id)?.view?.webContents; if (wc && !wc.isDevToolsOpened()) wc.openDevTools({ mode: 'detach' }) },
+  allowSecrets: async site => mcpSecrets.has(site) || (await choose(`An AI assistant wants the cookies of ${site}`, ['Allow until Heliarc quits'], { detail: 'With them it can act on this site as you, from anywhere. Allow only if you asked it to.', cancel: 'Deny', safe: true }) === 0 && !!mcpSecrets.add(site)),
   open: (url, name) => { const named = SPACES.findIndex(s => s.name.toLowerCase() === name?.toLowerCase()); return newTab(url, named >= 0 ? named : routeFor(url) ?? (SPACES[space].private ? 0 : space)).id },
   navigate: (id, url) => { activate(id); return go(url)?.id ?? id }, // a routed site may open in a new tab of its own space: that tab is the answer
   activate, close: closeTab,

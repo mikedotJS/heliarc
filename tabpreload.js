@@ -127,3 +127,25 @@ if (process.argv.includes('--heliarc-fp') && ipcRenderer.sendSync('fp:site')) {
     }
   } })
 }
+
+// YouTube: sponsor reads and self-promotion marked on SponsorBlock are skipped once each, with a notice that can undo it
+if (window === top && /(^|\.)youtube\.com$/.test(location.hostname)) {
+  let id = null, segs = [], done = new Set()
+  setInterval(async () => { // YouTube changes video without loading a new page
+    const v = new URLSearchParams(location.search).get('v'); if (v === id) return
+    id = v; segs = []; done = new Set(); if (!v) return
+    const got = await ipcRenderer.invoke('sb:segments', v).catch(() => []); if (id === v) segs = got
+  }, 1000)
+  addEventListener('timeupdate', e => {
+    const video = e.target, player = video.closest?.('#movie_player'); if (!player || player.classList.contains('ad-showing')) return
+    const i = segs.findIndex(([a, b], k) => !done.has(k) && video.currentTime >= a && video.currentTime < b - 0.5); if (i < 0) return
+    done.add(i); const from = video.currentTime; video.currentTime = segs[i][1]; notice(player, () => { video.currentTime = from })
+  }, true)
+  const notice = (player, undo) => {
+    player.querySelector('.heliarc-sb')?.remove()
+    const n = document.createElement('div'), b = document.createElement('button'); n.className = 'heliarc-sb'; n.textContent = 'Sponsor skipped'; b.textContent = 'Undo'
+    n.style.cssText = 'position:absolute;right:12px;bottom:72px;z-index:70;display:flex;gap:10px;align-items:center;padding:8px 12px;border-radius:8px;background:rgba(15,15,15,.85);color:#fff;font:500 13px/1 Roboto,Arial,sans-serif'
+    b.style.cssText = 'all:unset;cursor:pointer;color:#3ea6ff;font-weight:600'
+    b.onclick = () => { undo(); n.remove() }; n.append(b); player.append(n); setTimeout(() => n.remove(), 5000)
+  }
+}

@@ -78,7 +78,7 @@ const push = () => {
   const listed = id => { const t = byId(id); return !!t && (!SPACES[t.space].private || space === PRIVATE) } // what the UI is sent must exist in the tab list it receives
   const c = listed(active) ? cur() : null, nav = c?.view?.webContents?.navigationHistory
   const s = {
-    active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), blocksOn: privacy.activeBlocks(settings), siteOff: Object.values(SITE_OFF).filter(f => settings[f].includes(privacy.host(c?.url || ''))).length, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
+    active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), blocksOn: privacy.activeBlocks(settings), blocksLocked: settings.blockedSites.filter(blockLocked), siteOff: Object.values(SITE_OFF).filter(f => settings[f].includes(privacy.host(c?.url || ''))).length, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
     askReady: !!assistantCfgRaw().key, git: gitPublic(),
     sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.filter(d => !d.private || space === PRIVATE).slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
@@ -156,10 +156,10 @@ const sysKind = (code, url) => code === -20 && privacy.blockedBy(privacy.activeB
 function showSystem(tab, kind, { url, detail, msg }) {
   const wc = tab.view?.webContents; if (!wc || wc.isDestroyed()) return
   const tries = tab.sys?.url === url && tab.sys.kind === kind ? tab.sys.tries + 1 : 1
-  if (kind === 'blocked') detail = blockNote(url)
-  tab.sys = { kind, url, tries, detail, msg: msg || `${{ blocked: 'You blocked this site', offline: 'You’re offline', notfound: 'Address not found', refused: 'Connection refused', timeout: 'The site took too long to answer', cert: 'Connection not private', load: 'Failed to load' }[kind]} — ${url}` }
+  let locked; if (kind === 'blocked') { detail = blockNote(url); locked = blockLocked(privacy.blockedBy(settings.blockedSites, url)) }
+  tab.sys = { kind, url, tries, detail, locked, msg: msg || `${{ blocked: 'You blocked this site', offline: 'You’re offline', notfound: 'Address not found', refused: 'Connection refused', timeout: 'The site took too long to answer', cert: 'Connection not private', load: 'Failed to load' }[kind]} — ${url}` }
   tab.loading = false
-  wc.loadURL(SYSTEM + '#' + encodeURIComponent(JSON.stringify({ kind, url, host: hostOf(url), detail, tries })))
+  wc.loadURL(SYSTEM + '#' + encodeURIComponent(JSON.stringify({ kind, url, host: hostOf(url), detail, tries, locked })))
 }
 // a page that moves to a blocked address without loading a new one (a link inside a web app, like YouTube Shorts) gets the blocked screen too
 const blockInPage = (o, u) => privacy.blockedBy(privacy.activeBlocks(settings), u) && showSystem(o, 'blocked', { url: u })
@@ -745,10 +745,11 @@ ipcMain.handle('sys:pause', e => { // "Pause 5 min" on the blocked-site screen
 const openPages = () => [...tabs.filter(t => t.view), peek, little].filter(o => o && !o.view.webContents.isDestroyed()).map(o => [o, o.sys?.url || o.view.webContents.getURL()])
 const BLOCK_PAUSE = 5 * 6e4, omit = (o, k) => Object.fromEntries(Object.entries(o).filter(([x]) => x !== k))
 const blockNote = u => { const s = settings.blockSchedules[privacy.blockedBy(privacy.activeBlocks(settings), u)]; return s ? s.from === s.to ? 'Your schedule blocks it all day.' : `Your schedule blocks it until ${s.to}.` : '' }
+const blockLocked = e => !!settings.blockSchedules[e]?.strict && privacy.blockOn(settings.blockSchedules[e]) // strict: no unblocking, pausing or schedule change while its blocked period runs
 let blocksWere = null
 function applyBlocks() { // what is blocked right now may have changed (the list, a schedule starting or ending, a pause): open pages follow at once
   const on = privacy.activeBlocks(settings)
-  for (const [o, u] of openPages()) { const b = privacy.blockedBy(on, u); if (b && o.sys?.kind !== 'blocked') showSystem(o, 'blocked', { url: u }); else if (!b && o.sys?.kind === 'blocked') o.view.webContents.loadURL(u) }
+  for (const [o, u] of openPages()) { const b = privacy.blockedBy(on, u); if (b && (o.sys?.kind !== 'blocked' || !!o.sys.locked !== blockLocked(b))) showSystem(o, 'blocked', { url: u }); else if (!b && o.sys?.kind === 'blocked') o.view.webContents.loadURL(u) } // a blocked screen made before strict was turned on (or off) is redone, to drop (or bring back) Pause and Unblock
   if (on.join('\n') !== blocksWere) { blocksWere = on.join('\n'); push() }
 }
 function blockSite(input) {
@@ -759,20 +760,21 @@ function blockSite(input) {
   applyBlocks(); push(); return { ok: true, entry: e }
 }
 function unblock(e) {
-  if (!settings.blockedSites.includes(e)) return
+  if (!settings.blockedSites.includes(e) || blockLocked(e)) return
   settings.blockedSites = settings.blockedSites.filter(x => x !== e); settings.blockSchedules = omit(settings.blockSchedules, e); settings.blockPauses = omit(settings.blockPauses, e)
   applyBlocks(); push()
 }
 function pauseBlock(e) { // the site opens for 5 minutes, then is blocked again, in the pages still on it too
-  if (!settings.blockedSites.includes(e)) return
+  if (!settings.blockedSites.includes(e) || blockLocked(e)) return
   settings.blockPauses = { ...Object.fromEntries(Object.entries(settings.blockPauses).filter(([, end]) => end > Date.now())), [e]: Date.now() + BLOCK_PAUSE }
   setTimeout(applyBlocks, BLOCK_PAUSE + 100); applyBlocks(); push()
 }
 const resumeBlock = e => { settings.blockPauses = omit(settings.blockPauses, e); applyBlocks(); push() }
-function blockSchedule(e, s) { // s: { days, from, to } to block it only then, null to block it all the time
+function blockSchedule(e, s) { // s: { days, from, to, strict } to block it only then, null to block it all the time
   const hm = /^([01]\d|2[0-3]):[0-5]\d$/
-  if (!settings.blockedSites.includes(e) || s && (!hm.test(s.from) || !hm.test(s.to) || !Array.isArray(s.days))) return
-  settings.blockSchedules = s ? { ...settings.blockSchedules, [e]: { days: [...new Set(s.days)].filter(d => Number.isInteger(d) && d >= 0 && d < 7).sort(), from: s.from, to: s.to } } : omit(settings.blockSchedules, e)
+  if (!settings.blockedSites.includes(e) || blockLocked(e) || s && (!hm.test(s.from) || !hm.test(s.to) || !Array.isArray(s.days))) return
+  settings.blockSchedules = s ? { ...settings.blockSchedules, [e]: { days: [...new Set(s.days)].filter(d => Number.isInteger(d) && d >= 0 && d < 7).sort(), from: s.from, to: s.to, strict: !!s.strict } } : omit(settings.blockSchedules, e)
+  if (s?.strict) settings.blockPauses = omit(settings.blockPauses, e) // going strict ends a running pause
   applyBlocks(); push()
 }
 app.on('select-client-certificate', async (e, wc, url, list, cb) => {

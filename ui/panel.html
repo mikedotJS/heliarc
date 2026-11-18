@@ -133,7 +133,7 @@ function protections(S) {
   const here = h ? PROT.map(p => `<div class="line"><label>${p[3]}<small>${global(p) ? 'Turned off for every site in Settings' : p[4]}</small></label><input type="checkbox" class="ds-switch" data-a="prot" data-kind="${p[0]}" data-host="${esc(h)}" ${st[p[1]].includes(h) ? '' : 'checked'} ${global(p) ? 'disabled' : ''}></div>`).join('') : '<div class="empty">Open a website to see its protections.</div>'
   const hosts = [...new Set(PROT.flatMap(p => st[p[1]]))].sort()
   return `<section><h3>${h ? esc(h) : 'This site'}</h3><div class="msg">On means protected. Changing one reloads the page.</div>${here}${h ? (st.blockedSites.includes(h)
-      ? `<div class="line"><label>Blocked<small>This site shows the “blocked” screen in every space</small></label><button class="ds-btn sm" data-a="unblockSite" data-e="${esc(h)}">Unblock</button></div>`
+      ? `<div class="line"><label>Blocked<small>${S.blocksLocked.includes(h) ? 'Strict schedule: it can’t be unblocked until the period ends' : 'This site shows the “blocked” screen in every space'}</small></label><button class="ds-btn sm" data-a="unblockSite" data-e="${esc(h)}" ${S.blocksLocked.includes(h) ? 'disabled' : ''}>Unblock</button></div>`
       : `<div class="line"><label>Block this site<small>It stops opening, in every space, until you unblock it here or in Settings → Privacy</small></label><button class="ds-btn sm" data-a="blockHere" data-host="${esc(h)}">Block</button></div>`) : ''}</section>
     <section><h3>Sites with something turned off</h3>${hosts.length ? hosts.map(x => `<div class="line"><label>${esc(x)}<small>Off: ${PROT.filter(p => st[p[1]].includes(x)).map(p => p[3].toLowerCase()).join(', ')}</small></label><button class="ds-btn sm" data-a="protReset" data-host="${esc(x)}">Turn all back on</button></div>`).join('') : '<div class="empty">None. Every protection is on everywhere.</div>'}</section>`
 }
@@ -175,18 +175,19 @@ function assistantBlock(st) { // the key is never shown again once saved: only w
     <div class="line"><label>Model<small>Faster is cheaper. Opus handles long, tricky requests best</small></label><select class="ds-select" data-amodel>${Object.entries(MODEL_NAMES).map(([k, n]) => `<option value="${k}" ${k === asData.model ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
     <div class="msg">Heliarc asks you before each click that sends, pays, deletes or publishes, and never types passwords.</div>${msg}`
 }
-// a blocked site: blocked all the time or on a schedule (days, from, to), with its 5-minute pause
+// a blocked site: blocked all the time or on a schedule (days, from, to), with its 5-minute pause; a strict schedule can't be undone while it blocks
 const DAYS = [1, 2, 3, 4, 5, 6, 0], dayName = d => new Intl.DateTimeFormat('en', { weekday: 'short' }).format(new Date(2026, 0, 4 + d)) // 4 January 2026 is a Sunday
 const hhmm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 function blockRow(S, e) {
-  const st = S.settings, s = st.blockSchedules[e], paused = st.blockPauses[e] > Date.now(), on = S.blocksOn.includes(e)
-  const now = paused ? `paused until ${hhmm(st.blockPauses[e])}` : on ? 'blocked now' : !s.days.length ? 'no day picked, so never blocked' : `not blocked right now (${s.from === s.to ? 'all day' : `${s.from} to ${s.to}`} on the days picked)`
+  const st = S.settings, s = st.blockSchedules[e], paused = st.blockPauses[e] > Date.now(), on = S.blocksOn.includes(e), lock = S.blocksLocked.includes(e), off = lock ? 'disabled' : ''
+  const now = lock ? `strict, locked until ${s.from === s.to ? 'the end of the day' : s.to}` : paused ? `paused until ${hhmm(st.blockPauses[e])}` : on ? 'blocked now' : !s.days.length ? 'no day picked, so never blocked' : `not blocked right now (${s.from === s.to ? 'all day' : `${s.from} to ${s.to}`} on the days picked)`
   return `<div class="line"><label>${esc(e)}<small>${e.includes('/') ? 'This address and the pages under it' : 'This site and its subdomains'}: ${now}</small></label>
-    ${paused ? `<button class="ds-btn sm" data-a="resumeBlock" data-e="${esc(e)}">Block again</button>` : on ? `<button class="ds-btn sm" data-a="pauseBlock" data-e="${esc(e)}">Pause 5 min</button>` : ''}
-    <select class="ds-select" data-bsched="${esc(e)}" aria-label="When ${esc(e)} is blocked"><option value="">All the time</option><option value="1" ${s ? 'selected' : ''}>On a schedule</option></select>
-    <button class="ds-btn sm" data-a="unblockSite" data-e="${esc(e)}" title="Unblock" aria-label="Unblock ${esc(e)}">${icon('trash-2', 14)}</button></div>
-    ${s ? `<div class="line sched">${DAYS.map(d => `<button class="ibtn ${s.days.includes(d) ? 'on' : ''}" data-a="blockDay" data-e="${esc(e)}" data-d="${d}" aria-pressed="${s.days.includes(d)}">${esc(dayName(d))}</button>`).join('')}
-      <input type="time" class="ds-field" data-btime="from" data-e="${esc(e)}" value="${s.from}" aria-label="Blocked from">to<input type="time" class="ds-field" data-btime="to" data-e="${esc(e)}" value="${s.to}" aria-label="Blocked until"></div>` : ''}`
+    ${paused ? `<button class="ds-btn sm" data-a="resumeBlock" data-e="${esc(e)}">Block again</button>` : on && !lock ? `<button class="ds-btn sm" data-a="pauseBlock" data-e="${esc(e)}">Pause 5 min</button>` : ''}
+    <select class="ds-select" data-bsched="${esc(e)}" ${off} aria-label="When ${esc(e)} is blocked"><option value="">All the time</option><option value="1" ${s ? 'selected' : ''}>On a schedule</option></select>
+    <button class="ds-btn sm" data-a="unblockSite" data-e="${esc(e)}" ${off} title="${lock ? 'Strict: locked while blocked' : 'Unblock'}" aria-label="Unblock ${esc(e)}">${icon('trash-2', 14)}</button></div>
+    ${s ? `<div class="line sched">${DAYS.map(d => `<button class="ibtn ${s.days.includes(d) ? 'on' : ''}" data-a="blockDay" data-e="${esc(e)}" data-d="${d}" ${off} aria-pressed="${s.days.includes(d)}">${esc(dayName(d))}</button>`).join('')}
+      <input type="time" class="ds-field" data-btime="from" data-e="${esc(e)}" ${off} value="${s.from}" aria-label="Blocked from">to<input type="time" class="ds-field" data-btime="to" data-e="${esc(e)}" ${off} value="${s.to}" aria-label="Blocked until"></div>
+      <div class="line"><label>Strict<small>While it is blocked, no unblocking, pausing or schedule change until the period ends</small></label><input type="checkbox" class="ds-switch" data-bstrict="${esc(e)}" ${s.strict ? 'checked' : ''} ${off} aria-label="Strict block for ${esc(e)}"></div>` : ''}`
 }
 function settings(S) {
   const st = S.settings, p = data || {}
@@ -324,6 +325,7 @@ $('#body').onchange = async e => {
   else if (t.matches('[data-side]')) await api.call('setSetting', 'sidebarSide', t.value)
   else if (t.matches('[data-hours]')) await api.call('setSetting', 'archiveHours', +t.value)
   else if (t.matches('[data-bsched]')) await api.call('blockSchedule', t.dataset.bsched, t.value ? { days: [1, 2, 3, 4, 5], from: '09:00', to: '18:00' } : null) // a schedule starts as weekdays, 9 to 6
+  else if (t.matches('[data-bstrict]')) await api.call('blockSchedule', t.dataset.bstrict, { ...state.settings.blockSchedules[t.dataset.bstrict], strict: t.checked })
   else if (t.matches('[data-btime]')) { if (t.value) await api.call('blockSchedule', t.dataset.e, { ...state.settings.blockSchedules[t.dataset.e], [t.dataset.btime]: t.value }) }
   else if (t.matches('[data-spshare]')) { working = 'share' + t.dataset.spshare; render(); try { await api.call('shareSpace', +t.dataset.spshare, t.value === '1') } finally { working = null; render() } }
   else if (t.dataset.f) await api.call('editSpace', +t.dataset.sp, { [t.dataset.f]: t.value })

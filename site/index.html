@@ -29,7 +29,9 @@
       </a>
       <nav aria-label="Main">
         <a href="#tabs">Tabs</a>
+        <a href="#ai">AI</a>
         <a href="#privacy">Privacy</a>
+        <a href="#focus">Focus</a>
         <a href="#extensions">Extensions</a>
       </nav>
       <div class="nav-actions">
@@ -43,7 +45,7 @@
     <section class="hero wrap" id="top">
       <div class="hero-copy">
         <h1><span>Tabs in a sidebar.</span> <span class="accent">Trackers out.</span></h1>
-        <p class="lead">A private browser for Mac and Windows. Blocks ads and trackers by default, runs your Chrome extensions.</p>
+        <p class="lead">A private browser for Mac and Windows. Blocks ads and trackers by default, runs your Chrome extensions, and lets your AI assistant drive.</p>
         <div class="actions">
           <a class="btn btn-primary" href="#download"><i class="i" style="--src:url(icons/download-simple.svg)"></i>Download</a>
           <a class="btn btn-ghost" href="https://github.com/mikedotJS/heliarc"><i class="i" style="--src:url(icons/github-logo.svg)"></i>View on GitHub</a>
@@ -63,6 +65,7 @@
           <li><i class="i" style="--src:url(icons/arrow-square-in.svg)"></i>Peek at a link with Shift+click, without leaving the page</li>
           <li><i class="i" style="--src:url(icons/archive.svg)"></i>Tabs you stopped using archive themselves</li>
           <li><i class="i" style="--src:url(icons/picture-in-picture.svg)"></i>A playing video floats on when you leave its tab</li>
+          <li><i class="i" style="--src:url(icons/git-pull-request.svg)"></i>Your GitHub and GitLab reviews, issues and CI, right in the sidebar</li>
         </ul>
       </div>
       <figure class="frame reveal">
@@ -73,12 +76,30 @@
     <section class="section wrap command" id="command">
       <div class="reveal">
         <h2>Type anything. Land anywhere.</h2>
-        <p class="body">One bar for tabs, history and search. Bangs jump straight to a site, or add your own.</p>
+        <p class="body">One bar for tabs, history and search. Bangs jump straight to a site, or add your own. Or start with <code>?</code> and write a sentence: Ask Heliarc does it for you, with your own Claude API key.</p>
         <p class="bangs" aria-label="Built-in bangs"><code>!w</code><code>!yt</code><code>!gh</code><code>!g</code><code>!ddg</code></p>
       </div>
       <figure class="frame frame-plain reveal">
         <img src="img/command.webp" width="1400" height="370" loading="lazy" alt="The Heliarc command bar with the word aurora typed in. It offers to search, and to switch to the open Aurora tab.">
       </figure>
+    </section>
+
+    <section class="section wrap" id="ai">
+      <div class="reveal">
+        <p class="eyebrow">AI</p>
+        <h2>Let your assistant drive.</h2>
+        <p class="body">Off until you turn it on. It runs on your computer only and never sees the Private space.</p>
+      </div>
+      <div class="pair">
+        <article class="panel reveal">
+          <h3><i class="i" style="--src:url(icons/robot.svg)"></i>Claude, Cursor and other MCP apps</h3>
+          <p>They open tabs, read pages, click and type in your real browser. Your cookies are shared only with the sites you allow, one by one.</p>
+        </article>
+        <article class="panel reveal">
+          <h3><i class="i" style="--src:url(icons/bug-beetle.svg)"></i>DevTools for your assistant</h3>
+          <p>Console, network, scripts, styles, storage, phone sizes, slow connections and Web Vitals. It debugs your site the way you would.</p>
+        </article>
+      </div>
     </section>
 
     <section class="section wrap" id="privacy">
@@ -95,7 +116,7 @@
         <article class="cell b-trk reveal">
           <i class="i i-lg" style="--src:url(icons/shield-check.svg)"></i>
           <h3>Ads and trackers, blocked</h3>
-          <p>Filter lists run on every page. Allow ads on one site with a click on the shield.</p>
+          <p>Filter lists run on every page, and “turn off your ad blocker” warnings are hidden. Allow ads on one site with a click on the shield.</p>
         </article>
         <article class="cell b-prv reveal">
           <i class="i i-lg" style="--src:url(icons/detective.svg)"></i>
@@ -117,6 +138,23 @@
       </div>
     </section>
 
+    <section class="section wrap" id="focus">
+      <div class="reveal">
+        <p class="eyebrow">Focus</p>
+        <h2>Fewer distractions, on your terms.</h2>
+      </div>
+      <div class="pair">
+        <article class="panel reveal">
+          <h3><i class="i" style="--src:url(icons/prohibit.svg)"></i>Block the sites that eat your day</h3>
+          <p>All the time or on a schedule, a whole site or just youtube.com/shorts. Need it once? Pause for 5 minutes. Turn on Strict and nothing unblocks it before the period ends.</p>
+        </article>
+        <article class="panel reveal">
+          <h3><i class="i" style="--src:url(icons/skip-forward.svg)"></i>YouTube without the sponsor reads</h3>
+          <p>Sponsor segments and self-promotion marked by SponsorBlock viewers are skipped, with an Undo. One switch in Settings.</p>
+        </article>
+      </div>
+    </section>
+
     <section class="section wrap" id="extensions">
       <div class="reveal">
         <h2>Bring your extensions and your history.</h2>
@@ -124,7 +162,7 @@
       <div class="pair">
         <article class="panel reveal">
           <h3>Chrome extensions</h3>
-          <p>Bitwarden and Proton Pass run in the toolbar. Add anything from the Chrome Web Store with one button.</p>
+          <p>Bitwarden and Proton Pass run in the toolbar, passkeys included, with Touch ID on Mac. Add anything from the Chrome Web Store with one button.</p>
           <ul class="logos" aria-label="Password managers that work in Heliarc">
             <li><i class="logo" role="img" aria-label="Bitwarden" style="--src:url(icons/bitwarden.svg)"></i></li>
             <li><i class="logo" role="img" aria-label="Proton Pass" style="--src:url(icons/proton.svg)"></i></li>
@@ -166,7 +204,7 @@
           </div>
         </article>
       </div>
-      <p class="note reveal">Protected video such as Netflix and Spotify does not play yet. Heliarc updates itself on Mac and tells you when a new version is out on Windows.</p>
+      <p class="note reveal">Netflix, TF1+ and other protected video play. Heliarc updates itself on Mac and tells you when a new version is out on Windows.</p>
     </section>
   </main>
 

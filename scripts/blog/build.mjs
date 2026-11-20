@@ -46,7 +46,7 @@ ${extra}</head>
   <header class="nav">
     <div class="wrap nav-row">
       <a class="brand" href="/" aria-label="Heliarc home"><img src="/img/icon.webp" alt="" width="28" height="28"><span>Heliarc</span></a>
-      <nav aria-label="Main"><a href="/#tabs">Tabs</a><a href="/#ai">AI</a><a href="/#privacy">Privacy</a><a href="/#focus">Focus</a><a href="/blog/">Blog</a></nav>
+      <nav aria-label="Main"><a href="/#tabs">Tabs</a><a href="/#ai">AI</a><a href="/#privacy">Privacy</a><a href="/#focus">Focus</a><a href="/#extensions">Extensions</a><a href="/blog/" aria-current="page">Blog</a></nav>
       <div class="nav-actions">
         <a class="icon-link" href="https://github.com/mikedotJS/heliarc" aria-label="Heliarc on GitHub"><i class="i" style="--src:url(/icons/github-logo.svg)"></i></a>
         <a class="btn btn-primary btn-sm" href="/#download">Download</a>

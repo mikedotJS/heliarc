@@ -8,7 +8,18 @@ on:
 permissions: { contents: read }
 
 jobs:
+  blog-post: # every published release has its post on the blog: site/blog/posts/*.md with "version: x.y.z", written before tagging
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          grep -lE "^version: [\"']?${v//./\\.}[\"']?\s*$" site/blog/posts/*.md || { echo "::error::No blog post for $v: add site/blog/posts/<date>-<slug>.md with version: \"$v\""; exit 1; }
   build:
+    needs: blog-post
+    if: ${{ !failure() && !cancelled() }}
     strategy:
       fail-fast: false
       matrix:

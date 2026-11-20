@@ -160,3 +160,29 @@ h3 { font-size: 1.125rem; line-height: 1.3; letter-spacing: -.02em; }
   .nav nav { display: none; }
   .actions .btn { flex: 1 1 auto; }
 }
+
+/* blog: post cards (home and blog index), post pages */
+.link { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.post-list { margin-top: 40px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.post-card { padding: 28px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; transition: border-color .2s; }
+.post-card:hover { border-color: var(--line-strong); }
+.post-card h3 a::after { content: ""; position: absolute; inset: 0; } .post-card { position: relative; }
+.post-card p:last-child { color: var(--muted); font-size: .9375rem; }
+.post-meta { font: 400 .8125rem/1.4 var(--mono); color: var(--muted); }
+.post-meta a { color: var(--accent-text); }
+.post { padding-block: clamp(48px, 8vw, 96px); }
+.post article { max-width: 720px; }
+.post h1 { margin-top: 14px; font-size: clamp(2rem, 3.4vw, 3rem); }
+.prose { margin-top: 32px; font-size: 1.0625rem; line-height: 1.7; }
+.prose > * + * { margin-top: 1.1em; }
+.prose h2 { margin-top: 2em; font-size: clamp(1.5rem, 2.4vw, 1.875rem); }
+.prose h3 { margin-top: 1.6em; }
+.prose a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.prose ul, .prose ol { padding-left: 1.3em; } .prose li + li { margin-top: .4em; }
+.prose code { font: .9em var(--mono); padding: 2px 6px; border-radius: 6px; background: var(--surface-2); }
+.prose strong { font-weight: 600; }
+.post-faq { margin-top: 56px; padding-top: 40px; border-top: 1px solid var(--line); }
+.post-faq h2 { font-size: clamp(1.5rem, 2.4vw, 1.875rem); }
+.post-faq h3 { margin-top: 28px; } .post-faq p { margin-top: 8px; color: var(--muted); }
+.post-more { margin-top: 72px; } .post-more h2 { font-size: 1.5rem; } .post-more .post-list { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 960px; }
+@media (max-width: 900px) { .post-list, .post-more .post-list { grid-template-columns: 1fr; } }

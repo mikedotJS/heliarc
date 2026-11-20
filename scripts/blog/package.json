@@ -1,0 +1,13 @@
+{
+  "name": "heliarc-site-build",
+  "private": true,
+  "description": "Builds the landing site with its blog (pages, RSS feed, sitemap) from site/ and site/blog/posts/*.md",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "marked": "^18.2.1",
+    "yaml": "^2.9.1"
+  }
+}

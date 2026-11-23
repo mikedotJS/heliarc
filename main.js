@@ -70,7 +70,7 @@ const pageOf = wc => tabOf(wc) || (peek?.view.webContents === wc ? peek : little
 const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } }
 const zoneOf = t => t.fav ? 'fav' : t.folder ? 'f' + t.folder : t.pinned ? 'pinned' : 'list'
 const snapshot = () => ({
-  tabs: tabs.filter(t => !SPACES[t.space].private).map(({ id, title, url, icon, pinned, fav, folder, space, muted, last }) => ({ id, title, url, icon, pinned, fav, folder, space, muted, last })),
+  tabs: tabs.filter(t => !SPACES[t.space].private).map(({ id, title, url, home, icon, pinned, fav, folder, space, muted, last }) => ({ id, title, url, home, icon, pinned, fav, folder, space, muted, last })),
   folders: folders.filter(f => !SPACES[f.space]?.private), active: SPACES[byId(active)?.space]?.private ? null : active, space: SPACES[space].private ? 0 : space, sidebar, archive, settings,
 })
 const push = () => {
@@ -403,6 +403,7 @@ function retarget(t, sp) { // move a tab to another space: pages must be rebuilt
 function place(id, zone, fid, idx = 1e9) { // drag & drop: put a tab in a zone (fav | pinned | folder | list) at an index
   const t = byId(id); if (!t) return
   tabs.splice(tabs.indexOf(t), 1)
+  if (zone === 'pinned' && !t.pinned) t.home = t.url; else if (zone !== 'pinned') delete t.home // a pinned tab remembers the exact page it was pinned on
   t.fav = zone === 'fav'; t.pinned = zone === 'pinned'; t.folder = zone === 'folder' ? fid : null
   if (zone === 'folder') { const f = folders.find(x => x.id === fid); if (f) f.open = true; else t.folder = null }
   const mates = tabs.filter(x => zoneOf(x) === zoneOf(t) && (t.fav || x.space === t.space)), ref = mates[idx]
@@ -416,7 +417,7 @@ function toFavOrBack(t, zone, fid, idx) { // leaving favorites (shared by every 
 }
 function newFolder() { const f = { id: nextId++, name: 'New folder', open: true, space }; folders.push(f); push(); return f.id }
 function delFolder(fid) {
-  tabs.forEach(t => { if (t.folder === fid) { t.folder = null; t.pinned = true } })
+  tabs.forEach(t => { if (t.folder === fid) { t.folder = null; t.pinned = true; t.home = t.url } })
   folders = folders.filter(f => f.id !== fid); push()
 }
 const splitWith = (a, b) => { split = [a, b]; active = b; refresh() }
@@ -435,9 +436,15 @@ function archiveTab(t) {
   if (t.url) { archive.unshift({ title: t.title, url: t.url, icon: t.icon, at: Date.now(), space: t.space }); archive.length = Math.min(archive.length, 500) }
   removeTab(t)
 }
+const REHOME = 10 * 60e3 // a pinned tab left alone this long goes back to the page it was pinned on
+function rehome(t) { if (!t.home || t.url === t.home) return; t.error = null; t.url = t.home; t.view?.webContents.loadURL(t.home) }
 function sweep(now = Date.now()) {
-  const h = settings.archiveHours; if (!h) return
-  for (const t of [...tabs]) if (!SPACES[t.space].private && !t.fav && !t.pinned && !t.folder && !isShown(t.id) && !t.playing && now - t.last > h * 3600e3) archiveTab(t)
+  const h = settings.archiveHours
+  for (const t of [...tabs]) {
+    if (isShown(t.id) || t.playing) continue
+    if (t.pinned && t.homed !== t.last && now - t.last > REHOME) { t.homed = t.last; rehome(t) } // once per time away (a page that redirects is not reloaded over and over)
+    else if (h && !SPACES[t.space].private && !t.fav && !t.pinned && !t.folder && now - t.last > h * 3600e3) archiveTab(t)
+  }
   push()
 }
 
@@ -835,6 +842,7 @@ function tabMenu(id) {
   const h = hostOf(t.url), here = folders.filter(f => f.space === t.space)
   Menu.buildFromTemplate([
     { label: t.pinned ? 'Unpin tab' : 'Pin tab', click: () => toFavOrBack(t, t.pinned ? 'list' : 'pinned') },
+    ...(t.pinned ? [{ label: 'Back to pinned page', enabled: !!t.home && t.url !== t.home, click: () => { rehome(t); push() } }] : []),
     ...(SPACES[t.space].private ? [] : [{ label: t.fav ? 'Remove from favorites' : 'Add to favorites', click: () => toFavOrBack(t, t.fav ? 'list' : 'fav') }]),
     { label: 'Move to folder', enabled: !t.fav, submenu: [...here.map(f => ({ label: f.name, click: () => place(id, 'folder', f.id) })), { label: 'New folder', click: () => place(id, 'folder', newFolder()) }] },
     { label: 'Open in split view', enabled: id !== active, click: () => openSplit(id) },
@@ -1236,10 +1244,10 @@ app.whenReady().then(async () => {
   // restore the previous session; only the active tab is loaded, the others wake up when selected
   nextId = Math.max(1, ...(saved.tabs || []).map(t => t.id + 1), ...(saved.folders || []).map(f => f.id + 1), ...downloads.map(d => d.id + 1), ...vault.map(v => v.id + 1))
   folders = saved.folders || []; archive = saved.archive || []; sidebar = saved.sidebar !== false; space = SPACES[saved.space] ? saved.space : 0
-  tabs = (saved.tabs || []).filter(t => SPACES[t.space]).map(t => ({ title: 'New tab', url: '', icon: null, muted: false, pinned: false, fav: false, folder: null, last: Date.now(), ...t, view: null, loading: false, asleep: true, error: null }))
+  tabs = (saved.tabs || []).filter(t => SPACES[t.space]).map(t => ({ title: 'New tab', url: '', icon: null, muted: false, pinned: false, fav: false, folder: null, last: Date.now(), ...t, home: t.home ?? (t.pinned ? t.url : undefined), view: null, loading: false, asleep: true, error: null }))
   edge.setVisible(!sidebar); restored = true
   tabs.length ? activate(byId(saved.active)?.id ?? tabs[0].id) : newTab()
-  layout(); stack(); sweep(); setInterval(sweep, 5 * 60e3).unref()
+  layout(); stack(); sweep(); setInterval(sweep, 60e3).unref()
   gitRefresh(); setInterval(gitRefresh, 5 * 60e3).unref()
   if (!TEST && app.isPackaged) { const autoCheck = () => settings.autoUpdateCheck && checkUpdate(); setTimeout(autoCheck, 20e3).unref(); setInterval(autoCheck, 6 * 3600e3).unref() }
   if (!app.isPackaged && !TEST) for (const ses of spaceSessions()) ses.serviceWorkers.on('console-message', (_, d) => console.log('extension worker:', d.level, d.message.slice(0, 300))) // dev: surface extension worker warnings and errors
@@ -1262,7 +1270,7 @@ app.whenReady().then(async () => {
     tabs: () => tabs, newTab, closeTab, sleep, activate, go, resolve, cur, switchSpace, openCmd, closeCmd, cmdOpen: () => cmdOpen,
     pin: id => { const t = byId(id); t.pinned = !t.pinned; push() }, stats: () => ({ blocked, blockerState }), win: () => win, ui: () => ui, cmd: () => cmd,
     // library of hooks for the feature tests
-    S: { gitRefresh: () => gitRefresh(), expectInstall, applyBlocks, mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
+    S: { gitRefresh: () => gitRefresh(), expectInstall, applyBlocks, mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, rehome, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
       ext, crx, extCommand, SYSTEM, realUrl, hungUi: () => hungUi, hungTab: () => hungTab, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },

@@ -589,6 +589,14 @@ module.exports = async (a, ok) => {
     const old = await open('/second'); a.activate(t3.id); old.last = Date.now() - 13 * 3600e3; const n = S.archive().length
     S.sweep(); ok('tabs unused for 12h are archived', S.archive().length === n + 1 && !a.tabs().includes(old) && S.archive()[0].url === base + '/second')
     t2.last = 0; t1.last = 0; S.sweep(); ok('pinned tabs and favorites survive archiving', a.tabs().includes(t1) && a.tabs().includes(t2))
+    // pinned tabs go back to the page they were pinned on
+    const pinTab = [t1, t2].find(x => x.pinned), home = pinTab.home
+    ok('a pinned tab remembers the page it was pinned on', !!home, 'home=' + home)
+    a.activate(pinTab.id); a.go(base + '/late'); await until(async () => pinTab.url === base + '/late'); S.rehome(pinTab); await until(async () => pinTab.view.webContents.getURL() === home)
+    ok('a pinned tab goes back to its pinned page on demand', pinTab.url === home && pinTab.view.webContents.getURL() === home, pinTab.url)
+    a.go(base + '/late'); await until(async () => pinTab.url === base + '/late'); a.activate(t3.id); pinTab.last = Date.now() - 11 * 60e3; S.sweep(); await until(async () => pinTab.view.webContents.getURL() === home)
+    ok('a pinned tab left alone for 10 minutes goes back to its pinned page', pinTab.url === home && pinTab.view.webContents.getURL() === home, pinTab.url)
+    a.go(base + '/late'); await until(async () => a.cur().url === base + '/late'); S.sweep(); ok('a tab in front never jumps back', a.cur().url === base + '/late')
     S.openPanel('archive'); await sleep(600); ok('archive lists the tab', await js(panel(), `document.body.innerText.includes('Second page')`)); await snap(S.panel(), 'panel-archive')
     const count = a.tabs().length; await js(panel(), `document.querySelector('[data-a=restoreArchive]').click()`); await sleep(600)
     ok('archived tab restores', a.tabs().length === count + 1 && a.cur().url === base + '/second' && S.archive().length === n)

@@ -1,6 +1,9 @@
 // Runs inside every web page (isolated world): detects logins to offer saving them, and fills saved logins / profile on focus.
 const { ipcRenderer, contextBridge } = require('electron')
 if (location.protocol === 'file:' && location.pathname.endsWith('/ui/system.html')) contextBridge.exposeInMainWorld('sys', { trust: () => ipcRenderer.invoke('sys:trust'), unblock: () => ipcRenderer.invoke('sys:unblock'), pause: () => ipcRenderer.invoke('sys:pause') }) // the invalid-certificate screen's "Continue anyway", the blocked-site screen's "Unblock" and "Pause 5 min"
+// a link aimed at a named window (target=_new, target=foo) is an ordinary "new tab" link: it goes out as target=_blank, so a same-site one stays in this tab like the others
+// (window.open(url, name) is left alone: the page may need its link to that window)
+addEventListener('click', e => { const a = e.target.closest?.('a[target][href]'), t = a?.target; if (!t || /^_(blank|self|top|parent)$/i.test(t) || document.querySelector(`iframe[name="${CSS.escape(t)}"]`)) return; a.target = '_blank'; setTimeout(() => { a.target = t }) })
 const PROFILE = { email: 'email', tel: 'phone', 'given-name': 'first', 'family-name': 'last', name: 'name', organization: 'org', 'street-address': 'street', 'address-line1': 'street', 'postal-code': 'zip', 'address-level2': 'city', 'country-name': 'country' }
 const LOGIN = /log ?in|sign ?in|sign ?up|continue|submit|next|connexion|connecter|identifier|valider/i
 const visible = el => { // what the user can really see: shown, opaque, not clipped away, and on screen (a trap form hides fields off screen)

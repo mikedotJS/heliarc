@@ -232,6 +232,9 @@ module.exports = async (a, ok) => {
     ok('a tab that closes itself leaves no dead tab behind, and the app keeps running', a.tabs().length === n0 && (() => { try { S.push(); return true } catch { return false } })(), String(a.tabs().length))
     await js(po.view.webContents, "void window.open('/second', '_blank')"); await sleep(800)
     ok('a link that stays on the same site navigates the tab instead of opening another', a.tabs().length === n0 && /second/.test(po.view.webContents.getURL()), a.tabs().length + ' ' + po.view.webContents.getURL()); a.closeTab(po.id)
+    const nl = await open('/popup-opener'), n1 = a.tabs().length
+    await js(nl.view.webContents, "(() => { const l = document.createElement('a'); l.href = '/second'; l.target = '_new'; document.body.append(l); l.click() })()"); await sleep(800)
+    ok('a same-site link aimed at a named window (target=_new) navigates the tab too', a.tabs().length === n1 && /second/.test(nl.view.webContents.getURL()), a.tabs().length + ' ' + nl.view.webContents.getURL()); a.closeTab(nl.id)
     a.closeTab(emb.id); a.closeTab(emb2.id)
     // search engine and custom bangs
     const bg = require('./bangs'), mine = [{ trigger: 'npm', url: 'https://www.npmjs.com/search?q=%s' }]

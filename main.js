@@ -360,11 +360,11 @@ function userClose(id) { // the page may refuse to close ("Leave site?"), so it 
 }
 function closeTab(id) {
   const t = byId(id); if (!t) return
-  removeTab(t)
+  if (t.folder && !SPACES[t.space].private) { if (split?.includes(id)) split = null; sleep(id, true) } else removeTab(t) // a tab in a folder is a saved link, as in Arc: closing it frees the page, the link stays in its folder
   if (active === id) closeFind() // the next tab is not 'leaving' this one (activate() looks at the tab in front, now gone)
   if (SPACES[t.space].private && !tabs.some(x => x.space === t.space)) { if (peek?.space === t.space) closePeek(); downloads.forEach(d => d.private && dls.get(d.id)?.cancel()); downloads = downloads.filter(d => !d.private); folders = folders.filter(f => f.space !== t.space); wipe(session.fromPartition(SPACES[t.space].partition)); space === t.space ? switchSpace(0) : refresh(); return }
   if (active !== id) { refresh(); return }
-  const sp = t.fav ? space : t.space, same = tabs.filter(x => x.space === sp && !x.fav)
+  const sp = t.fav ? space : t.space, same = tabs.filter(x => x.space === sp && !x.fav && x !== t)
   if (same.length) activate((same.find(x => x.id > id) || same.at(-1)).id)
   else newTab(null, sp)
 }
@@ -378,7 +378,7 @@ function sleep(id, evenShown) { // hibernate: free the page, keep the tab in the
   const t = byId(id); if (!t?.view || (isShown(id) && !evenShown)) return
   if (hungTab === t) endHung()
   if (fsTab === t) { fsTab = null; if (!fsWinWas) win.setFullScreen(false) }
-  win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; t.asleep = true; t.loading = false; t.playing = false
+  const v = t.view; t.view = null; win.contentView.removeChildView(v); try { v.webContents.close() } catch {} /* already gone when the page closed itself */ t.asleep = true; t.loading = false; t.playing = false
   if (mediaTab === id) mediaTab = null
   push()
 }

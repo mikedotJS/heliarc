@@ -136,6 +136,8 @@ module.exports = async (a, ok) => {
     ok('favorites show at the top', await uiN('#pins .tile') === 1); ok('pinned show in their own list', await uiN('#pinned .tab') === 1)
     const fid = S.newFolder(); S.place(t3.id, 'folder', fid); await sleep(300)
     ok('folder holds the tab', t3.folder === fid && await uiN(`.folder[data-fid="${fid}"] .fb .tab`) === 1)
+    S.userClose(t3.id); await sleep(800) // as in Arc, a tab in a folder is a saved link
+    ok('closing a tab in a folder keeps its link there, unloaded', a.tabs().includes(t3) && t3.folder === fid && t3.asleep && !t3.view && await uiN(`.folder[data-fid="${fid}"] .fb .tab`) === 1, `kept=${a.tabs().includes(t3)} folder=${t3.folder} asleep=${t3.asleep}`)
     await js(ui(), `document.querySelector('.fh .n').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`); await sleep(200)
     await js(ui(), `(() => { const i = document.querySelector('.fh input'); i.value = 'Research'; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })) })()`); await sleep(300)
     ok('folder can be renamed', S.folders()[0].name === 'Research', S.folders()[0].name)

@@ -68,9 +68,10 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then APP="dist/Heliarc-darwin-arm64/Heliarc.app/Contents/MacOS/Heliarc"; else APP="dist/Heliarc-win32-x64/Heliarc.exe"; fi
-          "$APP" --selftest-local > smoke.txt 2> smoke-err.txt || true
+          HELIARC_VERBOSE=1 perl -e 'alarm shift; exec @ARGV' 900 "$APP" --selftest-local > smoke.txt 2> smoke-err.txt || echo "the self test stopped early (hung, cut after 15 min, or crashed)"
           echo "--- results"; grep -c '^PASS' smoke.txt || true; grep '^FAIL' smoke.txt || echo "no failures"
-          echo "--- stderr"; head -40 smoke-err.txt
+          echo "--- last results before the end"; grep -E '^(PASS|FAIL)' smoke-err.txt | tail -5
+          echo "--- stderr"; grep -vE '^(PASS|FAIL)' smoke-err.txt | head -40
           grep -q '^PASS' smoke.txt && ! grep -q '^FAIL' smoke.txt
       - uses: actions/upload-artifact@v4
         with:

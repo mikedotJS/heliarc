@@ -136,8 +136,12 @@ module.exports = async (a, ok) => {
     ok('favorites show at the top', await uiN('#pins .tile') === 1); ok('pinned show in their own list', await uiN('#pinned .tab') === 1)
     const fid = S.newFolder(); S.place(t3.id, 'folder', fid); await sleep(300)
     ok('folder holds the tab', t3.folder === fid && await uiN(`.folder[data-fid="${fid}"] .fb .tab`) === 1)
+    a.activate(t3.id); a.go(base + '/second'); await until(async () => t3.url === base + '/second' && !t3.loading)
     S.userClose(t3.id); await sleep(800) // as in Arc, a tab in a folder is a saved link
     ok('closing a tab in a folder keeps its link there, unloaded', a.tabs().includes(t3) && t3.folder === fid && t3.asleep && !t3.view && await uiN(`.folder[data-fid="${fid}"] .fb .tab`) === 1, `kept=${a.tabs().includes(t3)} folder=${t3.folder} asleep=${t3.asleep}`)
+    ok('…and goes back to the page it was saved on', t3.url === base + '/login', t3.url)
+    { const t5 = await open('/video'); a.closeTab(t5.id); S.reopenTab(); await sleep(400)
+      ok('Mod+Shift+T reopens the last closed tab', a.cur() !== t5 && a.cur()?.url === base + '/video', a.cur()?.url); a.closeTab(a.cur().id) }
     await js(ui(), `document.querySelector('.fh .n').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`); await sleep(200)
     await js(ui(), `(() => { const i = document.querySelector('.fh input'); i.value = 'Research'; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })) })()`); await sleep(300)
     ok('folder can be renamed', S.folders()[0].name === 'Research', S.folders()[0].name)
@@ -185,6 +189,11 @@ module.exports = async (a, ok) => {
     newF?.click(); await sleep(200)
     ok('its New folder entry creates a folder', S.folders().length === nFolders + 1)
     S.delFolder(S.folders().at(-1).id); Menu.buildFromTemplate = realBuild
+    { const uf = S.newFolder(), ut = await open('/second'); S.place(ut.id, 'folder', uf); S.delFolder(uf); await sleep(300)
+      ok('deleting a folder offers Undo', await uiN('#undo button') === 1 && ut.pinned && !ut.folder)
+      await js(ui(), `document.querySelector('#undo button').click()`); await sleep(300)
+      ok('Undo brings the folder back with its tabs', S.folders().some(f => f.id === uf) && ut.folder === uf && !ut.pinned && await uiN('#undo button') === 0, `folder=${ut.folder} pinned=${ut.pinned}`)
+      S.delFolder(uf); a.closeTab(ut.id) }
     // two-finger swipe on a page = back / forward
     const nav = await open('/'), navUrl = () => nav.view.webContents.getURL()
     await js(nav.view.webContents, `location.href = '/second'`); await until(async () => navUrl().endsWith('/second'))

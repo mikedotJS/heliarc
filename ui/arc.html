@@ -67,7 +67,7 @@
   <div id="newrow"><button id="newbtn"><span id="plus"></span> New tab <small style="opacity:.6">Ctrl+T</small></button><button id="nf" title="New folder"></button></div>
   <div id="list" data-zone="list"></div>
   <browser-action-list id="exts" alignment="top right"></browser-action-list>
-  <div id="git"></div><div id="mini"></div><div id="dl"></div><div id="upd"></div>
+  <div id="git"></div><div id="mini"></div><div id="dl"></div><div id="upd"></div><div id="undo"></div>
   <div id="shield"></div>
   <div id="foot"></div>
 </div>
@@ -119,6 +119,7 @@ $('#git').onclick = e => {
   if (row) api.call('gitOpen', row.dataset.url); else if (b === 'refresh') api.call('gitRefresh'); else if (b === 'fix') api.call('openPanel', 'settings'); else if (!b && e.target.closest('.card')) { gitOpen = !gitOpen; render() }
 }
 $('#git').onkeydown = e => { if (e.key === 'Enter' && e.target.matches('.gi[data-url]')) api.call('gitOpen', e.target.dataset.url) }
+$('#undo').onclick = e => { if (e.target.closest('button')) { e.target.closest('button').disabled = true; api.call('undoFolder') } }
 $('#upd').onclick = e => { const b = e.target.closest('[data-u]'); b && api.call(b.dataset.u === 'install' ? 'installUpdate' : 'openRelease') }
 $('#shield').onclick = () => api.call('openPanel', 'protections')
 $('#pwbar').onclick = e => { const a = e.target.dataset.pw; if (a) api.call(a) }
@@ -192,7 +193,7 @@ function render() {
   s.tabs.forEach(t => seen.add(t.id))
   const m = s.media && s.tabs.find(t => t.id === s.media.id)
   $('#git').innerHTML = gitCard(s)
-  const had = ['git', 'mini', 'upd', 'dl'].map(k => !!$('#' + k).firstElementChild) // a card that is already there is updated, not shown again: no new entrance animation
+  const had = ['git', 'mini', 'upd', 'dl', 'undo'].map(k => !!$('#' + k).firstElementChild) // a card that is already there is updated, not shown again: no new entrance animation
   $('#mini').innerHTML = m && m.id !== s.active ? card('', 'music', m.title || m.url, host(m.url), `<button data-m="toggle" title="${s.media.playing ? 'Pause' : 'Play'}">${icon(s.media.playing ? 'pause' : 'play', 14)}</button><button data-m="mute" title="Mute">${icon(m.muted ? 'volume-x' : 'volume-2', 14)}</button><button data-m="go" title="Go to tab">${icon('external-link', 14)}</button>`) : ''
   const d = s.downloads.find(x => x.state === 'progressing' || x.state === 'paused') || s.downloads.find(x => x.state === 'completed' && Date.now() - x.at < 8000) || s.downloads.find(x => x.state === 'interrupted' && Date.now() - x.at < 60000)
   const busy = s.downloads.filter(x => x.state === 'progressing').length
@@ -201,7 +202,8 @@ function render() {
     : u?.state === 'downloading' ? card('', 'download', 'Updating Heliarc' + (v ? ' to ' + v : ''), 'Downloading…', '', 5)
     : s.update ? card('', 'download', 'Heliarc ' + v + ' is available', 'You have ' + s.version, '<button data-u="open">Get it</button>') : ''
   $('#dl').innerHTML = d?.state === 'interrupted' ? card('', 'triangle-alert', d.name, dlError?.id === d.id ? dlError.text : 'Download failed: the connection was lost or the site refused it', `<button data-dl="retry" data-id="${d.id}">Retry</button><button data-dl="drop" data-id="${d.id}" title="Dismiss">${icon('x', 14)}</button>`) : d ? card('', d.state === 'completed' ? 'check' : 'download', d.name, d.state === 'completed' ? 'Download complete' : `${d.total ? Math.round(d.received / d.total * 100) + '%' : 'Downloading…'}${busy > 1 ? ` · ${busy} downloads` : ''}`, '', d.state === 'completed' ? null : d.total ? d.received / d.total * 100 : 5) : ''
-  ;['git', 'mini', 'upd', 'dl'].forEach((k, i) => $('#' + k).firstElementChild?.classList.toggle('still', had[i]))
+  $('#undo').innerHTML = s.undoFolder ? card('', 'folder', `“${s.undoFolder}” deleted`, 'Folder deleted, its tabs are now pinned', '<button>Undo</button>') : ''
+  ;['git', 'mini', 'upd', 'dl', 'undo'].forEach((k, i) => $('#' + k).firstElementChild?.classList.toggle('still', had[i]))
   $('#shield').innerHTML = s.blockerState === 'loading' ? 'Loading ad blocker…' : s.blockerState === 'error' ? `${icon('shield-alert', 13)} Ad blocker offline (lists unreachable)` : `${icon('shield-check', 13)} ${s.blocked} ads & trackers blocked`
   $('#shield').classList.toggle('off', !!s.siteOff); $('#shield').title = 'Protections on this site: click to manage them'
   if (s.siteOff && s.adHost) $('#shield').innerHTML = `${icon('shield-off', 13)} ${s.siteOff} protection${s.siteOff > 1 ? 's' : ''} off on ${esc(s.adHost)}`

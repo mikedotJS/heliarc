@@ -51,6 +51,7 @@ const MEDIA_TOGGLE = `(() => { const m = [...document.querySelectorAll('video,au
 
 let win, ui, cmd, panel, find, peekUi, edge, little, askUi
 let tabs = [], folders = [], archive = [], history = [], downloads = [], vault = [], profile = {}, settings = structuredClone(DEFAULTS)
+let closed = [], undoFolder = null // closed: the last closed tabs, for Mod+Shift+T; undoFolder: the folder just deleted, for a few seconds
 let active = null, space = 0, nextId = 1, blocked = 0, blockerState = 'loading', copied = false // copied: the address pill says "Link copied" for a moment after Mod+Shift+C
 let restored = false // the session is saved only once the previous one is back, or an early push() would overwrite it with an empty one
 let cmdOpen = false, panelOpen = false, findOpen = false, findText = '', recording = false
@@ -78,7 +79,7 @@ const push = () => {
   const listed = id => { const t = byId(id); return !!t && (!SPACES[t.space].private || space === PRIVATE) } // what the UI is sent must exist in the tab list it receives
   const c = listed(active) ? cur() : null, nav = c?.view?.webContents?.navigationHistory
   const s = {
-    active: listed(active) ? active : null, space, spaces: SPACES, copied, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), blocksOn: privacy.activeBlocks(settings), blocksLocked: settings.blockedSites.filter(blockLocked), siteOff: Object.values(SITE_OFF).filter(f => settings[f].includes(privacy.host(c?.url || ''))).length, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
+    active: listed(active) ? active : null, space, spaces: SPACES, copied, undoFolder: undoFolder?.f.name ?? null, update, updater, version: app.getVersion(), blocked, blockerState, adHost: privacy.host(c?.url || ''), blocksOn: privacy.activeBlocks(settings), blocksLocked: settings.blockedSites.filter(blockLocked), siteOff: Object.values(SITE_OFF).filter(f => settings[f].includes(privacy.host(c?.url || ''))).length, canBack: nav?.canGoBack() ?? false, canFwd: nav?.canGoForward() ?? false,
     askReady: !!assistantCfgRaw().key, git: gitPublic(),
     sidebar, split: split?.every(listed) ? split : null, folders, archive: archive.slice(0, 200), downloads: downloads.filter(d => !d.private || space === PRIVATE).slice(0, 50), settings, engines: Object.fromEntries(Object.entries(bangs.ENGINES).map(([k, v]) => [k, v[0]])), permLabels: { camera: 'Camera', microphone: 'Microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', midi: 'MIDI devices', midiSysex: 'MIDI devices (system exclusive)', fileSystem: 'Files' }, lists: Object.fromEntries(Object.entries(LISTS).map(([k, v]) => [k, v[0]])), keys: keys.resolve(settings.shortcuts),
     labels: Object.fromEntries(Object.entries(keys.ACTIONS).map(([a, [l]]) => [a, l])), canSavePw: safeStorage.isEncryptionAvailable(),
@@ -257,7 +258,7 @@ const RUN = {
   newPrivateTab: () => { const had = tabs.some(t => t.space === PRIVATE); switchSpace(PRIVATE); had && newTab(null, PRIVATE) }, newTab: () => openCmd('new'), editAddress: () => openCmd('edit'), closeTab: () => peek ? closePeek() : active && userClose(active), reload: () => cur()?.view?.webContents.reload(),
   find: () => openFind(), zoomIn: () => zoom(1), zoomOut: () => zoom(-1), zoomReset: () => zoom(0), toggleSidebar: () => toggleSidebar(), splitView: () => toggleSplit(),
   library: () => openPanel('downloads'), history: () => openPanel('history'), settings: () => openPanel('settings'),
-  print: () => cur()?.view?.webContents.print({ printBackground: true }), devtools: () => toggleDevtools(),
+  print: () => cur()?.view?.webContents.print({ printBackground: true }), devtools: () => toggleDevtools(), reopenTab: () => reopenTab(),
 }
 function extCommand(e, i, tab) { // chrome.commands: run an extension's keyboard command (e.g. Bitwarden's auto-fill) when its suggested key is pressed in a page
   const c = i.type === 'keyDown' && !recording && keys.combo(i); if (!c) return false
@@ -360,7 +361,7 @@ function userClose(id) { // the page may refuse to close ("Leave site?"), so it 
 }
 function closeTab(id) {
   const t = byId(id); if (!t) return
-  if (t.folder && !SPACES[t.space].private) { if (split?.includes(id)) split = null; sleep(id, true) } else removeTab(t) // a tab in a folder is a saved link, as in Arc: closing it frees the page, the link stays in its folder
+  if (t.folder && !SPACES[t.space].private) { if (split?.includes(id)) split = null; sleep(id, true); rehome(t) } else { removeTab(t); if (t.url && !SPACES[t.space].private) closed = [{ url: t.url, space: t.space }, ...closed].slice(0, 25) } // a tab in a folder is a saved link, as in Arc: closing it frees the page, the link stays in its folder
   if (active === id) closeFind() // the next tab is not 'leaving' this one (activate() looks at the tab in front, now gone)
   if (SPACES[t.space].private && !tabs.some(x => x.space === t.space)) { if (peek?.space === t.space) closePeek(); downloads.forEach(d => d.private && dls.get(d.id)?.cancel()); downloads = downloads.filter(d => !d.private); folders = folders.filter(f => f.space !== t.space); wipe(session.fromPartition(SPACES[t.space].partition)); space === t.space ? switchSpace(0) : refresh(); return }
   if (active !== id) { refresh(); return }
@@ -403,7 +404,7 @@ function retarget(t, sp) { // move a tab to another space: pages must be rebuilt
 function place(id, zone, fid, idx = 1e9) { // drag & drop: put a tab in a zone (fav | pinned | folder | list) at an index
   const t = byId(id); if (!t) return
   tabs.splice(tabs.indexOf(t), 1)
-  if (zone === 'pinned' && !t.pinned) t.home = t.url; else if (zone !== 'pinned') delete t.home // a pinned tab remembers the exact page it was pinned on
+  if (zone !== 'pinned' && zone !== 'folder') delete t.home; else if (!t.pinned && !t.folder) t.home = t.url // a pinned tab, or a link in a folder, remembers the exact page it was saved on
   t.fav = zone === 'fav'; t.pinned = zone === 'pinned'; t.folder = zone === 'folder' ? fid : null
   if (zone === 'folder') { const f = folders.find(x => x.id === fid); if (f) f.open = true; else t.folder = null }
   const mates = tabs.filter(x => zoneOf(x) === zoneOf(t) && (t.fav || x.space === t.space)), ref = mates[idx]
@@ -417,8 +418,18 @@ function toFavOrBack(t, zone, fid, idx) { // leaving favorites (shared by every 
 }
 function newFolder() { const f = { id: nextId++, name: 'New folder', open: true, space }; folders.push(f); push(); return f.id }
 function delFolder(fid) {
-  tabs.forEach(t => { if (t.folder === fid) { t.folder = null; t.pinned = true; t.home = t.url } })
-  folders = folders.filter(f => f.id !== fid); push()
+  const f = folders.find(x => x.id === fid); if (!f) return
+  const kept = tabs.filter(t => t.folder === fid).map(t => ({ t, pinned: t.pinned, home: t.home }))
+  kept.forEach(({ t }) => { t.folder = null; t.pinned = true; t.home ??= t.url })
+  undoFolder = { f, at: folders.indexOf(f), kept }; folders = folders.filter(x => x !== f); push()
+  setTimeout(() => { if (undoFolder?.f === f) { undoFolder = null; push() } }, 8000)
+}
+function restoreFolder() { // the "Undo" of a folder deleted a moment ago: it comes back where it was, with the tabs still open
+  if (!undoFolder) return
+  const { f, at, kept } = undoFolder; undoFolder = null
+  folders.splice(at, 0, f)
+  kept.forEach(({ t, pinned, home }) => { if (byId(t.id) && t.space === f.space && t.pinned && !t.folder) { t.folder = f.id; t.pinned = pinned; t.home = home } })
+  push()
 }
 const splitWith = (a, b) => { split = [a, b]; active = b; refresh() }
 function toggleSplit() {
@@ -442,7 +453,7 @@ function sweep(now = Date.now()) {
   const h = settings.archiveHours
   for (const t of [...tabs]) {
     if (isShown(t.id) || t.playing) continue
-    if (t.pinned && t.homed !== t.last && now - t.last > REHOME) { t.homed = t.last; rehome(t) } // once per time away (a page that redirects is not reloaded over and over)
+    if ((t.pinned || t.folder) && t.homed !== t.last && now - t.last > REHOME) { t.homed = t.last; rehome(t) } // once per time away (a page that redirects is not reloaded over and over)
     else if (h && !SPACES[t.space].private && !t.fav && !t.pinned && !t.folder && now - t.last > h * 3600e3) archiveTab(t)
   }
   push()
@@ -570,7 +581,7 @@ function addBookmarks(list, from) { // one folder per bookmark folder; the tabs 
   const groups = Map.groupBy(list.slice(0, 1000), b => b.folder), sp = SPACES[space].private ? 0 : space
   for (const [name, items] of groups) {
     const f = { id: nextId++, name: name ? `${from} · ${name}` : `Imported from ${from}`, open: false, space: sp }; folders.push(f)
-    for (const b of items) tabs.push({ id: nextId++, title: b.title || b.url, url: b.url, icon: null, muted: false, pinned: false, fav: false, folder: f.id, space: sp, last: Date.now(), view: null, loading: false, asleep: true, error: null })
+    for (const b of items) tabs.push({ id: nextId++, title: b.title || b.url, url: b.url, home: b.url, icon: null, muted: false, pinned: false, fav: false, folder: f.id, space: sp, last: Date.now(), view: null, loading: false, asleep: true, error: null })
   }
   push(); return { text: `Imported ${Math.min(list.length, 1000)} bookmarks into ${groups.size} folder(s) of the sidebar.` }
 }
@@ -836,13 +847,15 @@ async function setupPrivacy() {
   await loadBlocker()
 }
 
+function reopenTab() { const c = closed.shift(); if (c) newTab(c.url, SPACES[c.space] ? c.space : 0); else push() }
+
 // ---- context menu on a sidebar tab ----
 function tabMenu(id) {
   const t = byId(id); if (!t) return
   const h = hostOf(t.url), here = folders.filter(f => f.space === t.space)
   Menu.buildFromTemplate([
     { label: t.pinned ? 'Unpin tab' : 'Pin tab', click: () => toFavOrBack(t, t.pinned ? 'list' : 'pinned') },
-    ...(t.pinned ? [{ label: 'Back to pinned page', enabled: !!t.home && t.url !== t.home, click: () => { rehome(t); push() } }] : []),
+    ...(t.pinned || t.folder ? [{ label: t.folder ? 'Back to saved page' : 'Back to pinned page', enabled: !!t.home && t.url !== t.home, click: () => { rehome(t); push() } }] : []),
     ...(SPACES[t.space].private ? [] : [{ label: t.fav ? 'Remove from favorites' : 'Add to favorites', click: () => toFavOrBack(t, t.fav ? 'list' : 'fav') }]),
     { label: 'Move to folder', enabled: !t.fav, submenu: [...here.map(f => ({ label: f.name, click: () => place(id, 'folder', f.id) })), { label: 'New folder', click: () => place(id, 'folder', newFolder()) }] },
     { label: 'Open in split view', enabled: id !== active, click: () => openSplit(id) },
@@ -862,7 +875,7 @@ function sideMenu(fid) { // right-click on a folder header or on the empty part 
     { label: f.open ? 'Collapse folder' : 'Expand folder', click: () => { f.open = !f.open; push() } },
     { type: 'separator' }, { label: 'Delete folder', click: () => delFolder(f.id) },
   ] : [
-    { label: 'New tab', click: () => openCmd('new') }, { label: 'New folder', click: newFolder },
+    { label: 'New tab', click: () => openCmd('new') }, { label: 'Reopen closed tab', enabled: closed.length > 0, click: reopenTab }, { label: 'New folder', click: newFolder },
     { type: 'separator' },
     { label: 'Switch space', submenu: SPACES.map((s, i) => ({ label: s.name, type: 'radio', checked: i === space, click: () => switchSpace(i) })) },
     { label: 'Collapse sidebar', click: toggleSidebar },
@@ -1053,7 +1066,7 @@ app.whenReady().then(async () => {
   h('hungAct', act => { const t = hungTab; endHung(); if (act === 'reload' && t?.view && !t.view.webContents.isDestroyed()) { t.reviving = true; t.view.webContents.forcefullyCrashRenderer() } })
   h('ctx', tabMenu); h('ctxSide', sideMenu)
   h('move', (id, zone, fid, idx) => { const t = byId(id); t && toFavOrBack(t, zone, fid, idx) })
-  h('newFolder', newFolder); h('delFolder', delFolder)
+  h('newFolder', newFolder); h('delFolder', delFolder); h('undoFolder', restoreFolder)
   h('renameFolder', (fid, name) => { const f = folders.find(x => x.id === fid); if (f && name.trim()) { f.name = name.trim(); push() } })
   h('toggleFolder', fid => { const f = folders.find(x => x.id === fid); if (f) { f.open = !f.open; push() } })
   h('toggleSidebar', toggleSidebar); h('reveal', () => reveal(true)); h('unreveal', () => reveal(false))
@@ -1244,7 +1257,7 @@ app.whenReady().then(async () => {
   // restore the previous session; only the active tab is loaded, the others wake up when selected
   nextId = Math.max(1, ...(saved.tabs || []).map(t => t.id + 1), ...(saved.folders || []).map(f => f.id + 1), ...downloads.map(d => d.id + 1), ...vault.map(v => v.id + 1))
   folders = saved.folders || []; archive = saved.archive || []; sidebar = saved.sidebar !== false; space = SPACES[saved.space] ? saved.space : 0
-  tabs = (saved.tabs || []).filter(t => SPACES[t.space]).map(t => ({ title: 'New tab', url: '', icon: null, muted: false, pinned: false, fav: false, folder: null, last: Date.now(), ...t, home: t.home ?? (t.pinned ? t.url : undefined), view: null, loading: false, asleep: true, error: null }))
+  tabs = (saved.tabs || []).filter(t => SPACES[t.space]).map(t => ({ title: 'New tab', url: '', icon: null, muted: false, pinned: false, fav: false, folder: null, last: Date.now(), ...t, home: t.home ?? (t.pinned || t.folder ? t.url : undefined), view: null, loading: false, asleep: true, error: null }))
   edge.setVisible(!sidebar); restored = true
   tabs.length ? activate(byId(saved.active)?.id ?? tabs[0].id) : newTab()
   layout(); stack(); sweep(); setInterval(sweep, 60e3).unref()
@@ -1270,7 +1283,7 @@ app.whenReady().then(async () => {
     tabs: () => tabs, newTab, closeTab, sleep, activate, go, resolve, cur, switchSpace, openCmd, closeCmd, cmdOpen: () => cmdOpen,
     pin: id => { const t = byId(id); t.pinned = !t.pinned; push() }, stats: () => ({ blocked, blockerState }), win: () => win, ui: () => ui, cmd: () => cmd,
     // library of hooks for the feature tests
-    S: { gitRefresh: () => gitRefresh(), expectInstall, applyBlocks, mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, rehome, newFolder, delFolder, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
+    S: { gitRefresh: () => gitRefresh(), expectInstall, applyBlocks, mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, rehome, newFolder, delFolder, restoreFolder, reopenTab, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
       ext, crx, extCommand, SYSTEM, realUrl, hungUi: () => hungUi, hungTab: () => hungTab, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },

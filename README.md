@@ -33,7 +33,7 @@ Inspired by the open-source [Helium](https://github.com/imputnet/helium) browser
 **Not there yet**: Netflix/Spotify-style protected video (Widevine needs a different Electron build), passkeys kept in iCloud Keychain or on a phone (QR code): keep them in a password manager extension instead. On a Mac, passkeys saved with Touch ID work, and stay on that Mac.
 
 **Arc-style**
-- Vertical sidebar: favorites on top (shared by every space), pinned tabs, folders, then today's tabs; drag & drop between all of them
+- Vertical sidebar: favorites on top (shared by every space), pinned tabs, folders, then today's tabs; drag & drop between all of them; closing a link in a folder keeps it there, back on the page it was saved on; Cmd/Ctrl+Shift+T reopens a closed tab; a deleted folder can be undone
 - Spaces (Home / Work / Fun): like Arc, they share one profile (logins, extensions: one password manager to unlock), or a space keeps its own cookies and logins (Settings → *Spaces*); links can be routed to a space (Settings, or right-click a tab → *Always open … in*): new tabs, typed addresses and links from other apps follow the route
 - Split view (two pages side by side), Peek (Shift+click a link), Little window for links from other apps (set Heliarc as default browser in Settings), automatic archive of unused tabs (12 h by default, see Library → Archive)
 - Automatic picture-in-picture when you leave a playing video tab, mini player in the sidebar, collapsible sidebar (hover its edge to peek at it), on the left or the right; rename spaces and pick their icon and colours in Settings

@@ -214,6 +214,7 @@ module.exports = async (a, ok) => {
     ok('the page looks like a plain Chrome', !/Electron|Heliarc/.test(await js(emb.view.webContents, 'navigator.userAgent')), await js(emb.view.webContents, 'navigator.userAgent'))
     ok('every visitor reports the same hardware', await js(emb.view.webContents, 'navigator.hardwareConcurrency === 4 && navigator.deviceMemory === 8'))
     ok('the page is a "Google Chrome" brand, which Google sign-in requires', await js(emb.view.webContents, 'navigator.userAgentData.brands.some(b => b.brand === "Google Chrome") && navigator.userAgentData.getHighEntropyValues(["fullVersionList"]).then(r => r.fullVersionList.some(b => b.brand === "Google Chrome"))'))
+    ok('it gives only its major version, as Chrome does (a full one next to the "Google Chrome" brand gives a fake away: Canal+ sign-in)', /Chrome\/\d+\.0\.0\.0 /.test(await js(emb.view.webContents, 'navigator.userAgent')))
     const wcE = emb.view.webContents, area = () => a.win().getContentBounds(), placed = emb.view.getBounds() // a video's fullscreen button: the page fills the whole window, then goes back
     await wcE.executeJavaScript('void document.documentElement.requestFullscreen()', true); for (let i = 0; i < 30 && emb.view.getBounds().x !== 0; i++) await sleep(200); await sleep(800) // the window itself takes a moment to go fullscreen
     ok('a page can go fullscreen over the sidebar', emb.view.getBounds().x === 0 && emb.view.getBounds().y === 0 && emb.view.getBounds().width === area().width, JSON.stringify([emb.view.getBounds(), area()]))
@@ -586,7 +587,11 @@ module.exports = async (a, ok) => {
       ok('the sidebar shows the download', /Downloading/.test(await js(ui(), "document.querySelector('#upd').textContent")))
       S.setUpdater({ state: 'ready' }); await sleep(300)
       ok('and offers to restart once it is downloaded', /Restart/.test(await js(ui(), "document.querySelector('#upd').textContent")))
-      S.setUpdater(null) }
+      S.setUpdater(null)
+      const rel = 'https://github.com/mikedotJS/heliarc/releases/tag/v9.9.9'; S.setUpdate({ version: '9.9.9', url: rel }); await sleep(300)
+      await js(ui(), `document.querySelector('#upd [data-u="open"]').click()`); await sleep(500)
+      ok('"Get it" opens the release page in a tab (Windows may have no default browser to send it to)', a.cur()?.url === rel, a.cur()?.url)
+      if (a.cur()?.url === rel) a.closeTab(a.cur().id); S.setUpdate(null) }
     // spell check suggestions in the right-click menu
     { const { Menu: M } = require('electron'), build = M.buildFromTemplate; let tpl = null; M.buildFromTemplate = t => { tpl ??= t; const x = build(t); x.popup = () => {}; return x }
       const sp = await open('/'); S.pageMenu(sp.view.webContents, { misspelledWord: 'teh', dictionarySuggestions: ['the', 'tea'], x: 1, y: 1 })

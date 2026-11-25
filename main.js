@@ -627,7 +627,7 @@ async function installExtension(input) {
 const crx = new Map()
 const crxOf = tab => crx.get(session.fromPartition(SPACES[tab.space].partition))
 const EXT_PRIVACY = ['passwordSavingEnabled', 'autofillAddressEnabled', 'autofillCreditCardEnabled'] // the chrome.privacy settings an extension may switch off (Heliarc has no card filling: that one is only remembered)
-const ELECTRON_UA = app.userAgentFallback, CHROME_UA = ELECTRON_UA.replace(/ (Electron|Heliarc)\/\S+/gi, '')
+const ELECTRON_UA = app.userAgentFallback, CHROME_UA = ELECTRON_UA.replace(/ (Electron|Heliarc)\/\S+/gi, '').replace(/Chrome\/(\d+)[\d.]+/, 'Chrome/$1.0.0.0') // Chrome only gives its major version: a full one next to the "Google Chrome" brand gives a fake away (Canal+ sign-in: 403)
 // on: sites see a plain Chrome, not an Electron app. The app-wide one counts too: a frame from another site (Cloudflare's check) reads it, and a mismatch fails the check
 const applyUserAgent = ses => { app.userAgentFallback = settings.fingerprint ? CHROME_UA : ELECTRON_UA; ses.setUserAgent(app.userAgentFallback) }
 function setupSession(ses) {
@@ -1170,7 +1170,7 @@ app.whenReady().then(async () => {
   h('checkUpdate', checkUpdate); h('openRelease', async () => { // the update feed can lag behind a fresh release: try the in-app update first, the release page is the way out
     if (!update) return
     if (autoUpdate && !updater) { updater = { state: 'downloading' }; push(); if (await autoUpdate.check()) return }
-    if (update.url?.startsWith('https://github.com/mikedotJS/heliarc/')) shell.openExternal(update.url) // only our own release page, whatever the feed says
+    if (update.url?.startsWith('https://github.com/mikedotJS/heliarc/')) newTab(update.url, SPACES[space].private ? 0 : space) // only our own release page, whatever the feed says; in a tab here, as the system may have no default browser to send it to
   })
   const siteChanged = host => { for (const x of tabs) if (x.view && privacy.host(x.url) === host) x.view.webContents.reload(); push() } // a page reloads so the change applies to it
   h('toggleSite', (kind, host) => { // turn one protection off (or back on) for a site: the current one, or the one named in Settings
@@ -1283,7 +1283,7 @@ app.whenReady().then(async () => {
     tabs: () => tabs, newTab, closeTab, sleep, activate, go, resolve, cur, switchSpace, openCmd, closeCmd, cmdOpen: () => cmdOpen,
     pin: id => { const t = byId(id); t.pinned = !t.pinned; push() }, stats: () => ({ blocked, blockerState }), win: () => win, ui: () => ui, cmd: () => cmd,
     // library of hooks for the feature tests
-    S: { gitRefresh: () => gitRefresh(), expectInstall, applyBlocks, mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, rehome, newFolder, delFolder, restoreFolder, reopenTab, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
+    S: { gitRefresh: () => gitRefresh(), expectInstall, applyBlocks, mcpHost, mcpLib, askUi: () => askUi, userClose, authCurrent: () => authCurrent, trustedCerts, setUpdater: s => { updater = s; push() }, setUpdate: u => { update = u; push() }, checkUpdate, addHistory, addBookmarks, addPasswords, extSessions, snapshot, wipe, pageMenu, place, rehome, newFolder, delFolder, restoreFolder, reopenTab, openSplit, toggleSplit, splitState: () => split, folders: () => folders, active: () => active, sweep, archive: () => archive, settings: () => settings,
       zoom, openFind, closeFind, find: () => find, findOpen: () => findOpen, openPanel, closePanel, panel: () => panel, openPeek, closePeek, peek: () => peek, peekUi: () => peekUi,
       openExternal, little: () => little, toggleSidebar, reveal, sidebar: () => sidebar, floating: () => floating, edge: () => edge, history: () => history, downloads: () => downloads,
       ext, crx, extCommand, SYSTEM, realUrl, hungUi: () => hungUi, hungTab: () => hungTab, spaceSessions, vault: () => vault, pending: () => pwPending, savePw, tabMenu, mediaTab: () => mediaTab, byId, push, setRoute, routeFor, toggleDevtools, keys, shortcut, store, space: () => space, content, SPACES },

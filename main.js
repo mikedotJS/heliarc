@@ -635,7 +635,7 @@ const applyUserAgent = ses => { app.userAgentFallback = settings.fingerprint ? C
 // uaMeta: Chrome's own description of itself (brands, OS version...), read once from Chromium, plus the "Google Chrome" brand Electron lacks (Google sign-in wants it)
 let uaMeta = null
 const readUaMeta = wc => wc.executeJavaScript(`navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness', 'model', 'platformVersion', 'fullVersionList', 'wow64']).then(h => ({ ...h, langs: navigator.languages.join() }))`)
-  .then(({ langs: l, ...h }) => { const g = l => [...l, { brand: 'Google Chrome', version: l.find(b => b.brand === 'Chromium').version }]; uaMeta = { ...h, brands: g(h.brands), fullVersionList: g(h.fullVersionList) }; langs = l; spaceSessions().forEach(applyUserAgent) }).catch(() => {})
+  .then(({ langs: l, ...h }) => { const g = l => [...l, { brand: 'Google Chrome', version: l.find(b => b.brand === 'Chromium').version }]; uaMeta = { ...h, brands: g(h.brands), fullVersionList: g(h.fullVersionList) }; privacy.CLIENT_HINTS['sec-ch-ua'] = uaMeta.brands.map(b => `"${b.brand}";v="${b.version}"`).join(', '); langs = l; spaceSessions().forEach(applyUserAgent) }).catch(() => {})
 const CHROME_OBJ = `(() => { // Electron leaves window.chrome empty, Chrome doesn't (in frames too)
   const t = performance.timeOrigin / 1000, c = window.chrome ||= {}
   c.app ||= { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }, getDetails: () => null, getIsInstalled: () => false }

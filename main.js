@@ -1,4 +1,4 @@
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, shell, safeStorage, clipboard, screen, dialog, desktopCapturer, net, components } = require('electron')
+const { app, BaseWindow, WebContentsView, webContents, ipcMain, session, Menu, shell, safeStorage, clipboard, screen, dialog, desktopCapturer, net, components } = require('electron')
 const path = require('path'), fs = require('fs'), os = require('os')
 const blockerLib = require('@ghostery/adblocker-electron'), { ElectronBlocker } = blockerLib
 const bangs = require('./bangs')
@@ -128,7 +128,7 @@ const lockScreen = wc => { // Heliarc's own screens (the ones with the bridge to
   wc.setWindowOpenHandler(() => ({ action: 'deny' }))
   wc.on('will-navigate', (e, u) => { if (!u.startsWith(require('url').pathToFileURL(path.join(__dirname, 'ui')).href)) e.preventDefault() })
 }
-const pagePrefs = partition => ({ partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD, additionalArguments: settings.fingerprint ? ['--heliarc-fp'] : [] }) // the same for tabs, Peek and the Little window
+const pagePrefs = partition => ({ partition, sandbox: true, contextIsolation: true, preload: TABPRELOAD }) // the same for tabs, Peek and the Little window
 // window.open(url, name, 'width=420,height=560'): a sign-in or payment window. It must stay linked to the page that opened it (it reports back with postMessage / window.opener),
 // so it is a real window, not a tab. Only the tab in front can open one, and only a sized popup: plain links keep opening tabs (Shift+click = Peek)
 const POPUP = /\b(width|height|popup)\b/i
@@ -151,7 +151,7 @@ const webrtcPolicy = wc => settings.webrtcProtect && !settings.webrtcOff.include
 const navTo = new WeakMap() // page -> the address its main frame is loading (wc.getURL() still shows the old page then)
 const hardenWc = wc => { wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc)); wc.on('did-navigate', () => wc.setWebRTCIPHandlingPolicy(webrtcPolicy(wc))); for (const e of ['did-start-navigation', 'did-redirect-navigation']) wc.on(e, d => d.isMainFrame && navTo.set(wc, d.url)); for (const e of ['did-navigate', 'did-stop-loading']) wc.on(e, () => navTo.delete(wc)) } // a navigation that ends without a page (download, 204) is no longer the address being loaded
 // the protections the user can turn off for one site: name -> the setting listing the sites where it is off
-const SITE_OFF = { ads: 'adblockOff', cookies: 'cookiesOk', fingerprint: 'fingerprintOff', webrtc: 'webrtcOff' }
+const SITE_OFF = { ads: 'adblockOff', cookies: 'cookiesOk', webrtc: 'webrtcOff' }
 // which system screen a failed load gets: Chromium's net error codes
 const sysKind = (code, url) => code === -20 && privacy.blockedBy(privacy.activeBlocks(settings), url) ? 'blocked' : !net.isOnline() || code === -106 ? 'offline' : code === -105 ? 'notfound' : code === -102 || code === -101 ? 'refused' : code === -7 || code === -118 ? 'timeout' : code <= -200 && code > -300 ? 'cert' : 'load'
 function showSystem(tab, kind, { url, detail, msg }) {
@@ -629,7 +629,32 @@ const crxOf = tab => crx.get(session.fromPartition(SPACES[tab.space].partition))
 const EXT_PRIVACY = ['passwordSavingEnabled', 'autofillAddressEnabled', 'autofillCreditCardEnabled'] // the chrome.privacy settings an extension may switch off (Heliarc has no card filling: that one is only remembered)
 const ELECTRON_UA = app.userAgentFallback, CHROME_UA = ELECTRON_UA.replace(/ (Electron|Heliarc)\/\S+/gi, '').replace(/Chrome\/(\d+)[\d.]+/, 'Chrome/$1.0.0.0') // Chrome only gives its major version: a full one next to the "Google Chrome" brand gives a fake away (Canal+ sign-in: 403)
 // on: sites see a plain Chrome, not an Electron app. The app-wide one counts too: a frame from another site (Cloudflare's check) reads it, and a mismatch fails the check
-const applyUserAgent = ses => { app.userAgentFallback = settings.fingerprint ? CHROME_UA : ELECTRON_UA; ses.setUserAgent(app.userAgentFallback) }
+let langs = '' // the page's own navigator.languages (its workers keep them whatever is done): Accept-Language says the same, as in Chrome
+const applyUserAgent = ses => { app.userAgentFallback = settings.fingerprint ? CHROME_UA : ELECTRON_UA; ses.setUserAgent(app.userAgentFallback, langs || undefined) }
+// Every page is told who it is at the source, so the page, its frames, its workers and its requests all describe the same browser: anti-bot checks compare them (Canal+ sign-in: 403).
+// uaMeta: Chrome's own description of itself (brands, OS version...), read once from Chromium, plus the "Google Chrome" brand Electron lacks (Google sign-in wants it)
+let uaMeta = null
+const readUaMeta = wc => wc.executeJavaScript(`navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness', 'model', 'platformVersion', 'fullVersionList', 'wow64']).then(h => ({ ...h, langs: navigator.languages.join() }))`)
+  .then(({ langs: l, ...h }) => { const g = l => [...l, { brand: 'Google Chrome', version: l.find(b => b.brand === 'Chromium').version }]; uaMeta = { ...h, brands: g(h.brands), fullVersionList: g(h.fullVersionList) }; langs = l; spaceSessions().forEach(applyUserAgent) }).catch(() => {})
+const CHROME_OBJ = `(() => { // Electron leaves window.chrome empty, Chrome doesn't (in frames too)
+  const t = performance.timeOrigin / 1000, c = window.chrome ||= {}
+  c.app ||= { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }, getDetails: () => null, getIsInstalled: () => false }
+  c.csi ||= () => ({ startE: Math.round(t * 1000), onloadT: Date.now(), pageT: performance.now(), tran: 15 })
+  c.loadTimes ||= () => ({ requestTime: t, startLoadTime: t, commitLoadTime: t, finishDocumentLoadTime: t, finishLoadTime: t, firstPaintTime: t, firstPaintAfterLoadTime: 0, navigationType: 'Other', wasFetchedViaSpdy: true, wasNpnNegotiated: true, npnNegotiatedProtocol: 'h2', wasAlternateProtocolAvailable: false, connectionInfo: 'h2' })
+})()`
+function chromeIdentity(wc) {
+  if (!uaMeta || wc.isDestroyed() || ['backgroundPage', 'remote'].includes(wc.getType())) return // !uaMeta: Heliarc's own screens, made before it is read
+  wc.heliarcIdentity = { userAgent: app.userAgentFallback, ...(settings.fingerprint && { userAgentMetadata: uaMeta }) } // lib/devtools.js puts it back after its device mode
+  const d = wc.debugger, setUp = async session => { // the page, then each frame from another site (Cloudflare's check runs in one) and each worker, before they run anything
+    try { await Promise.all([d.sendCommand('Emulation.setUserAgentOverride', wc.heliarcIdentity, session), d.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: CHROME_OBJ, runImmediately: true }, session), d.sendCommand('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, session)].map(p => p.catch(() => {}))) }
+    finally { if (session) d.sendCommand('Runtime.runIfWaitingForDebugger', {}, session).catch(() => {}) } // never leave a frame paused
+  }
+  try {
+    if (d.isAttached()) return void d.sendCommand('Emulation.setUserAgentOverride', wc.heliarcIdentity).catch(() => {})
+    d.attach('1.3'); d.on('message', (_, m, p) => { if (m === 'Target.attachedToTarget') setUp(p.sessionId) }); setUp()
+  } catch {}
+}
+app.on('web-contents-created', (_, wc) => chromeIdentity(wc))
 function setupSession(ses) {
   if (configured.has(ses)) return; configured.add(ses)
   const priv = ses === session.fromPartition(SPACES[PRIVATE].partition)
@@ -1046,7 +1071,7 @@ app.whenReady().then(async () => {
   }
   ElectronChromeExtensions.handleCRXProtocol(session.defaultSession) // extension icons in <browser-action-list>
   ui = new WebContentsView({ webPreferences: { ...prefs, sandbox: false } }); lockScreen(ui.webContents) // not sandboxed: its preload loads the extension toolbar element
-  win.contentView.addChildView(ui); ui.webContents.loadFile('ui/arc.html'); ui.webContents.on('before-input-event', shortcut)
+  win.contentView.addChildView(ui); ui.webContents.loadFile('ui/arc.html'); const uaReady = readUaMeta(ui.webContents); ui.webContents.on('before-input-event', shortcut)
   peekUi = overlay('peek.html'); edge = overlay('edge.html'); find = overlay('find.html'); panel = overlay('panel.html'); cmd = overlay('cmdbar.html'); hungUi = overlay('hung.html'); askUi = overlay('ask.html')
   win.on('resize', layout)
   win.on('enter-full-screen', layout); win.on('leave-full-screen', layout) // the page follows the window
@@ -1122,7 +1147,7 @@ app.whenReady().then(async () => {
     if (!plain && !(k === 'searchEngine' && Object.hasOwn(bangs.ENGINES, v)) && !(k === 'sidebarSide' && (v === 'left' || v === 'right'))) return
     settings[k] = v
     if (k === 'sidebarSide') layout()
-    if (k === 'fingerprint') spaceSessions().forEach(applyUserAgent)
+    if (k === 'fingerprint') { spaceSessions().forEach(applyUserAgent); webContents.getAllWebContents().filter(w => w.heliarcIdentity).forEach(chromeIdentity) }
     push()
   })
   h('addRoute', (host, sp) => { host = hostOf('https://' + host.trim().replace(/^https?:\/\//i, '')); if (host && SPACES[sp] && !SPACES[sp].private) setRoute(host, sp) })
@@ -1248,11 +1273,11 @@ app.whenReady().then(async () => {
     const prefix = require('crypto').createHash('sha256').update(id).digest('hex').slice(0, 4) // SponsorBlock only learns a code shared by many videos, not which one is watched
     try { const r = await net.fetch(`https://sponsor.ajay.app/api/skipSegments/${prefix}?categories=["sponsor","selfpromo"]`, { signal: AbortSignal.timeout(8000) }); return r.ok ? ((await r.json()).find(v => v.videoID === id)?.segments || []).map(x => x.segment) : [] } catch { return [] }
   })
-  ipcMain.on('fp:site', e => { e.returnValue = !settings.fingerprintOff.includes(privacy.host(e.sender.getURL())) }) // the page preload asks whether to mask the hardware on this site
   ipcMain.handle('profile:get', e => pageOf(e.sender) && !settings.extPrivacy.autofillAddressEnabled ? profile : null)
 
   await ext.loadInstalled(extSessions()) // before any page loads, so content scripts reach restored tabs
   refreshExts()
+  await uaReady
   let cap; await Promise.race([privacyReady, new Promise(r => { cap = setTimeout(r, 3000) })]); clearTimeout(cap) // the restored tab waits for the ad blocker, but never more than 3 s
   // restore the previous session; only the active tab is loaded, the others wake up when selected
   nextId = Math.max(1, ...(saved.tabs || []).map(t => t.id + 1), ...(saved.folders || []).map(f => f.id + 1), ...downloads.map(d => d.id + 1), ...vault.map(v => v.id + 1))

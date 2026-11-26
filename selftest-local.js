@@ -212,7 +212,10 @@ module.exports = async (a, ok) => {
     const emb = await open('/embed3p'); await sleep(800)
     ok('a third-party cookie is not stored', (await ses0.cookies.get({ name: 'tp', domain: 'localhost' })).length === 0)
     ok('the page looks like a plain Chrome', !/Electron|Heliarc/.test(await js(emb.view.webContents, 'navigator.userAgent')), await js(emb.view.webContents, 'navigator.userAgent'))
-    ok('every visitor reports the same hardware', await js(emb.view.webContents, 'navigator.hardwareConcurrency === 4 && navigator.deviceMemory === 8'))
+    const inWorker = `new Promise(r => { const w = new Worker(URL.createObjectURL(new Blob(['postMessage([navigator.hardwareConcurrency, navigator.userAgentData.brands.map(b => b.brand).join(), navigator.languages.join(), navigator.userAgent].join("|"))']))); w.onmessage = e => r(e.data) })`, inPage = '[navigator.hardwareConcurrency, navigator.userAgentData.brands.map(b => b.brand).join(), navigator.languages.join(), navigator.userAgent].join("|")'
+    ok('its workers describe the same browser as the page: hardware, brands, languages (anti-bot checks compare them)', await js(emb.view.webContents, inWorker) === await js(emb.view.webContents, inPage), await js(emb.view.webContents, inWorker))
+    ok('the hardware is not retouched in the page: a retouch is visible, and workers would still tell the truth', await js(emb.view.webContents, 'navigator.hardwareConcurrency') === require('os').cpus().length && await js(emb.view.webContents, `/native code/.test(Function.prototype.toString.call(Object.getOwnPropertyDescriptor(Navigator.prototype, "hardwareConcurrency").get))`))
+    ok('a frame from another site describes the same browser too', await js(emb.view.webContents, `new Promise(r => { const f = document.createElement('iframe'); f.src = location.origin.replace('127.0.0.1', 'localhost') + '/second'; f.onload = () => r(true); document.body.append(f) })`) && await until(async () => { const fr = emb.view.webContents.mainFrame.frames.find(x => /localhost/.test(x.url)); return fr && await fr.executeJavaScript('navigator.userAgentData.brands.some(b => b.brand === "Google Chrome")') }))
     ok('the page is a "Google Chrome" brand, which Google sign-in requires', await js(emb.view.webContents, 'navigator.userAgentData.brands.some(b => b.brand === "Google Chrome") && navigator.userAgentData.getHighEntropyValues(["fullVersionList"]).then(r => r.fullVersionList.some(b => b.brand === "Google Chrome"))'))
     ok('it gives only its major version, as Chrome does (a full one next to the "Google Chrome" brand gives a fake away: Canal+ sign-in)', /Chrome\/\d+\.0\.0\.0 /.test(await js(emb.view.webContents, 'navigator.userAgent')))
     const wcE = emb.view.webContents, area = () => a.win().getContentBounds(), placed = emb.view.getBounds() // a video's fullscreen button: the page fills the whole window, then goes back
@@ -323,18 +326,16 @@ module.exports = async (a, ok) => {
     await js(ui(), "api.call('toggleSite', 'ads')"); await sleep(400)
     ok('and blocked again', !S.settings().adblockOff.includes('127.0.0.1'))
     // the Site protections window: this site's switches and every site with something turned off
-    const hw = () => js(sitePage.view.webContents, 'navigator.hardwareConcurrency')
-    ok('the hardware is masked by default', await hw() === 4, String(await hw()))
-    await js(ui(), "api.call('openPanel', 'protections')"); await until(async () => js(panel(), "document.querySelectorAll('[data-a=prot]').length === 4"))
-    ok('the window lists the four protections of the current site, all on', await js(panel(), "[...document.querySelectorAll('[data-a=prot]')].every(i => i.checked) && /127\\.0\\.0\\.1/.test(document.body.innerText)"))
-    await js(panel(), "document.querySelector('[data-kind=fingerprint]').click()"); await sleep(1500)
-    ok('turning one off applies to that site only', S.settings().fingerprintOff.join() === '127.0.0.1' && await hw() === require('os').cpus().length && S.settings().adblockOff.length === 0, String(await hw()))
+    await js(ui(), "api.call('openPanel', 'protections')"); await until(async () => js(panel(), "document.querySelectorAll('[data-a=prot]').length === 3"))
+    ok('the window lists the three protections of the current site, all on', await js(panel(), "[...document.querySelectorAll('[data-a=prot]')].every(i => i.checked) && /127\\.0\\.0\\.1/.test(document.body.innerText)"))
+    await js(panel(), "document.querySelector('[data-kind=ads]').click()"); await sleep(1500)
+    ok('turning one off applies to that site only', S.settings().adblockOff.join() === '127.0.0.1' && S.settings().webrtcOff.length === 0, JSON.stringify(S.settings().adblockOff))
     await js(panel(), "document.querySelector('[data-kind=webrtc]').click()"); await sleep(1500)
     ok('WebRTC follows the site it is on', sitePage.view.webContents.getWebRTCIPHandlingPolicy() === 'default', sitePage.view.webContents.getWebRTCIPHandlingPolicy())
     ok('the sidebar counts what is off here', /2 protections off on 127\.0\.0\.1/.test(await js(ui(), "document.querySelector('#shield').innerText")), await js(ui(), "document.querySelector('#shield').innerText"))
-    ok('and the site is listed with what is off', await until(async () => js(panel(), "/Off: same hardware as everyone, hide my local network address/.test(document.body.innerText)")))
+    ok('and the site is listed with what is off', await until(async () => js(panel(), "/Off: ad and tracker blocker, hide my local network address/.test(document.body.innerText)")))
     await js(panel(), "document.querySelector('[data-a=protReset]').click()"); await sleep(1500)
-    ok('turning everything back on resets the site', S.settings().fingerprintOff.length === 0 && S.settings().webrtcOff.length === 0 && await hw() === 4 && sitePage.view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only')
+    ok('turning everything back on resets the site', S.settings().adblockOff.length === 0 && S.settings().webrtcOff.length === 0 && sitePage.view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only')
     S.closePanel(); await sleep(300)
     a.closeTab(sitePage.id)
     // site permissions: ask once, remember, and let the user change their mind
@@ -649,7 +650,7 @@ module.exports = async (a, ok) => {
     // peek
     const t = await open('/'); S.openPeek(base + '/second'); await until(async () => S.peek() && !S.peek().view.webContents.isLoading() && S.peek().view.webContents.getTitle() === 'Second page')
     ok('peek opens a floating page', !!S.peek() && S.peek().view.webContents.getTitle() === 'Second page')
-    ok('peek is hardened like a tab (WebRTC, fingerprint)', S.peek().view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only' && await js(S.peek().view.webContents, 'navigator.hardwareConcurrency === 4'))
+    ok('peek is hardened like a tab (WebRTC, fingerprint)', S.peek().view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only' && await js(S.peek().view.webContents, 'navigator.userAgentData.brands.some(b => b.brand === "Google Chrome")'))
     S.openPeek(base + '/login'); await until(async () => S.peek() && S.peek().view.webContents.getTitle() === 'Login'); await sleep(500)
     { const pwc = S.peek().view.webContents, p = await js(pwc, "(() => { const b = document.querySelector('#u').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) } })()")
       pwc.focus(); pwc.sendInputEvent({ type: 'mouseMove', ...p }); pwc.sendInputEvent({ type: 'mouseDown', ...p, button: 'left', clickCount: 1 }); pwc.sendInputEvent({ type: 'mouseUp', ...p, button: 'left', clickCount: 1 }); await sleep(900)
@@ -672,7 +673,7 @@ module.exports = async (a, ok) => {
     // little window
     S.openExternal(base + '/second'); await until(async () => S.little() && S.little().view.webContents.getTitle() === 'Second page')
     ok('link from another app opens in the little window', !!S.little() && S.little().view.webContents.getURL() === base + '/second')
-    ok('the little window is hardened like a tab (WebRTC, fingerprint)', S.little().view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only' && await js(S.little().view.webContents, 'navigator.hardwareConcurrency === 4'))
+    ok('the little window is hardened like a tab (WebRTC, fingerprint)', S.little().view.webContents.getWebRTCIPHandlingPolicy() === 'default_public_interface_only' && await js(S.little().view.webContents, 'navigator.userAgentData.brands.some(b => b.brand === "Google Chrome")'))
     await sleep(500); await snap(S.little().bar, 'little-bar')
     const nn = a.tabs().length, lv = S.little().view.webContents, lb = S.little().bar.webContents
     await js(lb, `document.querySelector('#mv').click()`); await sleep(800)

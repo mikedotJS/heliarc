@@ -111,25 +111,6 @@ if (window === top) {
   ipcRenderer.on('swipe-in', (_, dir) => slide(dir, false))
 }
 
-// fingerprint protection: every visitor reports the same common hardware, and the page can't tell it's a plain Chrome
-if (process.argv.includes('--heliarc-fp') && ipcRenderer.sendSync('fp:site')) {
-  require('electron').contextBridge.executeInMainWorld({ func: () => {
-    for (const [k, v] of [['hardwareConcurrency', 4], ['deviceMemory', 8]]) try { Object.defineProperty(Navigator.prototype, k, { get: () => v, configurable: true }) } catch {}
-    // Electron leaves window.chrome empty, Chrome doesn't
-    const t = performance.timeOrigin / 1000, c = window.chrome ||= {}
-    c.app ||= { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }, getDetails: () => null, getIsInstalled: () => false }
-    c.csi ||= () => ({ startE: Math.round(t * 1000), onloadT: Date.now(), pageT: performance.now(), tran: 15 })
-    c.loadTimes ||= () => ({ requestTime: t, startLoadTime: t, commitLoadTime: t, finishDocumentLoadTime: t, finishLoadTime: t, firstPaintTime: t, firstPaintAfterLoadTime: 0, navigationType: 'Other', wasFetchedViaSpdy: true, wasNpnNegotiated: true, npnNegotiatedProtocol: 'h2', wasAlternateProtocolAvailable: false, connectionInfo: 'h2' })
-    // Google sign-in refuses browsers whose brands don't include "Google Chrome"
-    const uad = navigator.userAgentData, P = window.NavigatorUAData?.prototype
-    if (uad && P) {
-      const chrome = b => { const c = b.find(x => x.brand === 'Chromium'); return c && !b.some(x => x.brand === 'Google Chrome') ? [...b, { ...c, brand: 'Google Chrome' }] : b }
-      const brands = Object.getOwnPropertyDescriptor(P, 'brands').get, high = P.getHighEntropyValues
-      Object.defineProperty(P, 'brands', { get() { return chrome(brands.call(this)) }, configurable: true })
-      P.getHighEntropyValues = function (h) { return high.call(this, h).then(r => (r.brands && (r.brands = chrome(r.brands)), r.fullVersionList && (r.fullVersionList = chrome(r.fullVersionList)), r)) }
-    }
-  } })
-}
 
 // YouTube: sponsor reads and self-promotion marked on SponsorBlock are skipped once each, with a notice that can undo it
 if (window === top && /(^|\.)youtube\.com$/.test(location.hostname)) {

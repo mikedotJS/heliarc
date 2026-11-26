@@ -680,9 +680,10 @@ function setupSession(ses) {
   ses.on('select-webauthn-account', async (e, d, cb) => { let i = -1; try { i = await choose(`Sign in to ${d.relyingPartyId} with which passkey?`, d.accounts.map(a => a.name || a.displayName || 'Passkey')) } finally { cb(d.accounts[i]?.credentialId) } }) // Touch ID passkeys: several accounts on one site
   ses.on('select-serial-port', async (e, ports, wc, cb) => { e.preventDefault(); const i = await deviceBox('serial', { frame: { url: wc.getURL() } }, ports.map(x => x.displayName || x.portName)); cb(i < 0 ? '' : ports[i].portId) })
   ses.setPermissionCheckHandler((wc, permission, origin, d) => { // what a page reads with navigator.permissions.query: only yes or no, so camera and microphone not yet asked read as yes (Chrome's "ask"), else Meet says "blocked" and never asks
+    if (permission === 'speaker-selection') return settings.sitePerms[privacy.host(origin)]?.microphone === true // the speakers' names too, as in Chrome: only once the microphone is allowed
     if (SILENT.has(permission)) return true
     const need = permsOf(permission, d), s = settings.sitePerms[privacy.host(origin)] || {}
-    return need.length > 0 && need.every(n => permission === 'media' ? s[n] !== false : s[n] === true)
+    return need.length > 0 && need.every(n => permission === 'media' && !d?.securityOrigin ? s[n] !== false : s[n] === true) // securityOrigin: the page lists the cameras and microphones; their names and ids stay hidden until the site is allowed, as in Chrome
   })
   ses.on('will-download', (e, item) => onDownload(e, item, priv))
   const api = new ElectronChromeExtensions({

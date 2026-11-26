@@ -349,6 +349,7 @@ module.exports = async (a, ok) => {
     ok('a remembered permission can be changed', S.settings().sitePerms['127.0.0.1'].notifications === false)
     await js(ui(), "api.call('setSitePerm', '127.0.0.1', 'notifications', null)"); await sleep(300)
     ok('or forgotten', !S.settings().sitePerms['127.0.0.1'])
+    ok('a site cannot read the names of the cameras, microphones and speakers before it is allowed, as in Chrome', await js(pp.view.webContents, 'navigator.mediaDevices.enumerateDevices().then(l => l.every(d => !d.label && !d.deviceId))'))
     const wcP = pp.view.webContents, asks = asked.length
     ok('the screen can be kept awake without a question', await wcP.executeJavaScript("navigator.wakeLock.request('screen').then(l => (l.release(), 'ok'), e => e.name)", true) === 'ok')
     ok('copy buttons work without a question', await wcP.executeJavaScript("navigator.clipboard.writeText('x').then(() => 'ok', e => e.name)", true) === 'ok' && asked.length === asks)

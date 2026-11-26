@@ -34,6 +34,7 @@ const LABEL = {
   click: i => `Click “${cut(i.text || 'an element')}”`, type: i => `Type “${cut(i.value, 24)}”${i.submit ? ' and press Enter' : ''}`, press_key: i => `Press ${i.key}`, wait_for: () => 'Wait for the page', select_option: i => `Choose “${cut(i.option, 24)}”`,
   organize_tab: i => ({ pin: 'Pin the tab', unpin: 'Unpin the tab', favorite: 'Make it a favorite', unfavorite: 'Remove it from favorites', sleep: 'Put the tab to sleep', move_to_space: `Move it to ${i.arg}`, move_to_folder: `Put it in “${cut(i.arg, 24)}”` })[i.action],
   search_history: () => 'Search your history', list_downloads: () => 'Look at your downloads',
+  list_console_messages: () => 'Read the console', list_network_requests: () => 'Look at the network requests', get_network_request: () => 'Open a network request', evaluate_script: () => 'Run a script on the page', inspect_element: () => 'Inspect an element', list_storage: i => `Look at the ${i.kind === 'cookies' ? 'cookies' : 'saved data'}`, edit_storage: i => `Change the ${i.kind === 'cookies' ? 'cookies' : 'saved data'}`, emulate: () => 'Change the device view', performance_report: () => 'Measure the page speed', open_devtools: () => 'Open DevTools',
 }
 const label = s => (LABEL[s.name]?.(s.input || {}) ?? s.name.replace(/_/g, ' '))
 const icoFor = st => st === 'done' ? icon('check', 15) : st === 'fail' ? icon('x', 15) : '<span class="spin"></span>'
@@ -43,11 +44,12 @@ function render() {
   const run = S.status === 'run', confirm = S.status === 'confirm', done = S.status === 'done', err = S.status === 'error'
   const steps = S.steps.length ? `<ul class="steps">${S.steps.map(s => `<li class="${s.state}"><span class="st">${icoFor(s.state)}</span><span class="t">${esc(label(s))}</span></li>`).join('')}</ul>` : run ? '<ul class="steps"><li class="run"><span class="st"><span class="spin"></span></span><span class="t">Thinking…</span></li></ul>' : ''
   let body = steps
-  if (confirm) body += `<div class="note warn">${icon('triangle-alert', 18)}<div><b>Heliarc wants to click “${esc(S.confirm.label || 'a button')}”</b><small>On ${esc(S.confirm.site || 'this page')}. It may send, pay, delete or publish something.</small></div></div>`
+  const ASK = { script: ['run a script on this page', 'A script can read and change anything on the page.', 'Allow this script'], storage: ['change what this site keeps', 'Saved settings, a cart or a session may change.', 'Allow this change'] }[S.confirm?.what] || [`click “${esc(S.confirm?.label || 'a button')}”`, 'It may send, pay, delete or publish something.', 'Allow this click']
+  if (confirm) body += `<div class="note warn">${icon('triangle-alert', 18)}<div><b>Heliarc wants to ${ASK[0]}</b><small>On ${esc(S.confirm.site || 'this page')}. ${ASK[1]}</small></div></div>`
   if (done) body += `<div class="answer">${md(S.text)}</div><input class="ds-field" id="fu" placeholder="Ask a follow-up…" value="${esc(draft)}" maxlength="1000" spellcheck="false" autocomplete="off" aria-label="Ask a follow-up">`
   if (err) body += `<div class="note bad">${icon('triangle-alert', 18)}<div><b>${esc(S.error)}</b>${S.steps.some(s => s.state === 'done') ? '<small>What was already done in your browser stays done.</small>' : ''}</div></div>`
   const acts = run ? `<span class="sp"></span><button class="ds-btn sm ${acting ? 'is-loading' : ''}" data-a="stop" ${acting ? 'disabled' : ''}>${acting ? 'Stopping…' : 'Stop'}</button>`
-    : confirm ? `<button class="ds-btn sm" data-a="no" ${acting ? 'disabled' : ''} autofocus>Cancel</button><button class="ds-btn sm primary" data-a="yes" ${acting ? 'disabled' : ''}>Allow this click</button>`
+    : confirm ? `<button class="ds-btn sm" data-a="no" ${acting ? 'disabled' : ''} autofocus>Cancel</button><button class="ds-btn sm primary" data-a="yes" ${acting ? 'disabled' : ''}>${ASK[2]}</button>`
     : err ? `<button class="ds-btn sm" data-a="close">Close</button><button class="ds-btn sm primary" data-a="retry">Try again</button>`
     : `<button class="ds-btn sm" data-a="copy">${S.copied ? 'Copied ✓' : 'Copy'}</button><button class="ds-btn sm primary" data-a="close">Close</button>`
   $('#box').innerHTML = `<div class="q">${icon('sparkles', 16)}<b>${esc(S.q)}</b></div>${S.page ? `<div class="pg">${icon('globe', 13)}<span>On ${esc(S.page)}</span></div>` : ''}${body}<div class="acts">${acts}</div>`

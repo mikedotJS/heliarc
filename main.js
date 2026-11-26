@@ -972,13 +972,13 @@ async function gitAdd({ id, kind, host, token }) { // the token is checked again
   delete gitState.errors[acc.id] // the row stops saying "expired" now, not when the next read ends
   store.save('git', gitAccounts()); gitRefresh(); return { ok: true, login: r.login }
 }
-const askSend = () => { if (!askUi || askUi.webContents.isDestroyed()) return; const { ctl, confirm, ...r } = askRun || {}; askUi.webContents.send('ask', askRun && { ...r, confirm: confirm && { label: confirm.label, site: confirm.site } }); layout() } // only what the card shows: a function (ctl, confirm.resolve) cannot cross to the screen
+const askSend = () => { if (!askUi || askUi.webContents.isDestroyed()) return; const { ctl, confirm, ...r } = askRun || {}; askUi.webContents.send('ask', askRun && { ...r, confirm: confirm && { label: confirm.label, site: confirm.site, what: confirm.what } }); layout() } // only what the card shows: a function (ctl, confirm.resolve) cannot cross to the screen
 const askEnd = patch => { if (!askRun || askRun.status === 'done' || askRun.status === 'error') return; Object.assign(askRun, { confirm: null }, patch); askSend() }
-function askConfirm({ label, site }) { // the click would send, pay, delete or publish: nothing happens until the user says so (no answer in 2 minutes = no)
+function askConfirm({ label, site, what }) { // the click would send, pay, delete or publish: nothing happens until the user says so (no answer in 2 minutes = no)
   return new Promise(resolve => {
     const done = ok => { clearTimeout(timer); if (askRun?.confirm?.resolve === done) { askRun.confirm = null; askRun.status = 'run'; askSend() } resolve(ok) }
     const timer = setTimeout(() => done(false), 120000)
-    askRun.confirm = { label, site, resolve: done }; askRun.status = 'confirm'; askSend()
+    askRun.confirm = { label, site, what, resolve: done }; askRun.status = 'confirm'; askSend()
   })
 }
 let askHistory = [] // the conversation so far as plain text ({ role, content }): kept while the card is open, so a follow-up knows what was said

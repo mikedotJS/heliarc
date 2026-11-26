@@ -987,7 +987,9 @@ module.exports = async (a, ok) => {
     let asked = [], answer = false
     const connect = async () => { const [x, y] = InMemoryTransport.createLinkedPair(), srv = S.mcpLib.build(S.mcpHost, { confirm: async q => (asked.push(q), answer) }), c = new Client({ name: 't', version: '1' }); await Promise.all([srv.connect(y), c.connect(x)]); return c }
     const c = await connect(), t = await open('/risky'), wc = t.view.webContents, call = async (name, args) => (await c.callTool({ name, arguments: args })).isError ? 'error' : 'ok'
-    ok('the in-app assistant has no DevTools tools (they act on the page without asking)', !(await c.listTools()).tools.some(x => x.name === 'evaluate_script'))
+    ok('the in-app assistant has the DevTools tools too', (await c.listTools()).tools.some(x => x.name === 'list_console_messages') && (await c.listTools()).tools.some(x => x.name === 'evaluate_script'))
+    ok('running a script asks first, and nothing runs when the user says no', await call('evaluate_script', { code: 'window.ran = 1' }) === 'error' && asked.at(-1)?.what === 'script' && asked.at(-1)?.site === '127.0.0.1' && await js(wc, 'window.ran') === undefined)
+    asked = []
     ok('a harmless click goes through without a question', await call('click', { text: 'Save draft' }) === 'ok' && await js(wc, 'window.safe') === 1 && asked.length === 0)
     ok('a risky click is held, with what it is and where', await call('click', { text: 'Delete account' }) === 'error' && asked.length === 1 && asked[0].label === 'Delete account' && asked[0].site === '127.0.0.1')
     ok('and does not happen when the user says no', await js(wc, 'window.hit') === undefined)
@@ -998,6 +1000,8 @@ module.exports = async (a, ok) => {
     const askWc = S.askUi().webContents, show = o => askWc.send('ask', o), dom = code => js(askWc, code)
     show({ q: 'Order the same coffee again', steps: [{ id: 1, name: 'open_tab', input: { url: 'https://shop.example/cart' }, state: 'done' }], status: 'confirm', confirm: { label: 'Place order', site: 'shop.example' } }); await sleep(300)
     ok('the card says what is about to be clicked', await dom(`document.body.innerText`).then(x => /Place order/.test(x) && /shop.example/.test(x) && /Allow this click/.test(x) && /Open shop.example/.test(x)))
+    show({ q: 'Why is this page slow?', steps: [], status: 'confirm', confirm: { site: 'shop.example', what: 'script' } }); await sleep(300)
+    ok('before a script, the card says so', await dom(`document.body.innerText`).then(x => /run a script/.test(x) && /Allow this script/.test(x) && !/click/.test(x)))
     show({ q: 'x y z', steps: [], status: 'error', error: 'Couldn’t reach Claude.' }); await sleep(300)
     ok('an error card has a way out', await dom(`document.body.innerText`).then(x => /Couldn’t reach Claude/.test(x) && /Try again/.test(x) && /Close/.test(x)))
     const done = { q: 'Summarize this', page: 'example.com', steps: [], status: 'done', text: 'It is a demo page.' }

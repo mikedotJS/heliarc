@@ -133,3 +133,31 @@ if (window === top && /(^|\.)youtube\.com$/.test(location.hostname)) {
     b.onclick = () => { undo(); n.remove() }; n.append(b); player.append(n); setTimeout(() => n.remove(), 5000)
   }
 }
+
+// Experimental: clickbait and ragebait videos fade away. The page shows as usual; titles near the screen are sent in groups, and a card
+// goes once its verdict comes back. YouTube reuses its cards for other videos, so a card is judged again when its title changes.
+if (window === top && /(^|\.)youtube\.com$/.test(location.hostname)) {
+  const CARDS = 'ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model'
+  const titleOf = c => (c.querySelector('#video-title, .yt-lockup-metadata-view-model__title, h3')?.textContent || '').trim()
+  let wanted = new Map(), timer = null, off = false
+  const hide = c => c.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }], { duration: 220, easing: 'ease-out' }).finished.then(() => { if (c.dataset.heliarcBait) c.style.display = 'none' }, () => {})
+  const flush = async () => {
+    timer = null; const asked = wanted; wanted = new Map()
+    const out = await ipcRenderer.invoke('bait:judge', [...asked.keys()]).catch(() => ({}))
+    if (out === null) { off = true; io.disconnect(); mo.disconnect(); return }
+    for (const [t, cards] of asked) if (out[t]) cards.forEach(c => { if (c.dataset.heliarcTitle === t && !c.dataset.heliarcBait) { c.dataset.heliarcBait = out[t]; hide(c) } })
+  }
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (!e.isIntersecting || off) return; io.unobserve(e.target)
+    const t = e.target.dataset.heliarcTitle; if (!t) return
+    wanted.has(t) ? wanted.get(t).push(e.target) : wanted.set(t, [e.target]); timer ??= setTimeout(flush, 150)
+  }), { rootMargin: '800px 0px' })
+  const scan = () => document.querySelectorAll(CARDS).forEach(c => {
+    const t = titleOf(c); if (t === (c.dataset.heliarcTitle || '')) return
+    c.dataset.heliarcTitle = t; if (c.dataset.heliarcBait) { delete c.dataset.heliarcBait; c.style.display = '' } // a reused card shows its new video
+    io.unobserve(c); if (t) io.observe(c)
+  })
+  let scanning = false
+  const mo = new MutationObserver(() => { if (!scanning) { scanning = true; setTimeout(() => { scanning = false; scan() }, 300) } }) // YouTube changes its page all the time: one look every 300 ms at most
+  addEventListener('DOMContentLoaded', () => { scan(); mo.observe(document.body, { childList: true, subtree: true, characterData: true }) })
+}

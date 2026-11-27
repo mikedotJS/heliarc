@@ -47,15 +47,15 @@ const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 const ago = at => { const m = Math.round((at - Date.now()) / 6e4); return Math.abs(m) < 60 ? rtf.format(m, 'minute') : Math.abs(m) < 1440 ? rtf.format(Math.round(m / 60), 'hour') : rtf.format(Math.round(m / 1440), 'day') }
 const SECTIONS = [['downloads', 'Downloads', 'download'], ['media', 'Media', 'image'], ['archive', 'Archive', 'archive'], ['history', 'History', 'history'], ['passwords', 'Passwords', 'key-round'], ['extensions', 'Extensions', 'puzzle'], ['protections', 'Site protections', 'shield-check'], ['settings', 'Settings', 'settings']]
 const MEDIA = /^(image|video|audio)\//, MEDIAEXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|mp4|webm|mov|mkv|mp3|wav|ogg|m4a|flac)$/i
-const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0', bsite: '', akey: '', gprov: 'github', ghost: '', gtoken: '', gid: '' } // what is typed in the add forms survives a redraw
-let qt, shown = {}, state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, working = null, mcpData = null, asData = null, detected = [] // working: the import or update check in progress, its buttons wait for the answer
+const draft = { btrig: '', burl: '', extin: '', rhost: '', rspace: '0', bsite: '', akey: '', jkey: '', gprov: 'github', ghost: '', gtoken: '', gid: '' } // what is typed in the add forms survives a redraw
+let qt, shown = {}, state = null, section = 'downloads', q = '', data = null, status = 'ready', note = null, recordingFor = null, token = 0, installing = false, working = null, mcpData = null, asData = null, baitData = null, detected = [] // working: the import or update check in progress, its buttons wait for the answer
 const fileUrl = p => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '').split('/').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:')
 
 async function load() { // sections that need data from the main process: loading -> ready | error
   if (!['history', 'passwords', 'settings', 'extensions'].includes(section)) { data = null; status = 'ready'; return render() }
   const mine = ++token; status = 'loading'; data = null; paint()
   try {
-    const r = section === 'history' ? await api.call('history', q) : section === 'passwords' ? await api.call('passwords') : section === 'extensions' ? await api.call('extensions') : (detected = await api.call('importDetect'), mcpData = await api.call('mcpInfo'), asData = await api.call('assistantInfo'), await api.call('profile'))
+    const r = section === 'history' ? await api.call('history', q) : section === 'passwords' ? await api.call('passwords') : section === 'extensions' ? await api.call('extensions') : (detected = await api.call('importDetect'), mcpData = await api.call('mcpInfo'), asData = await api.call('assistantInfo'), baitData = await api.call('baitInfo'), await api.call('profile'))
     if (mine === token) { data = r; status = 'ready' }
   } catch (e) { if (mine === token) status = 'error' }
   if (mine === token) paint()
@@ -174,6 +174,14 @@ function assistantBlock(st) { // the key is never shown again once saved: only w
     <div class="line"><label>Model<small>Faster is cheaper. Opus handles long, tricky requests best</small></label><select class="ds-select" data-amodel>${Object.entries(MODEL_NAMES).map(([k, n]) => `<option value="${k}" ${k === asData.model ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
     <div class="msg">Heliarc asks you before each click that sends, pays, deletes or publishes, and never types passwords.</div>${msg}`
 }
+function baitBlock(st) { // like the Claude key: kept encrypted, never shown again
+  if (!st.noBait || !baitData) return ''
+  const wait = working === 'jkey'
+  if (!baitData.canEncrypt) return '<div class="msg bad">This system can’t encrypt the key, so Heliarc doesn’t keep it.</div>'
+  const msg = `<div class="msg ${note?.jkey?.error || baitData.error ? 'bad' : note?.jkey ? 'ok' : ''}">${esc(note?.jkey?.error || note?.jkey?.text || (baitData.error ? baitData.error + ': titles stay as they are.' : ''))}</div>`
+  if (!baitData.hasKey) return `<div class="line"><input class="ds-field" id="jkey" type="password" placeholder="Jev API key (typesafe.ai)" value="${esc(draft.jkey)}" style="flex:1" spellcheck="false" autocomplete="off" ${wait ? 'disabled' : ''}><button class="ds-btn sm${wait ? ' is-loading' : ''}" data-a="baitSave" ${wait ? 'disabled' : ''}>${wait ? '<span class="spin"></span>Checking…' : 'Save'}</button></div>${msg}`
+  return `<div class="line"><label>Jev API key<small>Saved, encrypted. It is never shown again</small></label><button class="ds-btn sm" data-a="baitRemove">Remove</button></div>${msg}`
+}
 // a blocked site: blocked all the time or on a schedule (days, from, to), with its 5-minute pause; a strict schedule can't be undone while it blocks
 const DAYS = [1, 2, 3, 4, 5, 6, 0], dayName = d => new Intl.DateTimeFormat('en', { weekday: 'short' }).format(new Date(2026, 0, 4 + d)) // 4 January 2026 is a Sunday
 const hhmm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -222,6 +230,9 @@ function settings(S) {
     ${mcpBlock(st)}
     ${toggle('assistant', 'Ask Heliarc, in the command bar', 'Type a sentence (or start with ?) and Heliarc does it in your browser. Uses your own Claude API key, kept encrypted by your system. Your sentence and the pages it reads for that request are sent to Claude, nothing else')}
     ${assistantBlock(st)}</section>
+  <section><h3>Experimental</h3>
+    ${toggle('noBait', 'Hide clickbait and ragebait on YouTube', 'Video titles near your screen are judged by Jev (typesafe.ai) with your own key, and the ones written to bait clicks or anger fade away. Only titles are sent, never the page, your account or the Private space. Each title is judged once. Applies to pages opened from now on')}
+    ${baitBlock(st)}</section>
   <section><h3>Integrations</h3>${gitBlock(S)}</section>
   <section><h3>Search</h3>
     <div class="line"><label>Search engine<small>Used when you type something that isn’t an address</small></label><select class="ds-select" data-engine>${Object.entries(S.engines).map(([k, n]) => `<option value="${k}" ${k === st.searchEngine ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
@@ -303,6 +314,8 @@ const ACT = {
   gitRemove: async el => { sure = null; await api.call('gitRemove', el.dataset.id); note = null },
   gitReconnect: el => { const a = state.git.accounts.find(x => x.id === el.dataset.id); if (a) { Object.assign(draft, { gid: a.id, gprov: a.kind, ghost: a.host, gtoken: '' }); note = null; render(); $('#gtoken')?.focus() } },
   gitCancelReconnect: () => { Object.assign(draft, { gid: '', ghost: '', gtoken: '' }); note = null; render() },
+  baitSave: () => work('jkey', 'jkey', 'Checking…', async () => { const r = await api.call('baitSetKey', draft.jkey); if (r.error) return r; draft.jkey = ''; baitData = await api.call('baitInfo'); return { text: 'Key saved ✓' } }, 'Couldn’t check the key. Try again.'),
+  baitRemove: async () => { await api.call('baitRemoveKey'); baitData = await api.call('baitInfo'); note = null; render() },
   assistantRemove: async () => { await api.call('assistantRemoveKey'); asData = await api.call('assistantInfo'); note = null; render() },
   mcpCopy: async () => { await navigator.clipboard.writeText(mcpCmd(mcpData)); const mine = note = { mcp: 'Copied ✓' }; render(); setTimeout(() => { if (note === mine) { note = null; section === 'settings' && paint() } }, 2500) },
   mcpNewToken: async () => { await api.call('mcpNewToken'); mcpData = await api.call('mcpInfo'); const mine = note = { mcp: 'New token ready: copy the command again.' }; render(); setTimeout(() => { if (note === mine) { note = null; section === 'settings' && paint() } }, 4000) },

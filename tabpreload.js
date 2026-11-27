@@ -134,16 +134,22 @@ if (window === top && /(^|\.)youtube\.com$/.test(location.hostname)) {
   }
 }
 
-// Experimental: clickbait and ragebait videos fade away. The page shows as usual; titles near the screen are sent in groups, and a card
-// goes once its verdict comes back. YouTube reuses its cards for other videos, so a card is judged again when its title changes.
-if (window === top && /(^|\.)youtube\.com$/.test(location.hostname)) {
-  const CARDS = 'ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model'
-  const titleOf = c => (c.querySelector('#video-title, .yt-lockup-metadata-view-model__title, h3')?.textContent || '').trim()
+// Experimental: clickbait and ragebait fade away on YouTube, Reddit and X (each one switched on in Settings). The page shows as usual; titles
+// and posts near the screen are sent in groups, and a card goes once its verdict comes back. These sites reuse their cards for other content,
+// so a card is judged again when its text changes.
+const BAIT = [
+  { site: 'youtube', host: /(^|\.)youtube\.com$/, cards: 'ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-reel-item-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model',
+    text: c => c.querySelector('#video-title, .yt-lockup-metadata-view-model__title, h3')?.textContent },
+  { site: 'reddit', host: /(^|\.)reddit\.com$/, cards: 'article:has(shreddit-post), shreddit-post:not(article shreddit-post)', text: c => (c.matches('shreddit-post') ? c : c.querySelector('shreddit-post'))?.getAttribute('post-title') },
+  { site: 'x', host: /(^|\.)(x|twitter)\.com$/, cards: '[data-testid=cellInnerDiv]:has(article[data-testid=tweet])', text: c => c.querySelector('[data-testid=tweetText]')?.innerText },
+].find(b => b.host.test(location.hostname))
+if (window === top && BAIT) {
+  const textOf = c => (BAIT.text(c) || '').trim().slice(0, 300)
   let wanted = new Map(), timer = null, off = false
   const hide = c => c.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }], { duration: 220, easing: 'ease-out' }).finished.then(() => { if (c.dataset.heliarcBait) c.style.display = 'none' }, () => {})
   const flush = async () => {
     timer = null; const asked = wanted; wanted = new Map()
-    const out = await ipcRenderer.invoke('bait:judge', [...asked.keys()]).catch(() => ({}))
+    const out = await ipcRenderer.invoke('bait:judge', BAIT.site, [...asked.keys()]).catch(() => ({}))
     if (out === null) { off = true; io.disconnect(); mo.disconnect(); return }
     for (const [t, cards] of asked) if (out[t]) cards.forEach(c => { if (c.dataset.heliarcTitle === t && !c.dataset.heliarcBait) { c.dataset.heliarcBait = out[t]; hide(c) } })
   }
@@ -152,12 +158,12 @@ if (window === top && /(^|\.)youtube\.com$/.test(location.hostname)) {
     const t = e.target.dataset.heliarcTitle; if (!t) return
     wanted.has(t) ? wanted.get(t).push(e.target) : wanted.set(t, [e.target]); timer ??= setTimeout(flush, 150)
   }), { rootMargin: '800px 0px' })
-  const scan = () => document.querySelectorAll(CARDS).forEach(c => {
-    const t = titleOf(c); if (t === (c.dataset.heliarcTitle || '')) return
-    c.dataset.heliarcTitle = t; if (c.dataset.heliarcBait) { delete c.dataset.heliarcBait; c.style.display = '' } // a reused card shows its new video
+  const scan = () => document.querySelectorAll(BAIT.cards).forEach(c => {
+    const t = textOf(c); if (t === (c.dataset.heliarcTitle || '')) return
+    c.dataset.heliarcTitle = t; if (c.dataset.heliarcBait) { delete c.dataset.heliarcBait; c.style.display = '' } // a reused card shows its new content
     io.unobserve(c); if (t) io.observe(c)
   })
   let scanning = false
-  const mo = new MutationObserver(() => { if (!scanning) { scanning = true; setTimeout(() => { scanning = false; scan() }, 300) } }) // YouTube changes its page all the time: one look every 300 ms at most
+  const mo = new MutationObserver(() => { if (!scanning) { scanning = true; setTimeout(() => { scanning = false; scan() }, 300) } }) // these pages change all the time: one look every 300 ms at most
   addEventListener('DOMContentLoaded', () => { scan(); mo.observe(document.body, { childList: true, subtree: true, characterData: true }) })
 }

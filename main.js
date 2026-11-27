@@ -44,7 +44,7 @@ const PRIVATE = SPACES.findIndex(s => s.private)
 for (const s of SPACES) s.own = s.partition // the space's own profile, kept on disk while it shares Home's
 const shareSpace = (sp, shared) => { sp.shared = !!shared && sp !== SPACES[0] && !sp.private; sp.partition = sp.shared ? SPACES[0].own : sp.own }
 const ZOOMS = [.25, .33, .5, .67, .75, .8, .9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
-const DEFAULTS = { archiveHours: 12, routes: [], blockedSites: [], blockSchedules: {}, blockPauses: {}, shortcuts: {}, autoPip: true, skipSponsors: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', antiAdblock: true, extPrivacy: {}, searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false, assistant: false, noBait: false }
+const DEFAULTS = { archiveHours: 12, routes: [], blockedSites: [], blockSchedules: {}, blockPauses: {}, shortcuts: {}, autoPip: true, skipSponsors: true, littleExternal: true, pwNever: [], adblockOff: [], cookiesOk: [], fingerprintOff: [], webrtcOff: [], sitePerms: {}, spaces: {}, sidebarSide: 'left', autoUpdateCheck: true, clearOnQuit: false, adblockList: 'adsTrackers', antiAdblock: true, extPrivacy: {}, searchEngine: 'brave', bangs: [], blockThirdPartyCookies: true, httpsOnly: true, webrtcProtect: true, fingerprint: true, mcp: false, assistant: false, baitYoutube: false, baitReddit: false, baitX: false }
 // Picture-in-picture for the biggest playing, unmuted video (needs a user gesture, which executeJavaScript can claim)
 const PIP_ON = `(async () => { const v = [...document.querySelectorAll('video')].filter(v => !v.paused && !v.ended && !v.muted && v.readyState > 2 && v.videoWidth && !v.disablePictureInPicture).sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0]; if (!v || document.pictureInPictureElement) return false; await v.requestPictureInPicture(); return true })()`
 const PIP_OFF = `document.pictureInPictureElement && document.exitPictureInPicture()`
@@ -1147,7 +1147,7 @@ app.whenReady().then(async () => {
     if (k === 'adblockList') { if (Object.hasOwn(LISTS, v)) { settings[k] = v; loadBlocker() } return } // loadBlocker pushes by itself
     if (k === 'antiAdblock') { settings.antiAdblock = !!v; loadBlocker(); return } // loadBlocker pushes by itself
     if (k === 'mcp') { settings.mcp = !!v; mcpSync(); return }
-    const plain = ['assistant', 'archiveHours', 'autoPip', 'skipSponsors', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck', 'noBait'].includes(k)
+    const plain = ['assistant', 'archiveHours', 'autoPip', 'skipSponsors', 'littleExternal', 'blockThirdPartyCookies', 'httpsOnly', 'webrtcProtect', 'fingerprint', 'clearOnQuit', 'autoUpdateCheck', 'baitYoutube', 'baitReddit', 'baitX'].includes(k)
     if (!plain && !(k === 'searchEngine' && Object.hasOwn(bangs.ENGINES, v)) && !(k === 'sidebarSide' && (v === 'left' || v === 'right'))) return
     settings[k] = v
     if (k === 'sidebarSide') layout()
@@ -1286,8 +1286,8 @@ app.whenReady().then(async () => {
     const prefix = require('crypto').createHash('sha256').update(id).digest('hex').slice(0, 4) // SponsorBlock only learns a code shared by many videos, not which one is watched
     try { const r = await net.fetch(`https://sponsor.ajay.app/api/skipSegments/${prefix}?categories=["sponsor","selfpromo"]`, { signal: AbortSignal.timeout(8000) }); return r.ok ? ((await r.json()).find(v => v.videoID === id)?.segments || []).map(x => x.segment) : [] } catch { return [] }
   })
-  ipcMain.handle('bait:judge', (e, titles) => { // null: the feature is off here, the page stops looking. Never for the Private space, which keeps nothing
-    const p = pageOf(e.sender), key = settings.noBait && decrypt(jevCfg().key || '')
+  ipcMain.handle('bait:judge', (e, site, titles) => { // null: the feature is off for this site, the page stops looking. Never for the Private space, which keeps nothing
+    const p = pageOf(e.sender), key = settings[{ youtube: 'baitYoutube', reddit: 'baitReddit', x: 'baitX' }[site]] && decrypt(jevCfg().key || '')
     if (!key || !p || SPACES[p.space]?.private || !Array.isArray(titles)) return null
     return bait.judge(key, titles.slice(0, 200))
   })

@@ -175,7 +175,7 @@ function assistantBlock(st) { // the key is never shown again once saved: only w
     <div class="msg">Heliarc asks you before each click that sends, pays, deletes or publishes, and never types passwords.</div>${msg}`
 }
 function baitBlock(st) { // like the Claude key: kept encrypted, never shown again
-  if (!st.noBait || !baitData) return ''
+  if (!(st.baitYoutube || st.baitReddit || st.baitX) || !baitData) return ''
   const wait = working === 'jkey'
   if (!baitData.canEncrypt) return '<div class="msg bad">This system can’t encrypt the key, so Heliarc doesn’t keep it.</div>'
   const msg = `<div class="msg ${note?.jkey?.error || baitData.error ? 'bad' : note?.jkey ? 'ok' : ''}">${esc(note?.jkey?.error || note?.jkey?.text || (baitData.error ? baitData.error + ': titles stay as they are.' : ''))}</div>`
@@ -231,7 +231,10 @@ function settings(S) {
     ${toggle('assistant', 'Ask Heliarc, in the command bar', 'Type a sentence (or start with ?) and Heliarc does it in your browser. Uses your own Claude API key, kept encrypted by your system. Your sentence and the pages it reads for that request are sent to Claude, nothing else')}
     ${assistantBlock(st)}</section>
   <section><h3>Experimental</h3>
-    ${toggle('noBait', 'Hide clickbait and ragebait on YouTube', 'Video titles near your screen are judged by Jev (typesafe.ai) with your own key, and the ones written to bait clicks or anger fade away. Only titles are sent, never the page, your account or the Private space. Each title is judged once. Applies to pages opened from now on')}
+    <div class="msg">Titles and posts near your screen are judged by Jev (typesafe.ai) with your own key, and the ones written to bait clicks or anger fade away. Only public titles and posts are sent, never your account or the Private space. Each one is judged once. Applies to pages opened from now on.</div>
+    ${toggle('baitYoutube', 'Hide clickbait and ragebait on YouTube', 'Videos whose title baits clicks or anger')}
+    ${toggle('baitReddit', 'Hide clickbait and ragebait on Reddit', 'Posts whose title baits clicks or anger')}
+    ${toggle('baitX', 'Hide clickbait and ragebait on X', 'Posts written to bait clicks or anger')}
     ${baitBlock(st)}</section>
   <section><h3>Integrations</h3>${gitBlock(S)}</section>
   <section><h3>Search</h3>
